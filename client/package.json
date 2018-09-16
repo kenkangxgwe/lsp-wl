@@ -1,0 +1,67 @@
+{
+    "name": "lsp-client",
+    "description": "VSCode client of the Wolfram Language Server",
+    "author": "lsp-wl",
+    "license": "MIT",
+    "version": "0.0.1",
+    "publisher": "lsp-wl",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/kenkangxgw/lsp-wl"
+    },
+    "engines": {
+        "vscode": "^1.23.0"
+    },
+    "activationEvents": [
+        "onLanguage:plaintext"
+    ],
+    "main": "./out/extension",
+    "contributes": {
+        "configuration": {
+            "type": "object",
+            "title": "Configuration for Wolfram Language Server",
+            "properties": {
+                "WolframLanguageServer.maxNumberOfProblems": {
+                    "scope": "resource",
+                    "type": "number",
+                    "default": 100,
+                    "description": "Controls the maximum number of problems produced by the server."
+                },
+                "WolframLanguageServer.trace.server": {
+                    "scope": "window",
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "default": "off",
+                    "description": "Traces the communication between VS Code and the language server."
+                },
+                "WolframLanguageServer.wolfram.kernelPath": {
+                    "scope": "workspace",
+                    "type": "string",
+                    "default": "wolfram",
+                    "description": "Path to Wolfram Kernel."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "update-vscode": "vscode-install",
+        "postinstall": "vscode-install",
+        "vscode:prepublish": "npm run update-vscode && npm run compile:client",
+        "compile:client": "tsc -p ./tsconfig.json",
+        "watch:client": "tsc -w -p ./tsconfig.json",
+        "test": "sh ./scripts/e2e.sh"
+    },
+    "dependencies": {
+        "vscode": "^1.1.21",
+        "vscode-languageclient": "^4.1.4"
+    },
+    "devDependencies": {
+        "@types/mocha": "^5.2.0",
+        "@types/node": "^8.0.0",
+        "typescript": "2.8.3"
+    }
+}
