@@ -1,89 +1,27 @@
 {
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
 	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "compile",
-			"dependsOn": [
-				{
-					"type": "npm",
-					"script": "compile:client"
-				}
-				// ,
-				// {
-				// 	"type": "npm",
-				// 	"script": "compile:server"
-				// }
-			],
-			"problemMatcher": []
-		},
-		{
-			"type": "npm",
-			"script": "compile:client",
-			"group": "build",
-			"presentation": {
-				"panel": "dedicated",
-				"reveal": "never"
-			},
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"type": "npm",
-			"script": "compile:server",
-			"group": "build",
-			"presentation": {
-				"panel": "dedicated",
-				"reveal": "never"
-			},
-			"problemMatcher": [
-				"$tsc"
-			]
-		},
-		{
-			"label": "watch",
-			"dependsOn": [
-				{
-					"type": "npm",
-					"script": "watch:client"
-				}
-				// ,
-				// {
-				// 	"type": "npm",
-				// 	"script": "watch:server"
-				// }
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"problemMatcher": []
-		},
-		{
-			"type": "npm",
-			"script": "watch:client",
-			"isBackground": true,
-			"group": "build",
-			"presentation": {
-				"panel": "dedicated",
-				"reveal": "never"
-			},
-			"problemMatcher": [
-				"$tsc-watch"
-			]
-		},
-		{
-			"type": "npm",
-			"script": "watch:server",
-			"isBackground": true,
-			"group": "build",
-			"presentation": {
-				"panel": "dedicated",
-				"reveal": "never"
-			},
-			"problemMatcher": [
-				"$tsc-watch"
-			]
-		}
-	]
+    "tasks": [
+        {
+            "type": "typescript",
+            "tsconfig": "tsconfig.json",
+            "problemMatcher": [
+                "$tsc"
+            ]
+        },
+        {
+            "type": "typescript",
+            "tsconfig": "tsconfig.json",
+            "option": "watch",
+            "problemMatcher": [
+                "$tsc-watch"
+            ]
+        },
+        {
+            "type": "npm",
+            "script": "install",
+            "problemMatcher": []
+        }
+    ]
 }

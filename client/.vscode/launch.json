@@ -12,7 +12,7 @@
 			"sourceMaps": true,
 			"outFiles": ["${workspaceRoot}/out/*.js"],
 			// TODO: There is error here, cannot find watch:client.
-			"preLaunchTask": "npm: watch:client"
+			"preLaunchTask": "tsc: watch - tsconfig.json"
 		},
 		{
 			"name": "Language Server E2E Test",

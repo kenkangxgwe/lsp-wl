@@ -10,7 +10,7 @@
         "url": "https://github.com/kenkangxgw/lsp-wl"
     },
     "engines": {
-        "vscode": "^1.23.0"
+        "vscode": "^1.25.0"
     },
     "activationEvents": [
         "onLanguage:plaintext"
@@ -50,9 +50,9 @@
     "scripts": {
         "update-vscode": "vscode-install",
         "postinstall": "vscode-install",
-        "vscode:prepublish": "npm run update-vscode && npm run compile:client",
-        "compile:client": "tsc -p ./tsconfig.json",
-        "watch:client": "tsc -w -p ./tsconfig.json",
+        "vscode:prepublish": "npm run update-vscode && npm run compile",
+        "compile": "tsc -p ./tsconfig.json",
+        "watch": "tsc -w -p ./tsconfig.json",
         "test": "sh ./scripts/e2e.sh"
     },
     "dependencies": {
