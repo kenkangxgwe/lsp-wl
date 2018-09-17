@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -14,7 +14,7 @@ const vscode_1 = require("vscode");
 const vscode_languageclient_1 = require("vscode-languageclient");
 function activate(context) {
     // clangd command
-    // const config = workspace.getConfiguration('WolframLanguageServer'); 
+    // const config = workspace.getConfiguration('WolframLanguageServer');
     // // The server is a started as a separate app and listens on port 5007
     // let wolfram: Executable = {
     //     command: config.get<string>('wolfram.kernelPath')
@@ -25,7 +25,7 @@ function activate(context) {
         port: 6009
     };
     let serverOptions = () => {
-        // Connect to language server via socket
+        // connect to language server via socket
         let socket = net.connect(connectionInfo);
         let result = {
             writer: socket,
@@ -34,16 +34,16 @@ function activate(context) {
         return Promise.resolve(result);
     };
     let clientOptions = {
-        documentSelector: ['mydsl'],
+        documentSelector: ["mydsl"],
         synchronize: {
-            fileEvents: vscode_1.workspace.createFileSystemWatcher('**/*.*')
+            fileEvents: vscode_1.workspace.createFileSystemWatcher("**/*.*")
         }
     };
-    // Create the language client and start the client.
-    let lc = new vscode_languageclient_1.LanguageClient('WolframLanguageServer', 'Wolfram Language Server', serverOptions, clientOptions);
+    // create the language client and start the client.
+    let client = new vscode_languageclient_1.LanguageClient("WolframLanguageServer", "Wolfram Language Server", serverOptions, clientOptions);
     var disposable2 = vscode_1.commands.registerCommand("mydsl.a.proxy", () => __awaiter(this, void 0, void 0, function* () {
         let activeEditor = vscode_1.window.activeTextEditor;
-        if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== 'mydsl') {
+        if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== "mydsl") {
             return;
         }
         if (activeEditor.document.uri instanceof vscode_1.Uri) {
@@ -52,9 +52,9 @@ function activate(context) {
     }));
     context.subscriptions.push(disposable2);
     // enable tracing (.Off, .Messages, Verbose)
-    lc.trace = vscode_jsonrpc_1.Trace.Verbose;
-    let disposable = lc.start();
-    // Push the disposable to the context's subscriptions so that the 
+    client.trace = vscode_jsonrpc_1.Trace.Verbose;
+    let disposable = client.start();
+    // push the disposable to the context's subscriptions so that the
     // client can be deactivated on extension deactivation
     context.subscriptions.push(disposable);
 }
