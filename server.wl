@@ -29,35 +29,41 @@ WLServerStart[o:OptionsPattern[]]:=Module[
 		connection
 	},
 	
-	{port} = OptionValue[WLServerStart,o,{port}];
-	connection = SocketOpen[port];
+	{port} = OptionValue[WLServerStart,o,{"Port"}];
+	Check[t`conn = connection = Echo @ SocketOpen[port], Nothing];
 	Print[WLServerListen[connection]];
 ];
 
-WLServerListen[connection_] := Module[
+WLServerListen[connection_] := Block[{$RecursionLimit = Infinity}, Module[
 	{
 		newMsg, serverStatus
 	},
-	
-	serverStatus = Map[
-		connection["ConnectedClients"],
+	Pause[1];
+	Map[
 		SocketReadMessage
+		/* Echo
 		/* parseRPC
 		/* handleRequest (* Sends response *)
+		/* Function[{serverStatus},
+			Switch[serverStatus,
+				{"Continue"},
+					 Nothing,
+				{"Stop", reason_},
+					Return[Last@serverStatus],
+				_,
+					Nothing
+			]
+		],
+		connection["ConnectedClients"]
 	];
-	Switch[serverStatus,
-		{"Continue"},
-			 WLServerListen[connection],
-		{"Stop", reason_},
-			Last@serverStatus
-	]
-];
+	WLServerListen[connection]
+]];
 
 
 (* JSON-RPC *)
 
 RPCPatterns = <|
-	"HeaderByteArray" -> PatternSequence[__, 10, 13, 10, 13],
+	"HeaderByteArray" -> PatternSequence[__, 13, 10, 13, 10],
 	"ContentLengthRule" -> "Content-Length: "~~length_NumberString~~"\r\n" :> length,
 	"ContentTypeRule" -> "Content-Type: "~~type_~~"\r\n" :> type
 |>;
@@ -68,10 +74,10 @@ parseRPC[msgbytes_ByteArray] := Module[
 		headerString, jsonString,
 		msgstring, msg
 	},
-	
-	{headerBytes, jsonBytes} = Replace[
+	Echo @ msgbytes;
+	{headerBytes, jsonBytes} = Echo @ Replace[
 		Normal @ msgbytes,
-		{headerBytes:RPCpatterns["HeaderByteArray"], jsonBytes__} -> {ByteArray@{headerBytes}, ByteArray@{jsonBytes}}
+		{headerBytesPattern:RPCPatterns["HeaderByteArray"], jsonBytesPattern__} :> {ByteArray@{headerBytesPattern}, ByteArray@{jsonBytesPattern}}
 	];
 	
 	headerString = ByteArrayToString[headerBytes, "ASCII"];
