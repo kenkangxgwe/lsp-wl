@@ -42,6 +42,11 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 		newMsg, serverStatus, client, newState = state
 	},
 	Pause[1];
+	
+	If[Length[connection["ConnectedClients"]] == 0,
+		Return[WLServerListen[connection, newState]]
+	];
+	
 	(client = First @ connection["ConnectedClients"])
 	// SocketReadMessage
 	/* parseRPC
@@ -72,7 +77,7 @@ parseRPC[msgbytes_ByteArray] := Module[
 	},
 	{headerBytes, jsonBytes} = Replace[
 		Normal @ msgbytes,
-		{headerBytesPattern:RPCPatterns["HeaderByteArray"], jsonBytesPattern__} :> {ByteArray@{headerBytesPattern}, ByteArray@{jsonBytesPattern}}
+		{headerBytesPattern:RPCPatterns["HeaderByteArray"], jsonBytesPattern___} :> {ByteArray@{headerBytesPattern}, ByteArray@{jsonBytesPattern}}
 	];
 	
 	headerString = ByteArrayToString[headerBytes, "ASCII"];
@@ -113,7 +118,7 @@ handleRequest[client_SocketObject, msg_Association, state_Association] := Module
 		(* notification *)
 		Switch[method,
 			"initialized",
-				AssociateTo[newState, "initialized" -> True;
+				AssociateTo[newState, "initialized" -> True];
 				Echo@newState,
 			_,
 				Echo["The notification method is invalid or not implemented"];
