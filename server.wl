@@ -41,6 +41,7 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	{
 		newMsg, serverStatus, client, newState = state
 	},
+	
 	Pause[1];
 	
 	If[Length[connection["ConnectedClients"]] == 0,
@@ -51,7 +52,7 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	// SocketReadMessage
 	/* parseRPC
 	/* ((Echo@Iconize[#, #["method"]];#)&)
-	/* (handleRequest[client, #, state]&) (* Sends response *)
+	/* (handleMessage[client, #, newState]&) (* includes sending response *)
 	/* (Set[serverStatus, #]&);
 	If[First @ serverStatus === "Stop",
 		Return[Last@serverStatus],
@@ -61,7 +62,9 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 ]];
 
 
-(* JSON-RPC *)
+(* ::Section:: *)
+(*JSON - RPC*)
+
 
 RPCPatterns = <|
 	"HeaderByteArray" -> PatternSequence[__, 13, 10, 13, 10],
@@ -75,6 +78,7 @@ parseRPC[msgbytes_ByteArray] := Module[
 		headerString, jsonString,
 		msgstring, msg
 	},
+	
 	{headerBytes, jsonBytes} = Replace[
 		Normal @ msgbytes,
 		{headerBytesPattern:RPCPatterns["HeaderByteArray"], jsonBytesPattern___} :> {ByteArray@{headerBytesPattern}, ByteArray@{jsonBytesPattern}}
@@ -89,65 +93,55 @@ constructRPC[msg_Association] := Module[
 	{
 		headerBytes, jsonBytes
 	},
+	
 	jsonBytes = ExportByteArray[msg, "RawJSON"];
 	headerBytes = StringToByteArray["Content-Length: " <> ToString[Length[jsonBytes]] <> "\r\n\r\n"];
 	headerBytes ~Join~ jsonBytes
 ];
 
 
-(* Handle Requests *)
+(* ::Section:: *)
+(*Handle Message*)
 
-handleRequest[client_SocketObject, msg_Association, state_Association] := Module[
+
+NotificationQ[msg_Association] := MissingQ[msg["id"]];
+
+handleMessage[client_SocketObject, msg_Association, state_Association] := Module[
 	{
-		method, response, newState = state
+		method, response, newState = state, serverStatus
 	},
+	
 	method = msg["method"];
-	If[state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
-		sendResponse[
-			client,
-			msg["id"],
-			ServerError[
-				"ServerNotInitialized",
-				"The server is not initialized."
-			]
-		];
-		Return[{"Continue"}]
-	];
-	
-	If[MissingQ[msg["id"]],
-		(* notification *)
-		Switch[method,
-			"initialized",
-				AssociateTo[newState, "initialized" -> True];
-				Echo@newState,
-			_,
-				Echo["The notification method is invalid or not implemented"];
-				Echo@msg;
+	{serverStatus, response, newState} = Which[
+		(* wrong message before initialization *)
+		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
+		response = ServerError[
+			"ServerNotInitialized",
+			"The server is not initialized."
 		],
-		(* request *)
-		response = Switch[method,
-			"initialize",
-				handleInitialize[],
-			_,
-				ServerError[
-					msg["id"],
-					"MethodNotFound",
-					"The method is either invalid or not implemented."
-				]
-			];
-		sendResponse[client, msg["id"], response];
+		(* notification*)
+		NotificationQ[msg], handleNotification[method, msg, newState],
+		(* resquest *)
+		_,  handleRequest[method, msg, newState]
 	];
 	
-	{"Continue", newState}
+	sendResponse[client, msg["id"], response];
+	{serverStatus, newState}
 ];
 
 
-(* Send Responce *)
+(* ::Subsection::Closed:: *)
+(*Send Response*)
 
+
+(* no response for notification *)
+sendResponse[client_, reqid_, {}] := Nothing[];
+(* normal response *)
 sendResponse[client_, reqid_, {resType_, res_}] := Module[
 	{
 	
 	},
+	
 	<|"id" -> reqid, resType -> res|> 
 	// Echo
 	/* constructRPC
@@ -155,10 +149,73 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 ];
 
 
+(* ::Subsection::Closed:: *)
+(*Initialize*)
+
+
+handleRequest["initilize", msg_, state_] := Module[
+	{
+		newState = state
+	},
+	
+	{"Continue", {"result", <|"capabilities" -> <||>|>}, newState}
+];
+
+
+(* ::Subsection:: *)
+(*Initialized*)
+
+
+handleNotification["initialized", msg_, state_] := Module[
+	{
+		newState = state
+	},
+	
+	AssociateTo[newState, "initialized" -> True];
+	{"Continue", {}, newState}
+];
+
+
+(* ::Subsection::Closed:: *)
+(*Invalid Notification*)
+
+
+handleNotification[_, msg_, state_] := Module[
+	{
+		responseMsg
+	},
+	
+	responseMsg = "The notification is invalid or not implemented";
+	Echo[responseMsg];
+	Echo @ msg;
+	{"Continue", ServerError[responseMsg], state}
+];
+
+
+(* ::Subsection::Closed:: *)
+(*Invalid Request*)
+
+
+handleRequest[_, msg_, state_] := Module[
+	{
+		responseMsg
+	},
+	
+	responseMsg = "The request method is invalid or not implemented";
+	Echo[responseMsg];
+	Echo@msg;
+	{"Continue", ServerError[responseMsg], state}
+	];
+
+
+(* ::Subsection:: *)
+(*Handle Error*)
+
+
 (* Error Message *)
 
 ErrorDict = <|
-    "ParseError" -> -32700,
+	"ParseError" -> -32700,
 	"InvalidRequest" -> -32600,
 	"MethodNotFound" -> -32601,
 	"InvalidParams" -> -32602,
@@ -180,16 +237,6 @@ ServerError[errorCode_?ErrorTypeQ, msg_String] := {
 	|>
 };
 
-
-
-(* Initialize *)
-
-handleInitialize[] := Module[
-	{
-	
-	},
-	{"result", <|"capabilities" -> <||>|>}
-];
 
 
 End[];
