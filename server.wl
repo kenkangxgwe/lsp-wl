@@ -149,7 +149,7 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 ];
 
 
-(* ::Subsection::Closed:: *)
+(* ::Subsection:: *)
 (*Initialize*)
 
 
@@ -176,7 +176,7 @@ handleNotification["initialized", msg_, state_] := Module[
 ];
 
 
-(* ::Subsection::Closed:: *)
+(* ::Subsection:: *)
 (*Invalid Notification*)
 
 
@@ -188,11 +188,11 @@ handleNotification[_, msg_, state_] := Module[
 	responseMsg = "The notification is invalid or not implemented";
 	Echo[responseMsg];
 	Echo @ msg;
-	{"Continue", ServerError[responseMsg], state}
+	{"Continue", ServerError["MethodNotFound", responseMsg], state}
 ];
 
 
-(* ::Subsection::Closed:: *)
+(* ::Subsection:: *)
 (*Invalid Request*)
 
 
@@ -204,7 +204,7 @@ handleRequest[_, msg_, state_] := Module[
 	responseMsg = "The request method is invalid or not implemented";
 	Echo[responseMsg];
 	Echo@msg;
-	{"Continue", ServerError[responseMsg], state}
+	{"Continue", ServerError["MethodNotFound", responseMsg], state}
 	];
 
 
