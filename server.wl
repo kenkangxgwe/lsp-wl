@@ -20,7 +20,9 @@ WLServerStart::usage = "WLServerStart[] starts a Wolfram Language Server with gi
 Begin["`Private`"];
 
 
-InitialState = <|"initialized" -> "False"|>;
+(* openedFile represents all the opened files in a list of associations.
+The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
+InitialState = <|"initialized" -> "False", "openedFile" -> {}|>;
 
 Options[WLServerStart] = {
 	"Port" -> 6009
