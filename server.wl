@@ -46,7 +46,7 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	
 	client = SelectFirst[connection["ConnectedClients"], SocketReadyQ]; (* SocketWaitNext does not work in 11.3 *)
 	If[MissingQ[client],
-	Pause[1];
+		Pause[1];
 		Return[WLServerListen[connection, newState]]
 	];
 	
@@ -150,7 +150,7 @@ handleMessage[client_SocketObject, msg_Association, state_Association] := Module
 ];
 
 
-(* ::Subsection::Closed:: *)
+(* ::Subsection:: *)
 (*Send Response*)
 
 
@@ -212,8 +212,8 @@ handleNotification[_, msg_, state_] := Module[
 	
 	responseMsg = "The notification is invalid or not implemented";
 	Echo[responseMsg];
-	Echo @ msg;
-	{"Continue", ServerError["MethodNotFound", responseMsg], state}
+	(*Echo @ msg;*)
+	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
 ];
 
 
