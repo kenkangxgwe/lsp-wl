@@ -13,7 +13,7 @@
         "vscode": "^1.25.0"
     },
     "activationEvents": [
-        "onLanguage:plaintext"
+        "onLanguage:wolfram"
     ],
     "main": "./out/extension",
     "contributes": {
@@ -45,7 +45,12 @@
                     "description": "Path to Wolfram Kernel."
                 }
             }
-        }
+        },
+        "languages": [{
+            "id": "wolfram",
+            "aliases": ["Wolfram Language", "wolfram", "Mathematica", "mathematica", "wolframscript"],
+            "extensions": [".m",".nb",".wl",".wls"]
+        }]
     },
     "scripts": {
         "update-vscode": "vscode-install",

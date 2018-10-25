@@ -35,7 +35,7 @@ export function activate(context: ExtensionContext): void {
     };
 
     let clientOptions: LanguageClientOptions = {
-        documentSelector: ["mydsl"],
+        documentSelector: ["wolfram"],
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher("**/*.*")
         }
