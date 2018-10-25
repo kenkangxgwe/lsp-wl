@@ -44,13 +44,13 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 		newMsg, serverStatus, client, newState = state
 	},
 	
+	client = SelectFirst[connection["ConnectedClients"], SocketReadyQ]; (* SocketWaitNext does not work in 11.3 *)
+	If[MissingQ[client],
 	Pause[1];
-	
-	If[Length[connection["ConnectedClients"]] == 0,
 		Return[WLServerListen[connection, newState]]
 	];
 	
-	(client = First @ connection["ConnectedClients"])
+	client
 	// SocketReadMessage
 	/* parseRPC
 	/* Prepend[{"Continue", state}] (* initial parameter for Fold *)
