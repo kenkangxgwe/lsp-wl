@@ -53,13 +53,16 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	(client = First @ connection["ConnectedClients"])
 	// SocketReadMessage
 	/* parseRPC
-	/* ((Echo@Iconize[#, #["method"]];#)&)
-	/* (handleMessage[client, #, newState]&) (* includes sending response *)
-	/* (Set[serverStatus, #]&);
+	/* Prepend[{"Continue", state}] (* initial parameter for Fold *)
+	/* Fold[handleMessage[client]] (* handle messages and send responses one by one *)
+	/* Catch (* Catch early stop *)
+	/* ((serverStatus = #)&);
+
 	If[First @ serverStatus === "Stop",
 		Return[Last@serverStatus],
 		newState = Last @ serverStatus
 	];
+	
 	WLServerListen[connection, newState]
 ]];
 
@@ -70,25 +73,33 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 
 RPCPatterns = <|
 	"HeaderByteArray" -> PatternSequence[__, 13, 10, 13, 10],
-	"ContentLengthRule" -> "Content-Length: "~~length_NumberString~~"\r\n" :> length,
+	"SequenceSplitPattern" -> {13, 10, 13, 10},
+	"ContentLengthRule" -> "Content-Length: "~~length:NumberString~~"\r\n" :> length,
 	"ContentTypeRule" -> "Content-Type: "~~type_~~"\r\n" :> type
 |>;
 
+parseRPC[{}] = {};
 parseRPC[msgbytes_ByteArray] := Module[
 	{
-		headerBytes, jsonBytes,
+		headerEndPosition,
+		headerBytes, restBytes,
+		jsonByteLength, jsonBytes,
 		headerString, jsonString,
 		msgstring, msg
 	},
 	
-	{headerBytes, jsonBytes} = Replace[
-		Normal @ msgbytes,
-		{headerBytesPattern:RPCPatterns["HeaderByteArray"], jsonBytesPattern___} :> {ByteArray@{headerBytesPattern}, ByteArray@{jsonBytesPattern}}
+	headerEndPosition = SequencePosition[Normal @ msgbytes, RPCPatterns["SequenceSplitPattern"], 1];
+	headerEndPosition = If[Length[headerEndPosition] == 1,
+		Last @ First @ headerEndPosition,
+		Return[{}]
 	];
+
+	{headerBytes, restBytes} = ByteArray /@ TakeDrop[Normal @ msgbytes, headerEndPosition];
 	
 	headerString = ByteArrayToString[headerBytes, "ASCII"];
-	(* TODO: parse headerString and validate jsonBytes *)
-	msg = ImportByteArray[jsonBytes,"RawJSON"]
+	jsonByteLength = ToExpression @ First @ StringCases[headerString, RPCPatterns["ContentLengthRule"]];
+	{jsonBytes, restBytes} = ByteArray /@ TakeDrop[Normal @ restBytes, jsonByteLength];
+	Prepend[parseRPC[restBytes], ImportByteArray[jsonBytes, "RawJSON"]]
 ];
 
 constructRPC[msg_Association] := Module[
@@ -108,12 +119,19 @@ constructRPC[msg_Association] := Module[
 
 NotificationQ[msg_Association] := MissingQ[msg["id"]];
 
+handleMessage[client_SocketObject][{"Stop", state_Association}, msg_Association] := 
+	Throw[{"Stop", state}];
+
+handleMessage[client_SocketObject][{"Continue", state_Association}, msg_Association] := 
+	handleMessage[client, msg, state];
+
 handleMessage[client_SocketObject, msg_Association, state_Association] := Module[
 	{
 		method, response, newState = state, serverStatus
 	},
 	
 	method = msg["method"];
+	Echo@Iconize[msg, method];
 	{serverStatus, response, newState} = Which[
 		(* wrong message before initialization *)
 		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
@@ -124,7 +142,7 @@ handleMessage[client_SocketObject, msg_Association, state_Association] := Module
 		(* notification*)
 		NotificationQ[msg], handleNotification[method, msg, newState],
 		(* resquest *)
-		_,  handleRequest[method, msg, newState]
+		True, handleRequest[method, msg, newState]
 	];
 	
 	sendResponse[client, msg["id"], response];
