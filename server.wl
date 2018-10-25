@@ -155,12 +155,17 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 (*Initialize*)
 
 
-handleRequest["initilize", msg_, state_] := Module[
+handleRequest["initialize", msg_, state_] := Module[
 	{
 		newState = state
 	},
-	
-	{"Continue", {"result", <|"capabilities" -> <||>|>}, newState}
+
+	{"Continue", {"result", <|
+		"capabilities" -> <|
+			"textDocumentSync" -> 1,
+			"hoverProvider" -> True
+		|>
+	|>}, newState}
 ];
 
 
