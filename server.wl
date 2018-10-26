@@ -22,7 +22,7 @@ Begin["`Private`"];
 
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
-InitialState = <|"initialized" -> "False", "openedFile" -> {}|>;
+InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;
 
 Options[WLServerStart] = {
 	"Port" -> 6009
@@ -180,7 +180,7 @@ handleRequest["initialize", msg_, state_] := Module[
 
 	{"Continue", {"result", <|
 		"capabilities" -> <|
-			"textDocumentSync" -> 1,
+			"textDocumentSync" -> 2,
 			"hoverProvider" -> True
 		|>
 	|>}, newState}
@@ -197,6 +197,24 @@ handleNotification["initialized", msg_, state_] := Module[
 	},
 	
 	AssociateTo[newState, "initialized" -> True];
+	{"Continue", {}, newState}
+];
+
+
+(* ::Subsection:: *)
+(*textSync/DidOpen*)
+
+
+handleNotification["textDocument/didOpen", msg_, state_] := Module[
+	{
+		newState = state, doc
+	},
+	
+	doc = msg["params"]["textDocument"];
+	 AssociateTo[newState["openedDocs"], msg["params"]["textDocument"]["uri"] -> <|<|"text" -> msg["params"]["textDocument"]["text"], "version" -> msg["params"]["textDocument"]["version"]|>|>]; 
+	(*newState["openedDocs"] = Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>];*)
+	(*ReplacePart[newState, "openedDocs" -> Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>]]*);
+	Echo @ newState["openedDocs", doc["uri"]];
 	{"Continue", {}, newState}
 ];
 
