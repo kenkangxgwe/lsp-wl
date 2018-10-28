@@ -1,12 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const net = require("net");
 const vscode_jsonrpc_1 = require("vscode-jsonrpc");
@@ -34,23 +26,23 @@ function activate(context) {
         return Promise.resolve(result);
     };
     let clientOptions = {
-        documentSelector: ["mydsl"],
+        documentSelector: ["wolfram"],
         synchronize: {
             fileEvents: vscode_1.workspace.createFileSystemWatcher("**/*.*")
         }
     };
     // create the language client and start the client.
     let client = new vscode_languageclient_1.LanguageClient("WolframLanguageServer", "Wolfram Language Server", serverOptions, clientOptions);
-    var disposable2 = vscode_1.commands.registerCommand("mydsl.a.proxy", () => __awaiter(this, void 0, void 0, function* () {
-        let activeEditor = vscode_1.window.activeTextEditor;
-        if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== "mydsl") {
-            return;
-        }
-        if (activeEditor.document.uri instanceof vscode_1.Uri) {
-            vscode_1.commands.executeCommand("mydsl.a", activeEditor.document.uri.toString());
-        }
-    }));
-    context.subscriptions.push(disposable2);
+    // var disposable2:Disposable =commands.registerCommand("mydsl.a.proxy", async () => {
+    //     let activeEditor:TextEditor = window.activeTextEditor;
+    //     if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== "mydsl") {
+    //         return;
+    //     }
+    //     if (activeEditor.document.uri instanceof Uri) {
+    //         commands.executeCommand("mydsl.a", activeEditor.document.uri.toString());
+    //     }
+    // });
+    // context.subscriptions.push(disposable2);
     // enable tracing (.Off, .Messages, Verbose)
     client.trace = vscode_jsonrpc_1.Trace.Verbose;
     let disposable = client.start();

@@ -44,18 +44,18 @@ export function activate(context: ExtensionContext): void {
     // create the language client and start the client.
     let client:LanguageClient = new LanguageClient("WolframLanguageServer", "Wolfram Language Server", serverOptions, clientOptions);
 
-    var disposable2:Disposable =commands.registerCommand("mydsl.a.proxy", async () => {
-        let activeEditor:TextEditor = window.activeTextEditor;
-        if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== "mydsl") {
-            return;
-        }
+    // var disposable2:Disposable =commands.registerCommand("mydsl.a.proxy", async () => {
+    //     let activeEditor:TextEditor = window.activeTextEditor;
+    //     if (!activeEditor || !activeEditor.document || activeEditor.document.languageId !== "mydsl") {
+    //         return;
+    //     }
 
-        if (activeEditor.document.uri instanceof Uri) {
-            commands.executeCommand("mydsl.a", activeEditor.document.uri.toString());
-        }
-    });
+    //     if (activeEditor.document.uri instanceof Uri) {
+    //         commands.executeCommand("mydsl.a", activeEditor.document.uri.toString());
+    //     }
+    // });
 
-    context.subscriptions.push(disposable2);
+    // context.subscriptions.push(disposable2);
 
     // enable tracing (.Off, .Messages, Verbose)
     client.trace = Trace.Verbose;
