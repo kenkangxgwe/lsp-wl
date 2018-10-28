@@ -26,6 +26,7 @@ AppendTo[$Path, DirectoryName[$InputFileName]];
 
 WriteString[$Output, "Initializing Wolfram Language Server... "];
 SourceFiles = {
+	"specification.wl",
 	"server.wl"
 };
 
