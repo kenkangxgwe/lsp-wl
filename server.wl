@@ -2,7 +2,7 @@
 
 (* Wolfram Language Server *)
 (* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
-          huxianglong <hxianglong_at_gmail.com>
+           huxianglong <hxianglong_at_gmail.com>
 *)
 
 
@@ -16,6 +16,8 @@ ClearAll["WolframLanguageServer`Private`*"];
 
 (* Output Symbols *)
 WLServerStart::usage = "WLServerStart[] starts a Wolfram Language Server with given option association.";
+WLServerVersion::usage = "WLServerVersion[] gives the version of the current Wolfram Language Server.";
+WLServerDebug::usage = "WLServerDebug[] is a debug-only function to expose private context";
 
 
 (* Private Context *)
@@ -267,6 +269,16 @@ ServerError[errorCode_?ErrorTypeQ, msg_String] := {
 	|>
 };
 
+
+
+(* ::Section:: *)
+(*Misc*)
+
+
+WLServerVersion[] := "0.00";
+
+
+WLServerDebug[] := Print["This is a debug function."];
 
 
 End[];
