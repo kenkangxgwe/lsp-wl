@@ -71,3 +71,6 @@ typings/
 
 # Serverless directories
 .serverless
+
+# output for typescript
+**/out
