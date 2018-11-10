@@ -226,16 +226,67 @@ handleNotification["$/cancelRequest", msg_, state_] := Module[
 (*textSync/DidOpen*)
 
 
+(* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
 handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	{
 		newState = state, doc
 	},
 	
 	doc = msg["params"]["textDocument"];
-	 AssociateTo[newState["openedDocs"], msg["params"]["textDocument"]["uri"] -> <|<|"text" -> msg["params"]["textDocument"]["text"], "version" -> msg["params"]["textDocument"]["version"]|>|>]; 
-	(*newState["openedDocs"] = Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>];*)
-	(*ReplacePart[newState, "openedDocs" -> Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>]]*);
-	LogDebug @ newState["openedDocs", doc["uri"]];
+	AssociateTo[newState["openedDocs"], doc["uri"] -> 
+	<|<|"text" -> doc["text"], "version" -> doc["version"], 
+	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[doc["text"], "\n"], 1] |>|>]; 
+	Echo @ newState["openedDocs"] @ doc["uri"];
+	{"Continue", {}, newState}
+];
+
+
+(* ::Subsection:: *)
+(*textSync/DidChange*)
+
+
+handleNotification["textDocument/didChange", msg_, state_] := Module[
+	{
+		newState = state, doc, contentChanges, s, e, debug, getPos
+	},
+	debug = False;
+	doc = msg["params"]["textDocument"];
+	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
+	Assert[newState["openedDocs"][doc["uri"]]["version"] < doc["version"]];
+	newState["openedDocs"][doc["uri"]]["version"] = doc["version"];
+	(* There are three cases, delete, replace and add. *)
+	contentChanges = First @ msg["params"]["contentChanges"];
+	s = contentChanges["range"] @ "start";
+	e = contentChanges ["range"] @ "end";
+	getPos[r_] :=  newState["openedDocs"][doc["uri"]]["position"]~Part~(r["line"] + 1) 
+	+ r["character"];
+	If[debug,
+	Echo @ contentChanges;
+	Echo @ s;
+	Echo @ e;
+	Echo @ "This is position.";
+	Echo @ newState["openedDocs"][doc["uri"]]["position"];
+	Echo @ "This is full text";
+	Echo @ newState["openedDocs"][doc["uri"]]["text"];
+	Echo @ "This is position start and end";
+	Echo @ getPos[s];
+	Echo @ (getPos[e] - 1);
+	Echo @ "This is position string start and end";
+	Echo @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ getPos[s]);
+	Echo @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1));];
+	(* if new elements are added, the length is 0. *)
+	newState["openedDocs"][doc["uri"]]["text"] = 
+	If[contentChanges["rangeLength"] == 0, 
+	StringInsert[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
+	getPos[s]],
+	StringReplacePart[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
+	{getPos[s], getPos[e] - 1}]
+	];
+	(* Update the position *)
+	newState["openedDocs"][doc["uri"]] @ "position" = 
+	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1];
+	If [debug,
+	Echo @ newState["openedDocs"] @ doc["uri"];];
 	{"Continue", {}, newState}
 ];
 
