@@ -29,7 +29,8 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;
 
 Options[WLServerStart] = {
-	"Port" -> 6009
+	"Port" -> 6009,
+	"LogLevel" -> "Debug"
 };
 
 WLServerStart[o:OptionsPattern[]]:=Module[
@@ -38,8 +39,8 @@ WLServerStart[o:OptionsPattern[]]:=Module[
 		connection
 	},
 	
-	{port} = OptionValue[WLServerStart,o,{"Port"}];
-	Check[t`conn = connection = Echo @ SocketOpen[port], Nothing];
+	{port, LogLevel} = OptionValue[WLServerStart,o,{"Port", "LogLevel"}];
+	Check[t`conn = connection = LogInfo @ SocketOpen[port], Nothing];
 	Print[WLServerListen[connection, InitialState]];
 ];
 
@@ -135,7 +136,7 @@ handleMessage[client_SocketObject, msg_Association, state_Association] := Module
 	},
 	
 	method = msg["method"];
-	Echo@Iconize[msg, method];
+	LogDebug @ Iconize[msg, method];
 	{serverStatus, response, newState} = Which[
 		(* wrong message before initialization *)
 		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
@@ -167,7 +168,7 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 	},
 	
 	<|"id" -> reqid, resType -> res|> 
-	// Echo
+	// LogDebug
 	/* constructRPC
 	/* (BinaryWrite[client, #]&)
 ];
@@ -218,7 +219,7 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	 AssociateTo[newState["openedDocs"], msg["params"]["textDocument"]["uri"] -> <|<|"text" -> msg["params"]["textDocument"]["text"], "version" -> msg["params"]["textDocument"]["version"]|>|>]; 
 	(*newState["openedDocs"] = Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>];*)
 	(*ReplacePart[newState, "openedDocs" -> Append[newState["openedDocs"], doc["uri"] -> <|"text" -> doc["text"], "version" -> doc["version"]|>]]*);
-	Echo @ newState["openedDocs", doc["uri"]];
+	LogDebug @ newState["openedDocs", doc["uri"]];
 	{"Continue", {}, newState}
 ];
 
@@ -233,7 +234,7 @@ handleNotification[_, msg_, state_] := Module[
 	},
 	
 	responseMsg = "The notification is invalid or not implemented";
-	Echo[responseMsg];
+	LogError[responseMsg];
 	(*Echo @ msg;*)
 	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
 ];
@@ -249,8 +250,8 @@ handleRequest[_, msg_, state_] := Module[
 	},
 	
 	responseMsg = "The request method is invalid or not implemented";
-	Echo[responseMsg];
-	Echo@msg;
+	LogError[responseMsg];
+	LogDebug @ msg;
 	{"Continue", ServerError["MethodNotFound", responseMsg], state}
 	];
 
@@ -269,6 +270,21 @@ ServerError[errorCode_?ErrorTypeQ, msg_String] := {
 	|>
 };
 
+
+
+(* ::Section:: *)
+(*Logging*)
+
+
+(* Server side logging for debug usage *)
+LogLevels = {"Error", "Warn", "Info", "Debug"};
+LogLevel = "Debug";
+{LogError, LogWarn, LogInfo, LogDebug} = Module[
+	{levelno},
+	levelno = If[MissingQ[#], Length[LogLevels], First @ #]& @ FirstPosition[LogLevels, LogLevel];
+	Function[{lvl}, Echo[#, lvl, ##2]&] /@ LogLevels[[1;;levelno]]
+	~Join~ Table[Identity, Length[LogLevels] - levelno]
+];
 
 
 (* ::Section:: *)
