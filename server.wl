@@ -260,20 +260,21 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	e = contentChanges ["range"] @ "end";
 	getPos[r_] :=  newState["openedDocs"][doc["uri"]]["position"]~Part~(r["line"] + 1) 
 	+ r["character"];
-	If[debug,
-	Echo @ contentChanges;
-	Echo @ s;
-	Echo @ e;
-	Echo @ "This is position.";
-	Echo @ newState["openedDocs"][doc["uri"]]["position"];
-	Echo @ "This is full text";
-	Echo @ newState["openedDocs"][doc["uri"]]["text"];
-	Echo @ "This is position start and end";
-	Echo @ getPos[s];
-	Echo @ (getPos[e] - 1);
-	Echo @ "This is position string start and end";
-	Echo @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ getPos[s]);
-	Echo @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1));];
+	
+	LogDebug @ contentChanges;
+	LogDebug @ s;
+	LogDebug @ e;
+	LogDebug @ "This is position.";
+	LogDebug @ newState["openedDocs"][doc["uri"]]["position"];
+	LogDebug @ "This is full text";
+	LogDebug @ newState["openedDocs"][doc["uri"]]["text"];
+	LogDebug @ "This is position start and end";
+	LogDebug @ getPos[s];
+	LogDebug @ (getPos[e] - 1);
+	LogDebug @ "This is position string start and end";
+	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ getPos[s]);
+	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1));
+	
 	(* if new elements are added, the length is 0. *)
 	newState["openedDocs"][doc["uri"]]["text"] = 
 	If[contentChanges["rangeLength"] == 0, 
@@ -285,8 +286,9 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	(* Update the position *)
 	newState["openedDocs"][doc["uri"]] @ "position" = 
 	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1];
-	If [debug,
-	Echo @ newState["openedDocs"] @ doc["uri"];];
+
+	LogDebug @ newState["openedDocs"] @ doc["uri"];
+	
 	{"Continue", {}, newState}
 ];
 
