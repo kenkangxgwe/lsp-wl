@@ -25,10 +25,11 @@ You can execute the script from commandline or inside a notebook via:
 AppendTo[$Path, DirectoryName[$InputFileName]];
 
 WriteString[$Output, "Initializing Wolfram Language Server... "];
-SourceFiles = {
+(*SourceFiles = {
+	"logger.wl",
 	"specification.wl",
 	"server.wl"
-};
-
-Get /@ SourceFiles;
+};*)
+Get["server.wl"];
+(*Get /@ SourceFiles;*)
 WriteString[$Output, "Done"];

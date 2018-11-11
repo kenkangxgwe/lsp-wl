@@ -6,9 +6,7 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`", {
-	"WolframLanguageServer`Private`Specification`"
-}];
+BeginPackage["WolframLanguageServer`"];
 
 ClearAll["WolframLanguageServer`*"];
 ClearAll["WolframLanguageServer`Private`*"];
@@ -24,22 +22,27 @@ WLServerDebug::usage = "WLServerDebug[] is a debug-only function to expose priva
 Begin["`Private`"];
 
 
+<< "specification.wl";
+<< "logger.wl";
+
+
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;
 
 Options[WLServerStart] = {
 	"Port" -> 6009,
-	"LogLevel" -> "Debug"
+	"Logging" -> "Info"
 };
 
 WLServerStart[o:OptionsPattern[]]:=Module[
 	{
-		(*Options:*) port,
+		(*Options:*) port, loglevel, 
 		connection
 	},
 	
-	{port, LogLevel} = OptionValue[WLServerStart,o,{"Port", "LogLevel"}];
+	{port, loglevel} = OptionValue[WLServerStart,o,{"Port", "Logging"}];
+	SetLoggingLevel[loglevel];
 	Check[t`conn = connection = LogInfo @ SocketOpen[port], Nothing];
 	Print[WLServerListen[connection, InitialState]];
 ];
@@ -136,7 +139,7 @@ handleMessage[client_SocketObject, msg_Association, state_Association] := Module
 	},
 	
 	method = msg["method"];
-	LogDebug @ Iconize[msg, method];
+	LogInfo @ Iconize[msg, method];
 	{serverStatus, response, newState} = Which[
 		(* wrong message before initialization *)
 		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
@@ -168,7 +171,7 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 	},
 	
 	<|"id" -> reqid, resType -> res|> 
-	// LogDebug
+	// LogInfo
 	/* constructRPC
 	/* (BinaryWrite[client, #]&)
 ];
@@ -207,6 +210,19 @@ handleNotification["initialized", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
+(*$/cancelRequest*)
+
+
+handleNotification["$/cancelRequest", msg_, state_] := Module[
+	{
+		newState = state
+	},
+	
+	{"Continue", {}, newState}
+];
+
+
+(* ::Subsection:: *)
 (*textSync/DidOpen*)
 
 
@@ -233,7 +249,7 @@ handleNotification[_, msg_, state_] := Module[
 		responseMsg
 	},
 	
-	responseMsg = "The notification is invalid or not implemented";
+	responseMsg = "The notification " <> msg["method"] <> " is invalid or not implemented";
 	LogError[responseMsg];
 	(*Echo @ msg;*)
 	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
@@ -249,7 +265,7 @@ handleRequest[_, msg_, state_] := Module[
 		responseMsg
 	},
 	
-	responseMsg = "The request method is invalid or not implemented";
+	responseMsg = "The request method " <> msg["method"] <> " is invalid or not implemented";
 	LogError[responseMsg];
 	LogDebug @ msg;
 	{"Continue", ServerError["MethodNotFound", responseMsg], state}
@@ -270,21 +286,6 @@ ServerError[errorCode_?ErrorTypeQ, msg_String] := {
 	|>
 };
 
-
-
-(* ::Section:: *)
-(*Logging*)
-
-
-(* Server side logging for debug usage *)
-LogLevels = {"Error", "Warn", "Info", "Debug"};
-LogLevel = "Debug";
-{LogError, LogWarn, LogInfo, LogDebug} = Module[
-	{levelno},
-	levelno = If[MissingQ[#], Length[LogLevels], First @ #]& @ FirstPosition[LogLevels, LogLevel];
-	Function[{lvl}, Echo[#, lvl, ##2]&] /@ LogLevels[[1;;levelno]]
-	~Join~ Table[Identity, Length[LogLevels] - levelno]
-];
 
 
 (* ::Section:: *)

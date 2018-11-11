@@ -6,9 +6,9 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`Private`Specification`"];
+BeginPackage["WolframLanguageServer`Specification`"];
 
-ClearAll["WolframLanguageServer`Private`Specification`*"];
+ClearAll["WolframLanguageServer`Specification`*"];
 
 
 (* ::Section:: *)
