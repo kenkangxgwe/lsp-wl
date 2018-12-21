@@ -19,12 +19,12 @@ ReplaceKey[_, {} -> value_] := value;
 ReplaceKey[list_List, key_Integer -> value_] :=
 	ReplaceKey[list, {key} -> value];
 ReplaceKey[list_List, {key_Integer, keys___} -> value_] := 
-	ReplacePart[list, key -> ReplaceKey[Extract[key][list], keys -> value]];
+	ReplacePart[list, key -> ReplaceKey[Extract[key][list], {keys} -> value]];
 	
 ReplaceKey[assoc_Association, key_ -> value_] :=
 	ReplaceKey[assoc, {key} -> value];
 ReplaceKey[assoc_Association, {key_, keys___} -> value_] := 
-	ReplacePart[assoc, key -> ReplaceKey[Extract[key][assoc], keys -> value]];
+	ReplacePart[assoc, key -> ReplaceKey[Extract[key][assoc], {keys} -> value]];
 		
 DeclareType[typename_, typekey_Association] := Module[
 	{
@@ -34,7 +34,7 @@ DeclareType[typename_, typekey_Association] := Module[
 	ReplaceKey[typename[typedict_Association], key_String -> value_] :=
 		ReplaceKey[typename[typedict], {key} -> value];
 	ReplaceKey[typename[typedict_Association], {key_String, keys___} -> value_] := 
-		typename[ReplacePart[typedict, key -> ReplaceKey[typedict[key], keys -> value]]];
+		typename[ReplacePart[typedict, key -> ReplaceKey[typedict[key], {keys} -> value]]];
 ];
 
 
