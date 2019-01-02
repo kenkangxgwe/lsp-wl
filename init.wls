@@ -14,22 +14,27 @@ You can execute the script from commandline or inside a notebook via:
 *)
 
 
+AppendTo[$Path, DirectoryName[$InputFileName]];
+
+
 If[MemberQ[$ScriptCommandLine, "-h" | "--help"],
 	Print["
 This is a script file to initialize the Wolfram Language Server.
 You can execute the script from commandline or inside a notebook via:
 	Get[\"path/to/init.wls\"];"];
+	Return[];
+];
+
+If[MemberQ[$ScriptCommandLine, "-t" | "--test"],
+	Print["
+Running tests for all."];
+	
+	<< WolframLanguageServer`Test`RunTest`;
+	Print[WolframLanguageServer`Test`RunTest`TestRunAll[]];
 	Quit[];
 ];
 
-AppendTo[$Path, DirectoryName[$InputFileName]];
 
 WriteString[$Output, "Initializing Wolfram Language Server... "];
-(*SourceFiles = {
-	"logger.wl",
-	"specification.wl",
-	"server.wl"
-};*)
-Get["server.wl"];
-(*Get /@ SourceFiles;*)
+DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 WriteString[$Output, "Done"];

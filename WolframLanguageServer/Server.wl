@@ -6,10 +6,10 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`"];
+BeginPackage["WolframLanguageServer`Server"];
 
-ClearAll["WolframLanguageServer`*"];
-ClearAll["WolframLanguageServer`Private`*"];
+ClearAll["WolframLanguageServer`Server`*"];
+ClearAll["WolframLanguageServer`Server`Private`*"];
 
 
 (* Output Symbols *)
@@ -22,8 +22,8 @@ WLServerDebug::usage = "WLServerDebug[] is a debug-only function to expose priva
 Begin["`Private`"];
 
 
-<< "specification.wl";
-<< "logger.wl";
+Needs["WolframLanguageServer`Specification`"];
+Needs["WolframLanguageServer`Logger`"];
 
 
 (* openedFile represents all the opened files in a list of associations.
