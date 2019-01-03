@@ -43,6 +43,20 @@ VerificationTest[
 	stu1=ReplaceKey[stu1, {"courses", 2}->"COMP202"];
 	stu1["courses"],
 	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>
+],
+
+(* Association of DataType*)
+VerificationTest[
+	DeclareType[Class, <|"id" -> _Integer, "students" -> _Association|>];
+	class1 = Class[<|"id"->1, "students"-> <||>|>];
+	students = class1["students"];
+	students~AssociateTo~(
+	"ken" -> 
+	Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>]
+	);
+	class1 = ReplaceKey[class1, "students"-> students];
+	class1["students"]["ken"]["courses"],
+	<|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>
 ]
 };
 
