@@ -30,5 +30,9 @@ ErrorDict = <|
 
 ErrorTypeQ[type_String] := MemberQ[Keys[ErrorDict], type];
 
+(* ::Section:: *)
+(*Server Communication Related Type*)
+DeclareType[WorkState, <|"initialized" -> _?BooleanQ, "openedDocs" -> _Association|>];
+DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"->_List|>];
 
 EndPackage[];

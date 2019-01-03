@@ -30,9 +30,7 @@ Needs["WolframLanguageServer`DataType`"];
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 (*InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;*)
-DeclareType[WorkState, <|"initialized" -> _?BooleanQ, "openedDocs" -> _Association|>];
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>|>];
-DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"->_List|>];
 
 Options[WLServerStart] = {
 	"Port" -> 6009,
@@ -44,15 +42,11 @@ WLServerStart[o:OptionsPattern[]]:=Module[
 		(*Options:*) port, loglevel, 
 		connection
 	},
-LogDebug @ "Begin Server Start";
+	LogDebug @ "Begin Server Start";
 	{port, loglevel} = OptionValue[WLServerStart,o,{"Port", "Logging"}];
 	SetLoggingLevel[loglevel];
 	Check[t`conn = connection = LogInfo @ SocketOpen[port], Nothing];
-LogDebug @ "Before Listen";
-LogDebug @ InitialState;
 	Print[WLServerListen[connection, InitialState]];
-LogDebug @ "After Listen";
-LogDebug @ InitialState;
 ];
 
 WLServerListen[connection_, state_WorkState] := Block[{$RecursionLimit = Infinity}, Module[
@@ -74,9 +68,6 @@ WLServerListen[connection_, state_WorkState] := Block[{$RecursionLimit = Infinit
 	/* Catch (* Catch early stop *)
 	/* ((serverStatus = #)&);
 
-LogDebug @ "Before Stop";
-LogDebug @ "Nonsense";
-LogDebug @ First @ serverStatus;
 	If[First @ serverStatus === "Stop",
 		Return[Last@serverStatus],
 		newState = Last @ serverStatus
@@ -150,9 +141,6 @@ handleMessage[client_SocketObject, msg_Association, state_WorkState] := Module[
 	
 	method = msg["method"];
 	LogInfo @ Iconize[msg, method];
-	LogDebug @ "Begin Handle Message";
-	LogDebug @ "The message is";
-	LogDebug @ msg;
 	{serverStatus, response, newState} = Which[
 		(* wrong message before initialization *)
 		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
@@ -166,7 +154,6 @@ handleMessage[client_SocketObject, msg_Association, state_WorkState] := Module[
 		True, handleRequest[method, msg, newState]
 	];
 	sendResponse[client, msg["id"], response];
-	LogDebug @ "End Handle Message";
 	{serverStatus, newState}
 ];
 
@@ -250,20 +237,6 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	doc = msg["params"]["textDocument"];
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
-	LogDebug @ "newState is";
-	LogDebug @ newState;
-	LogDebug @ "initialized is";
-	LogDebug @ newState["initialized"];
-	LogDebug @ "openedDocs is";
-	LogDebug @ docs;
-	LogDebug @ "msg is";
-	LogDebug @ msg;
-	LogDebug @ "doc is";
-	LogDebug @ doc;
-	LogDebug @ msg["params"]["textDocument"];
-	LogDebug @ "position is";
-	LogDebug @ 
-Prepend[(1 + #)& /@ First /@ StringPosition[doc["text"], "\n"], 1];
 	docs~AssociateTo~(
 		doc["uri"] -> 
 		TextDocument[<|
