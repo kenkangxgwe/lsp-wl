@@ -31,7 +31,7 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 (*InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;*)
 DeclareType[WorkState, <|"initialized" -> _?BooleanQ, "openedDocs" -> _Association|>];
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>|>];
-DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"->_List, |>];
+DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"->_List|>];
 
 Options[WLServerStart] = {
 	"Port" -> 6009,
@@ -43,11 +43,13 @@ WLServerStart[o:OptionsPattern[]]:=Module[
 		(*Options:*) port, loglevel, 
 		connection
 	},
-	
+LogDebug @ "Begin Server Start";
 	{port, loglevel} = OptionValue[WLServerStart,o,{"Port", "Logging"}];
 	SetLoggingLevel[loglevel];
 	Check[t`conn = connection = LogInfo @ SocketOpen[port], Nothing];
+LogDebug @ "Before Listen";
 	Print[WLServerListen[connection, InitialState]];
+LogDebug @ "After Listen";
 ];
 
 WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infinity}, Module[
@@ -69,11 +71,12 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	/* Catch (* Catch early stop *)
 	/* ((serverStatus = #)&);
 
+LogDebug @ "Before Stop";
 	If[First @ serverStatus === "Stop",
 		Return[Last@serverStatus],
 		newState = Last @ serverStatus
 	];
-	
+LogDebug @ "After Stop";
 	WLServerListen[connection, newState]
 ]];
 
