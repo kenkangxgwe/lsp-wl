@@ -28,7 +28,10 @@ Needs["WolframLanguageServer`Logger`"];
 
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
-InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;
+(*InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;*)
+DeclareType[WorkState, <|"initialized" -> _?BooleanQ, "openedDocs" -> _Association|>];
+InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>|>];
+DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"->_List, |>];
 
 Options[WLServerStart] = {
 	"Port" -> 6009,
@@ -204,7 +207,8 @@ handleNotification["initialized", msg_, state_] := Module[
 		newState = state
 	},
 	
-	AssociateTo[newState, "initialized" -> True];
+	(* AssociateTo[newState, "initialized" -> True]; *)
+	ReplaceKey[newState, "initialized" -> True]
 	{"Continue", {}, newState}
 ];
 
@@ -229,14 +233,21 @@ handleNotification["$/cancelRequest", msg_, state_] := Module[
 (* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
 handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	{
-		newState = state, doc
+		newState = state, doc, docs
 	},
 	
 	doc = msg["params"]["textDocument"];
-	AssociateTo[newState["openedDocs"], doc["uri"] -> 
-	<|<|"text" -> doc["text"], "version" -> doc["version"], 
-	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[doc["text"], "\n"], 1] |>|>]; 
-	Echo @ newState["openedDocs"] @ doc["uri"];
+	(* get the association, modify and reinsert *)
+	docs = newState["openedDocs"];
+	docs~AssociateTo~(
+		doc["uri"] -> 
+		TextDocument[<|
+			"text" -> doc["text"], "version" -> doc["version"], 
+			"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[doc["text"], "\n"], 1] 
+		|>]
+	);
+	ReplaceKey[newState, "openedDocs" -> docs];
+	LogInfo @ newState["openedDocs"] @ doc["uri"];
 	{"Continue", {}, newState}
 ];
 
@@ -253,7 +264,8 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	doc = msg["params"]["textDocument"];
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
 	Assert[newState["openedDocs"][doc["uri"]]["version"] < doc["version"]];
-	newState["openedDocs"][doc["uri"]]["version"] = doc["version"];
+	(* newState["openedDocs"][doc["uri"]]["version"] = doc["version"]; *)
+	newState~ReplaceKey~({"openedDocs", doc["uri"], "version"} -> doc["version"]);
 	(* There are three cases, delete, replace and add. *)
 	contentChanges = First @ msg["params"]["contentChanges"];
 	s = contentChanges["range"] @ "start";
@@ -276,16 +288,21 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1));
 	
 	(* if new elements are added, the length is 0. *)
-	newState["openedDocs"][doc["uri"]]["text"] = 
-	If[contentChanges["rangeLength"] == 0, 
-	StringInsert[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
-	getPos[s]],
-	StringReplacePart[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
-	{getPos[s], getPos[e] - 1}]
-	];
+	(* newState["openedDocs"][doc["uri"]]["text"] =  *)
+	newState~ReplaceKey~(
+		{"openedDocs", doc["uri"], "text"} -> (
+		If[contentChanges["rangeLength"] == 0, 
+		StringInsert[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
+		getPos[s]],
+		StringReplacePart[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
+		{getPos[s], getPos[e] - 1}]]
+		)
+		);
 	(* Update the position *)
-	newState["openedDocs"][doc["uri"]] @ "position" = 
-	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1];
+	(* newState["openedDocs"][doc["uri"]] @ "position" =  *)
+	newState~ReplaceKey~(
+		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1];
+		);
 
 	LogDebug @ newState["openedDocs"] @ doc["uri"];
 	
