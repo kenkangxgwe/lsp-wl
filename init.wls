@@ -36,5 +36,6 @@ Running tests for all."];
 
 
 WriteString[$Output, "Initializing Wolfram Language Server... "];
+$ContextPath = DeleteCases[$ContextPath, _?(StringMatchQ["WolframLanguageServer`*"])]
 DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 WriteString[$Output, "Done"];

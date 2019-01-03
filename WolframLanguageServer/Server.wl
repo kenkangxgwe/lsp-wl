@@ -6,7 +6,7 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`Server"];
+BeginPackage["WolframLanguageServer`Server`"];
 
 ClearAll["WolframLanguageServer`Server`*"];
 ClearAll["WolframLanguageServer`Server`Private`*"];
