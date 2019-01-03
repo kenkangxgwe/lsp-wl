@@ -52,7 +52,7 @@ LogDebug @ "Before Listen";
 LogDebug @ "After Listen";
 ];
 
-WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infinity}, Module[
+WLServerListen[connection_, state_WorkState] := Block[{$RecursionLimit = Infinity}, Module[
 	{
 		newMsg, serverStatus, client, newState = state
 	},
@@ -72,6 +72,8 @@ WLServerListen[connection_, state_Association] := Block[{$RecursionLimit = Infin
 	/* ((serverStatus = #)&);
 
 LogDebug @ "Before Stop";
+LogDebug @ "Nonsense";
+LogDebug @ First @ serverStatus;
 	If[First @ serverStatus === "Stop",
 		Return[Last@serverStatus],
 		newState = Last @ serverStatus
