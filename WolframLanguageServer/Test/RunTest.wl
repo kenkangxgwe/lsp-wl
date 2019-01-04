@@ -5,7 +5,8 @@ Construct[ClearAll, Context[] <> "*"];
 
 
 TestContexts = {
-	"WolframLanguageServer`Test`DataTypeTest`"
+	"WolframLanguageServer`Test`DataTypeTest`",
+	"WolframLanguageServer`Test`TextDocumentTest`"
 };
 TestRunContext::usage = "Run tests for given context.";
 TestRunAll::usage = "Run tests for all the contexts below:\n\t" <> StringRiffle[TestContexts, "\n\t"];
@@ -40,7 +41,7 @@ ShowTestReport[report_TestReportObject, context_String] := Column[{
 
 
 ShowTestResult[result_TestResultObject] := (
-	Dataset[result[result["Properties"]]]
+	Grid[KeyValueMap[List, result[result["Properties"]]], Dividers->{Center, {1 -> True, -1 -> True}}, Alignment -> Left]
 );
 
 
