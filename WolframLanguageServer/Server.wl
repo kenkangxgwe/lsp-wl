@@ -27,9 +27,11 @@ Needs["WolframLanguageServer`Logger`"];
 Needs["WolframLanguageServer`DataType`"];
 
 
+(* ::Section:: *)
+(*Start Server*)
+
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
-(*InitialState = <|"initialized" -> "False", "openedDocs" -> <||>|>;*)
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>|>];
 
 Options[WLServerStart] = {
@@ -177,6 +179,9 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 ];
 
 
+(* ::Section:: *)
+(*Handle Requests*)
+
 (* ::Subsection:: *)
 (*Initialize*)
 
@@ -193,6 +198,51 @@ handleRequest["initialize", msg_, state_] := Module[
 		|>
 	|>}, newState}
 ];
+
+
+(* ::Subsection:: *)
+(*hover*)
+handleRequest["textDocument/hover", msg_, state_] := Module[
+	{
+		newState = state, pos, token, genUri
+	},
+	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
+	LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]);
+	LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]);
+	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
+	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
+	LogDebug @ ("Token head is: " <> Head[token] // ToString);
+	(* LogDebug @ ("Hover over token usage: " <> ToString[(#::usage &) @ Symbol[token]]); *)
+	LogDebug @ ("Names of token: " <> Names[token]);
+	genUri[t_] := "[" <> "Website Reference: " <> t <> "]" <> "(https://reference.wolfram.com/language/ref/" <> t <> ".html)"; 
+	{"Continue", {"result", <|
+		"contents" -> (
+			If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] 
+		) 
+		(* "range" -> <|"start" -> msg["params"]["position"], "end" ->  msg["params"]["position"]|> *)
+	|>}, newState}
+];
+
+
+
+(* ::Subsection:: *)
+(*Invalid Request*)
+
+
+handleRequest[_, msg_, state_] := Module[
+	{
+		responseMsg
+	},
+	
+	responseMsg = "The request method " <> msg["method"] <> " is invalid or not implemented";
+	LogError[responseMsg];
+	LogDebug @ msg;
+	{"Continue", ServerError["MethodNotFound", responseMsg], state}
+	];
+
+
+(* ::Section:: *)
+(*Handle Notifications*)
 
 
 (* ::Subsection:: *)
@@ -232,7 +282,6 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	{
 		newState = state, doc, docs
 	},
-	
 	LogDebug @ "Begin Handle DidOpen.";
 	doc = msg["params"]["textDocument"];
 	(* get the association, modify and reinsert *)
@@ -245,10 +294,26 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 		|>]
 	);
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
-	LogInfo @ newState["openedDocs"] @ doc["uri"];
+	LogInfo @ ("Opened Document " <> doc["uri"]);
 	{"Continue", {}, newState}
 ];
 
+(* ::Subsection:: *)
+(*textSync/DidClose*)
+
+
+handleNotification["textDocument/didClose", msg_, state_] := Module[
+	{
+		newState = state, uri, docs
+	},
+	uri = msg["params"]["textDocument"]["uri"];
+	(* get the association, modify and reinsert *)
+	docs = newState["openedDocs"];
+	docs~KeyDropFrom~uri;
+	newState = ReplaceKey[newState, "openedDocs" -> docs];
+	LogInfo @ ("Close Document " <> uri);
+	{"Continue", {}, newState}
+]
 
 (* ::Subsection:: *)
 (*textSync/DidChange*)
@@ -271,7 +336,7 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	getPos[r_] :=  newState["openedDocs"][doc["uri"]]["position"]~Part~(r["line"] + 1) 
 	+ r["character"];
 	
-	LogDebug @ contentChanges;
+	(* LogDebug @ contentChanges;
 	LogDebug @ s;
 	LogDebug @ e;
 	LogDebug @ "This is position.";
@@ -283,10 +348,9 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	LogDebug @ (getPos[e] - 1);
 	LogDebug @ "This is position string start and end";
 	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ getPos[s]);
-	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1));
+	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1)); *)
 	
 	(* if new elements are added, the length is 0. *)
-	(* newState["openedDocs"][doc["uri"]]["text"] =  *)
 	newState = newState~ReplaceKey~(
 		{"openedDocs", doc["uri"], "text"} -> (
 		If[contentChanges["rangeLength"] == 0, 
@@ -297,14 +361,14 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 		)
 		);
 	(* Update the position *)
-	(* newState["openedDocs"][doc["uri"]] @ "position" =  *)
-	newState~ReplaceKey~(
+	newState = newState~ReplaceKey~(
 		{"openedDocs", doc["uri"], "position"} -> (
-		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1];
+		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1]
 		)
 		);
 
 	LogDebug @ newState["openedDocs"] @ doc["uri"];
+	LogInfo @ ("Change Document " <> doc["uri"]);
 	
 	{"Continue", {}, newState}
 ];
@@ -325,21 +389,6 @@ handleNotification[_, msg_, state_] := Module[
 	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
 ];
 
-
-(* ::Subsection:: *)
-(*Invalid Request*)
-
-
-handleRequest[_, msg_, state_] := Module[
-	{
-		responseMsg
-	},
-	
-	responseMsg = "The request method " <> msg["method"] <> " is invalid or not implemented";
-	LogError[responseMsg];
-	LogDebug @ msg;
-	{"Continue", ServerError["MethodNotFound", responseMsg], state}
-	];
 
 
 (* ::Subsection:: *)
