@@ -194,7 +194,8 @@ handleRequest["initialize", msg_, state_] := Module[
 	{"Continue", {"result", <|
 		"capabilities" -> <|
 			"textDocumentSync" -> 2,
-			"hoverProvider" -> True
+			"hoverProvider" -> True,
+			"completionProvider" -> <|"resolveProvider" -> False, "triggerChracters" -> Append[CharacterRange["A", "Z"], "$"]|>
 		|>
 	|>}, newState}
 ];
@@ -202,26 +203,58 @@ handleRequest["initialize", msg_, state_] := Module[
 
 (* ::Subsection:: *)
 (*hover*)
+
+
+(*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
+(*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
 handleRequest["textDocument/hover", msg_, state_] := Module[
 	{
 		newState = state, pos, token, genUri
 	},
 	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
-	LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]);
-	LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]);
 	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
-	LogDebug @ ("Token head is: " <> Head[token] // ToString);
+	(* LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]); *)
+	(* LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]); *)
+	(* LogDebug @ ("Token head is: " <> Head[token] // ToString); *)
 	(* LogDebug @ ("Hover over token usage: " <> ToString[(#::usage &) @ Symbol[token]]); *)
-	LogDebug @ ("Names of token: " <> Names[token]);
+	(* LogDebug @ ("Names of token: " <> Names[token]); *)
 	genUri[t_] := "[" <> "Website Reference: " <> t <> "]" <> "(https://reference.wolfram.com/language/ref/" <> t <> ".html)"; 
+	(*generate a picture, which is redundant at the moment.*)
+	(* genImg[] := "![test](https://github.com/adam-p/markdown-here/raw/master/src/common/images/icon48.png)"; *)
 	{"Continue", {"result", <|
 		"contents" -> (
+			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token] <> "\n" <> genImg[]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] 
-		) 
+			(* <|"kind" -> "markdown", "value" -> *)
+			(* If[Names[token] === {}, token, (ExportString[Style[(#::usage &)@Symbol[token], White], "SVG"] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] |> *)
+		)
 		(* "range" -> <|"start" -> msg["params"]["position"], "end" ->  msg["params"]["position"]|> *)
 	|>}, newState}
 ];
+
+
+(* ::Subsection:: *)
+(*completion*)
+
+
+handleRequest["textDocument/completion", msg_, state_] := Module[
+	{
+		newState = state, p, pos, token, genAssc
+	},
+	p = msg["params"]["position"];
+	(*The position is tricky here, we have to read one character ahead.*)
+	pos = LspPosition[<|"line" -> p["line"], "character" -> If[# > 0, # - 1, #]& @ p["character"]|>];
+	(*Token is a patten here.*)
+	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos] <> "*";
+	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
+	genAssc[t_] := <|"label" -> t|>;
+	{"Continue", {"result", <|
+		"isIncomplete" -> False, 
+		"items" -> genAssc /@ Names[token] 
+		|>}, newState}
+];
+
 
 
 
