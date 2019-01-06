@@ -33,6 +33,10 @@ Needs["WolframLanguageServer`DataType`"];
 (* openedFile represents all the opened files in a list of associations.
 The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>|>];
+(*Place where the temporary img would be stored, delete after usage.*)
+(* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
+(* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
+(* If[!FileExistsQ[tempImgPath], CreateFile[tempImgPath], ]; *)
 
 Options[WLServerStart] = {
 	"Port" -> 6009,
@@ -47,6 +51,18 @@ WLServerStart[o:OptionsPattern[]]:=Module[
 	LogDebug @ "Begin Server Start";
 	{port, loglevel} = OptionValue[WLServerStart,o,{"Port", "Logging"}];
 	SetLoggingLevel[loglevel];
+	If[FileExistsQ[Last @ $Path <> "Cache"], LogError @ "Please delete a file named cache in working directory first."];
+	(*Temporary cache.*)
+	tempDirPath = Last @ $Path <> "Cache" <> $PathnameSeparator;
+	(*Clear the cache of last time usage.*)
+	If[DirectoryQ[tempDirPath], DeleteDirectory[tempDirPath, DeleteContents -> True], ];
+	(*Create temporary file.*)
+	If[!DirectoryQ[tempDirPath], 
+		If[CreateDirectory[tempDirPath] == $Failed, 
+		(LogError @ "Create cache directory failed, please make sure there is no file named cache in the working directory."; Return[]),
+		],
+	];
+	LogDebug @ ("Cache: " <> tempDirPath);
 	Check[t`conn = connection = LogInfo @ SocketOpen[port], Nothing];
 	Print[WLServerListen[connection, InitialState]];
 ];
@@ -209,23 +225,36 @@ handleRequest["initialize", msg_, state_] := Module[
 (*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
 handleRequest["textDocument/hover", msg_, state_] := Module[
 	{
-		newState = state, pos, token, genUri
+		newState = state, pos, token, genUri, tmp, tempImgPath
 	},
 	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
 	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
+	If[token === "", Return[
+	{"Continue", {"result", <|
+		"contents" -> token
+	|>}, newState}]
+	];
+	genUri[t_] := "Website Reference: [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)"; 
+	genImg[] := (
+		tmp = CreateUUID[]; 
+		tempImgPath = tempDirPath <> tmp <> ".svg";
+		Export[tempImgPath, Style[#, White]& @* (#::usage&) @ Symbol[token]];
+		"![test](" <> tempImgPath <> ")"
+		);
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
 	(* LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]); *)
 	(* LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]); *)
 	(* LogDebug @ ("Token head is: " <> Head[token] // ToString); *)
 	(* LogDebug @ ("Hover over token usage: " <> ToString[(#::usage &) @ Symbol[token]]); *)
-	(* LogDebug @ ("Names of token: " <> Names[token]); *)
-	genUri[t_] := "[" <> "Website Reference: " <> t <> "]" <> "(https://reference.wolfram.com/language/ref/" <> t <> ".html)"; 
+	LogDebug @ ("Names of token: " <> Names[token]);
+	LogDebug @ ("Cache file : " <> genImg[]);
 	(*generate a picture, which is redundant at the moment.*)
-	(* genImg[] := "![test](https://github.com/adam-p/markdown-here/raw/master/src/common/images/icon48.png)"; *)
+	(* genImg[] := "![test](file:///D:/Code/lsp-wl/test.png)"; *)
 	{"Continue", {"result", <|
 		"contents" -> (
+			If[Names[token] === {}, token,  (genImg[] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] 
 			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token] <> "\n" <> genImg[]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
-			If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] 
+			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			(* <|"kind" -> "markdown", "value" -> *)
 			(* If[Names[token] === {}, token, (ExportString[Style[(#::usage &)@Symbol[token], White], "SVG"] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] |> *)
 		)
