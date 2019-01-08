@@ -171,6 +171,7 @@ handleMessage[client_SocketObject, msg_Association, state_WorkState] := Module[
 		(* resquest *)
 		True, handleRequest[method, msg, newState]
 	];
+	(* LogDebug @ (ToString @ response); *)
 	sendResponse[client, msg["id"], response];
 	{serverStatus, newState}
 ];
@@ -185,14 +186,23 @@ sendResponse[client_, reqid_, {}] := Nothing[];
 (* normal response *)
 sendResponse[client_, reqid_, {resType_, res_}] := Module[
 	{
-	
+		id
 	},
-	
-	<|"id" -> reqid, resType -> res|> 
+		If[MissingQ[reqid],
+        <|
+			"method" -> "textDocument/publishDiagnostics",
+			resType -> res
+		|>,
+		<|
+			"id" -> reqid,
+			resType -> res
+		|>
+		]
 	// LogInfo
 	/* constructRPC
 	/* (BinaryWrite[client, #]&)
 ];
+
 
 
 (* ::Section:: *)
@@ -217,6 +227,7 @@ handleRequest["initialize", msg_, state_] := Module[
 ];
 
 
+
 (* ::Subsection:: *)
 (*hover*)
 
@@ -228,6 +239,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		newState = state, pos, token, genUri, tmp, tempImgPath
 	},
 	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
+	(* The head of token is String *)
 	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	If[token === "", Return[
 	{"Continue", {"result", <|
@@ -247,19 +259,26 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	(* LogDebug @ ("Token head is: " <> Head[token] // ToString); *)
 	(* LogDebug @ ("Hover over token usage: " <> ToString[(#::usage &) @ Symbol[token]]); *)
 	LogDebug @ ("Names of token: " <> Names[token]);
-	LogDebug @ ("Cache file : " <> genImg[]);
+	(* LogDebug @ ("Cache file : " <> genImg[]); *)
 	(*generate a picture, which is redundant at the moment.*)
 	(* genImg[] := "![test](file:///D:/Code/lsp-wl/test.png)"; *)
-	{"Continue", {"result", <|
-		"contents" -> (
-			If[Names[token] === {}, token,  (genImg[] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] 
+	{"Continue", 
+		{"result", 
+		<| "contents" -> 
+			If[
+				(Names[token] != {}) || ((Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage")),
+				(genImg[] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n"),
+				token
+			 ] 
+		|>
+		},
+	newState}
 			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token] <> "\n" <> genImg[]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			(* <|"kind" -> "markdown", "value" -> *)
 			(* If[Names[token] === {}, token, (ExportString[Style[(#::usage &)@Symbol[token], White], "SVG"] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] |> *)
-		)
+		
 		(* "range" -> <|"start" -> msg["params"]["position"], "end" ->  msg["params"]["position"]|> *)
-	|>}, newState}
 ];
 
 
@@ -375,7 +394,41 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
 	LogInfo @ ("Close Document " <> uri);
 	{"Continue", {}, newState}
-]
+];
+
+
+diagnosticTextDocument[text_TextDocument, uri_String] := Module[
+	{
+		txt = text["text"], pos = text["position"], len, line, character
+	},
+	LogDebug @ "Begin Diagnostics";
+	len = SyntaxLength[txt];
+	If[len <= StringLength[txt], (
+		line = First @ FirstPosition[pos, u_ /; u > len] - 2; 
+		character = len - pos[[line + 1]];
+		<|
+			"uri" -> uri,
+			"diagnostics"  -> 
+			{
+				<|
+					"range" -> <|
+						"start" -> <|
+							"line" -> line, 
+							"character" -> character
+						|>,
+						"end" -> <|
+							"line" -> line, 
+							"character" -> character
+					|>
+				|>,
+				"source" -> "Wolfram",
+				"message" -> "Invalid syntax in or before the given position."
+				|>
+			}
+		|>
+	),
+	]
+];
 
 (* ::Subsection:: *)
 (*textSync/DidChange*)
@@ -431,8 +484,23 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 
 	LogDebug @ newState["openedDocs"] @ doc["uri"];
 	LogInfo @ ("Change Document " <> doc["uri"]);
-	
-	{"Continue", {}, newState}
+	(* LogDebug @ ("Last few string " <> ToString[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], InputForm]); *)
+	LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]);
+	LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]);
+	LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]);
+	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
+	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnosticTextDocument~doc["uri"])); *)
+	(*Give diagnostics when a new line is finished.*)
+	If[StringLength[newState["openedDocs"][doc["uri"]]["text"]] >= 2,
+		If[StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression],
+			(* {"Continue", {diagnosticTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
+			(* {"Continue", {}, newState} *)
+		(* ], *)
+		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnosticTextDocument~doc["uri"]}, newState},
+		{"Continue", {}, newState}
+		],
+		{"Continue", {}, newState}
+	]
 ];
 
 
