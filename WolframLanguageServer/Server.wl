@@ -397,7 +397,7 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 ];
 
 
-diagnosticTextDocument[text_TextDocument, uri_String] := Module[
+diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	{
 		txt = text["text"], pos = text["position"], len, line, character
 	},
@@ -489,14 +489,14 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]);
 	LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]);
 	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
-	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnosticTextDocument~doc["uri"])); *)
+	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"])); *)
 	(*Give diagnostics when a new line is finished.*)
 	If[StringLength[newState["openedDocs"][doc["uri"]]["text"]] >= 2,
 		If[StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression],
-			(* {"Continue", {diagnosticTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
+			(* {"Continue", {diagnoseTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
 			(* {"Continue", {}, newState} *)
 		(* ], *)
-		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnosticTextDocument~doc["uri"]}, newState},
+		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"]}, newState},
 		{"Continue", {}, newState}
 		],
 		{"Continue", {}, newState}
