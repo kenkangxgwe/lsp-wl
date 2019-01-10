@@ -19,7 +19,7 @@
     "contributes": {
         "configuration": {
             "type": "object",
-            "title": "Configuration for Wolfram Language Server",
+            "title": "Wolfram Language Server",
             "properties": {
                 "WolframLanguageServer.maxNumberOfProblems": {
                     "scope": "resource",
@@ -38,11 +38,23 @@
                     "default": "off",
                     "description": "Traces the communication between VS Code and the language server."
                 },
-                "WolframLanguageServer.wolfram.kernelPath": {
-                    "scope": "workspace",
+                "WolframLanguageServer.Port": {
+                    "scope": "user",
+                    "type": "number",
+                    "default": "6536",
+                    "description": "Port to communicate with language server."
+                },
+                "WolframLanguageServer.WolframPath": {
+                    "scope": "user",
                     "type": "string",
                     "default": "wolfram",
-                    "description": "Path to Wolfram Kernel."
+                    "description": "Path to wolfram executable."
+                },
+                "WolframLanguageServer.WLServerPath": {
+                    "scope": "user",
+                    "type": "string",
+                    "default": "/path/to/lsp-wl",
+                    "description": "Path to wolfram language server folder."
                 }
             }
         },
