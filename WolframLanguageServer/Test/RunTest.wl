@@ -30,7 +30,8 @@ TestRunContext[context_String] := Module[
 ];
 
 
-ShowTestReport[report_TestReportObject, context_String] := Column[{
+ShowTestReport[report_TestReportObject, context_String] := 
+Column[{
 	TableForm[{
 		{"Test: ", context},
 		{"Test passed: ", {{report["TestsSucceededCount"], "/", report["TestsSucceededCount"] + report["TestsFailedCount"]}}},

@@ -38,6 +38,26 @@ ReplaceKey[assoc_Association, key_ -> value_] :=
 	ReplaceKey[assoc, {key} -> value];
 ReplaceKey[assoc_Association, {key_, keys___} -> value_] := 
 	Append[assoc, key -> ReplaceKey[assoc[key], {keys} -> value]];
+	
+AssociationSameQ[assoc1_Association, assoc2_Association] := Module[
+	{
+		keylist
+	},
+	
+	keylist = Keys[assoc1];
+	If[!ContainsExactly[keylist][Keys[assoc2]],
+		Return[False]
+	];
+	
+	MapThread[If[AssociationQ[#1] && AssociationQ[#2],
+		AssociationSameQ[#1, #2],
+		SameQ[#1, #2]
+	]&, {
+		assoc1 /@ keylist,
+		assoc2 /@ keylist
+	}] // ContainsOnly[{True}]
+	
+];
 
 DeclareType[typename_, typekey:<|(_String -> _)...|>] := Module[
 	{
@@ -55,6 +75,10 @@ DeclareType[typename_, typekey:<|(_String -> _)...|>] := Module[
 		ReplaceKey[typename[typedict], {key} -> value];
 	ReplaceKey[typename[typedict_Association], {key_String, keys___} -> value_] := 
 		typename[Append[typedict, key -> ReplaceKey[typedict[key], {keys} -> value]]];
+	
+	typename /: SameQ[typename[typedict1_Association], typename[typedict2_Association]] := (
+		AssociationSameQ[typedict1, typedict1]
+	);
 ];
 
 

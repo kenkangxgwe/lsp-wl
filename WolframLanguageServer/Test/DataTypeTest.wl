@@ -16,6 +16,19 @@ Construct[ClearAll, Context[] <> "*"];
 Tests := {
 
 VerificationTest[
+	AssociationSameQ @@@ {
+		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 2, "a" -> 1 |>},
+		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 1, "a" -> 2 |>},
+		{<|"a" -> 1, "b" -> 2|>, <|"a" -> 2 |>},
+		{<|"a" -> 1, "b" -> 2|>, <||>},
+		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 2, "c" -> 3|>},
+		{<||>, <||>}
+	},
+	{True, False, False, False, False, True},
+	TestID -> "AssociationSameQ"
+],
+
+VerificationTest[
 	DeclareType[Student, <|"id" -> _?NumberQ, "name" -> _String, "sex" -> "Male"|"Female", "courses"-> Association[(_Integer->_String)...]|>];
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male"|>];
 	stu1 /@ {"id","name", "sex"},
@@ -55,6 +68,13 @@ VerificationTest[
 	ContainsExactly[Normal @ stu1["courses"], Normal @ <|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>],
 	True,
 	TestID -> "Replace Association"
+],
+
+VerificationTest[
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
+	stu1 // ReplaceKey[{"courses", 2}->"COMP202"] // ReplaceKey["name" -> "Long"],
+	Student[<|"id" -> 1, "name" -> "Long", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>|>],
+	TestID -> "Curried ReplaceKey"
 ],
 
 VerificationTest[
