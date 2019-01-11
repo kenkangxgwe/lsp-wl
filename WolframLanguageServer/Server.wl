@@ -447,6 +447,7 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 (* ::Section:: *)
 (*Handle Requests*)
 
+
 (* ::Subsection:: *)
 (*Initialize*)
 
@@ -471,11 +472,24 @@ handleRequest["initialize", msg_, state_] := Module[
 (*hover*)
 
 
+genUri[t_String] := "Website Reference: [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)";
+  
+genImg[token_String] := Module[
+	{
+		tempImgPath, background
+	},
+	
+	background = If[WolframLanguageServer`Theme === "light", Black, White];
+	tempImgPath = FileNameJoin[{tempDirPath, CreateUUID[] <> ".svg"}];
+	Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]];
+	"![test](" <> tempImgPath <> ")"
+]; 
+ 
 (*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
 (*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
 handleRequest["textDocument/hover", msg_, state_] := Module[
 	{
-		newState = state, pos, token, genUri, tmp, tempImgPath
+		newState = state, pos, token
 	},
 	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
 	(* The head of token is String *)
@@ -485,13 +499,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		"contents" -> token
 	|>}, newState}]
 	];
-	genUri[t_] := "Website Reference: [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)"; 
-	genImg[] := (
-		tmp = CreateUUID[]; 
-		tempImgPath = tempDirPath <> tmp <> ".svg";
-		Export[tempImgPath, Style[#, White]& @* (#::usage&) @ Symbol[token]];
-		"![test](" <> tempImgPath <> ")"
-		);
+	
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
 	(* LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]); *)
 	(* LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]); *)
@@ -506,7 +514,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		<| "contents" -> 
 			If[
 				(Names[token] != {}) || ((Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage")),
-				(genImg[] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n"),
+				(genImg[token] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n"),
 				token
 			 ] 
 		|>
@@ -618,6 +626,8 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	{"Continue", {}, newState}
 ];
 
+
+
 (* ::Subsection:: *)
 (*textSync/DidClose*)
 
@@ -642,7 +652,7 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	},
 	LogDebug @ "Begin Diagnostics";
 	len = SyntaxLength[txt];
-	If[len <= StringLength[txt], (
+	If[len <= StringLength[txt], 
 		line = First @ FirstPosition[pos, u_ /; u > len] - 2; 
 		character = len - pos[[line + 1]];
 		<|
@@ -665,9 +675,10 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 				|>
 			}
 		|>
-	),
 	]
 ];
+
+
 
 (* ::Subsection:: *)
 (*textSync/DidChange*)
