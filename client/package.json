@@ -55,6 +55,16 @@
                     "type": "string",
                     "default": "/path/to/lsp-wl",
                     "description": "Path to wolfram language server folder."
+                },
+                "WolframLanguageServer.Theme": {
+                    "scope": "user",
+                    "type": "string",
+                    "enum": [
+                        "dark",
+                        "light"
+                    ],
+                    "default": "dark",
+                    "description": "The theme for the picture in hover action."
                 }
             }
         },

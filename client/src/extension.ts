@@ -14,10 +14,11 @@ export function activate(context: ExtensionContext): void {
     let wolframkernel: string = config.get<string>("WolframKernelPath");
     let wlServerDir: string = config.get<string>("WLServerPath");
     let socketport: number = Number(config.get<number>("Port"));
+    let theme: string = config.get<string>("Theme");
     let serverOptions: NodeModule = {
         module: wlServerDir + "init.wls",
         runtime: wolframkernel,
-        args: [],
+        args: ["--theme=" + theme],
         transport: {
             kind: TransportKind.socket,
             port: socketport
@@ -38,6 +39,7 @@ export function activate(context: ExtensionContext): void {
     let client: LanguageClient = new LanguageClient("WolframLanguageServer", "Wolfram Language Server", serverOptions, clientOptions);
 
     // enable tracing (.Off, .Messages, Verbose)
+    // tslint:disable-next-line:comment-format
     client.trace = Trace.fromString(config.get<string>("trace.server")); // Trace.Verbose;
     let disposable: Disposable = client.start();
 
