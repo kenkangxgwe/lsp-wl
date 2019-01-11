@@ -137,8 +137,8 @@ Module[
 	If[MissingQ[stream], stream = "stdio"];*)
 	
 	logstreams = {
-		OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"],
-		First @ Streams["stdout"]
+		OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"](*,
+		First @ Streams["stdout"]*)
 	};
 
 	LoggerStart[loglevel, logstreams];

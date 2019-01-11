@@ -1,6 +1,5 @@
 "use strict";
 
-import { Trace } from "vscode-jsonrpc";
 import { workspace, ExtensionContext, Disposable, WorkspaceConfiguration } from "vscode";
 import {
     LanguageClient, LanguageClientOptions,
@@ -38,9 +37,6 @@ export function activate(context: ExtensionContext): void {
     // create the language client and start the client.
     let client: LanguageClient = new LanguageClient("WolframLanguageServer", "Wolfram Language Server", serverOptions, clientOptions);
 
-    // enable tracing (.Off, .Messages, Verbose)
-    // tslint:disable-next-line:comment-format
-    client.trace = Trace.fromString(config.get<string>("trace.server")); // Trace.Verbose;
     let disposable: Disposable = client.start();
 
     // push the disposable to the context's subscriptions so that the

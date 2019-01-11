@@ -36,7 +36,7 @@
                         "verbose"
                     ],
                     "default": "off",
-                    "description": "Traces the communication between VS Code and the language server."
+                    "description": "Traces the communication between VS Code and the wolfram language server."
                 },
                 "WolframLanguageServer.Port": {
                     "scope": "user",
