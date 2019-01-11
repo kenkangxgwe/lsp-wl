@@ -15,37 +15,48 @@ Begin["`Private`"];
 Construct[ClearAll, Context[] <> "*"];
 Tests := {
 
-(* Simple Getters *)
 VerificationTest[
 	DeclareType[Student, <|"id" -> _?NumberQ, "name" -> _String, "sex" -> "Male"|"Female", "courses"-> Association[(_Integer->_String)...]|>];
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male"|>];
 	stu1 /@ {"id","name", "sex"},
-	{1, "John Doe", "Male"}
+	{1, "John Doe", "Male"},
+	TestID -> "Simple Getters"
 ],
 
-(* Getter Type Check *)
+VerificationTest[
+	Keys[Student],
+	{"id", "name", "sex", "courses"},
+	TestID -> "Keys"
+],
+
+VerificationTest[
+	KeyPatterns[Student],
+	<|"id" -> _?NumberQ, "name" -> _String, "sex" -> "Male"|"Female", "courses"-> Association[(_Integer->_String)...]|>,
+	TestID -> "KeyPatterns"
+],
+
 VerificationTest[
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Man"|>];
 	stu1["sex"],
-	Missing["PatternMismatch", "Male"|"Female"]
+	Missing["PatternMismatch", "Male"|"Female"],
+	TestID -> "Getter Type Check"
 ],
 
-(* Replace List *)
 VerificationTest[
-	stu1=Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male","courses"->{"ECON101","COMP102","PHYS201"}|>];
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male","courses"->{"ECON101","COMP102","PHYS201"}|>];
 	ReplaceKey[stu1, {"courses", 2}->"COMP202"],
-	Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male","courses"->{"ECON101","COMP202","PHYS201"}|>]
+	Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male","courses"->{"ECON101","COMP202","PHYS201"}|>],
+	TestID -> "Replace List"
 ],
 
-(* Replace Association *)
 VerificationTest[
-	stu1=Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
-	stu1=ReplaceKey[stu1, {"courses", 2}->"COMP202"];
-	stu1["courses"],
-	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
+	stu1 = ReplaceKey[stu1, {"courses", 2}->"COMP202"];
+	ContainsExactly[Normal @ stu1["courses"], Normal @ <|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>],
+	True,
+	TestID -> "Replace Association"
 ],
 
-(* Association of DataType*)
 VerificationTest[
 	DeclareType[Class, <|"id" -> _Integer, "students" -> _Association|>];
 	class1 = Class[<|"id"->1, "students"-> <||>|>];
@@ -56,8 +67,17 @@ VerificationTest[
 	);
 	class1 = ReplaceKey[class1, "students"-> students];
 	class1["students"]["ken"]["courses"],
-	<|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>
+	<|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>,
+	TestID -> "Association of DataType"
+],
+
+VerificationTest[
+	studentEmpty = Student[<|"id" -> 5|>];
+	studentEmpty @@@ {{"id", 1}, {"name", "Jane Doe"}, {"sex", "Female"}, {"courses", <||>}},
+	{5, "Jane Doe", "Female", <||>},
+	TestID -> "Getter with default value"
 ]
+
 };
 
 
