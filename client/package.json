@@ -68,11 +68,24 @@
                 }
             }
         },
-        "languages": [{
-            "id": "wolfram",
-            "aliases": ["Wolfram Language", "wolfram", "Mathematica", "mathematica", "wolframscript"],
-            "extensions": [".m",".nb",".wl",".wls"]
-        }]
+        "languages": [
+            {
+                "id": "wolfram",
+                "aliases": [
+                    "Wolfram Language",
+                    "wolfram",
+                    "Mathematica",
+                    "mathematica",
+                    "wolframscript"
+                ],
+                "extensions": [
+                    ".m",
+                    ".nb",
+                    ".wl",
+                    ".wls"
+                ]
+            }
+        ]
     },
     "scripts": {
         "update-vscode": "vscode-install",
@@ -83,6 +96,7 @@
         "test": "sh ./scripts/e2e.sh"
     },
     "dependencies": {
+        "npm": "^6.5.0",
         "vscode": "^1.1.21",
         "vscode-languageclient": "^4.1.4"
     },
