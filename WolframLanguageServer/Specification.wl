@@ -13,8 +13,6 @@ Construct[ClearAll, Context[] <> "*"];
 ErrorDict::usage = "A dictionary that stores error code for lsp.";
 ErrorTypeQ::usage = "ErrorTypeQ[error_String] returns True if the input string is an error type.";
 
-WorkState::usage = "The type of the server state.";
-
 TextDocument::usage = "The type of text document.";
 CreateTextDocument::usage = "CreateTextDocument[text_String, version_Integer] returns a TextDocument object";
 GetToken::usage = "GetToken[doc_TextDocument, pos_LspPosition] returns the token located at the given position";
@@ -54,7 +52,6 @@ ErrorTypeQ[type_String] := MemberQ[Keys[ErrorDict], type];
 (*Server Communication Related Type*)
 
 
-DeclareType[WorkState, <|"initialized" -> _?BooleanQ, "openedDocs" -> <|(_String -> _TextDocument)...|>|>];
 DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"-> {_Integer...}|>];
 DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>];
 DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>];
