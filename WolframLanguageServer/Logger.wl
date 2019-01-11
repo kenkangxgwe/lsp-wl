@@ -12,9 +12,9 @@ ClearAll["WolframLanguageServer`Logger`*"];
 
 
 (* Server side logging for debug usage *)
-LoggingLevels = {"Error", "Warn", "Info", "Debug"};
+LoggingLevels = {"error", "warn", "info", "debug"};
 
-LoggerStart::wrnchnn = "Wrong channel is specified. It should be \"StdIO\" or \"Socket\"";
+LoggerStart::wrnchnn = "Wrong channel is specified. It should be \"stdio\" or \"socket\"";
 LoggerStart[level_, stream_OutputStream] := LoggerStart[level, {stream}];
 LoggerStart[level_, streams:{_OutputStream..}] := Module[
 	{

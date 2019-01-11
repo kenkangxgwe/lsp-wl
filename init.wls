@@ -10,26 +10,18 @@
 (* init.wl    
 
 This is a script file to initialize the Wolfram Language Server.
-You can execute the script from commandline:
+Please see the help info below.
 
-    wolfram -script path/to/init.wls [args]
-	wolframscript -f path/to/init.wls [args]
-
-or inside a notebook via:
-
-    Get[\"path/to/init.wls\"];
-
-Options:
-
-    --test, -t                     Run all tests
-    --log=loglevel, -l loglevel    Specifiy logging level (Debug, Info, Warn, Error)
-    --socket=port                  Start a socket server on port (default: 6536)
 *)
 
 
-WolframLanguageServer`CommandLine = If[$CommandLine === {},
-	$ScriptCommandLine,
-	$CommandLine ~Drop~ 2
+(* ::Subsection:: *)
+(*RootDirectory*)
+
+
+WolframLanguageServer`CommandLine = If[$ScriptCommandLine === {},
+	$CommandLine ~Drop~ 2,
+	$ScriptCommandLine
 ];
 
 WolframLanguageServer`RootDirectory = DirectoryName[If[$InputFileName === "",
@@ -45,6 +37,10 @@ WolframLanguageServer`RootDirectory = DirectoryName[If[$InputFileName === "",
 ]&);
 
 PrependTo[$Path, WolframLanguageServer`RootDirectory];
+
+
+(* ::Subsection:: *)
+(*Argument Parsing*)
 
 
 WolframLanguageServer`CommandLine = Flatten[Rest[WolframLanguageServer`CommandLine] ~StringSplit~ "="];
@@ -73,13 +69,17 @@ ArgumentValue[keyPattern_, valuePattern_:Blank[]] := Module[
 ];
 
 
+(* ::Subsection:: *)
+(*Help Information*)
+
+
 If[MemberQ[WolframLanguageServer`CommandLine, "-h" | "--help"],
 	Print["
 This is a script file to initialize the Wolfram Language Server.
 You can execute the script from commandline:
 
     wolfram -script path/to/init.wls [args]
-	wolframscript -f path/to/init.wls [args]
+    wolframscript -f path/to/init.wls [args]
 
 or inside a notebook via:
 
@@ -88,11 +88,17 @@ or inside a notebook via:
 Options:
 
     --test, -t                     Run all tests
-    --log=loglevel, -l loglevel    Specifiy logging level (Debug, Info, Warn, Error)
+    --log=loglevel, -l loglevel    Specifiy logging level as debug, info, warn or error (default: info)
     --socket port                  Start a socket server on port (default: 6536)
+    --theme=dark/light             Specify the text color in pictures according to client theme (default: dark)
+    --help, -h                     Print this help message
 "];
 	Quit[];
 ];
+
+
+(* ::Subsection:: *)
+(*Test*)
 
 
 If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
@@ -104,6 +110,10 @@ Running tests for all.
 	Print[WolframLanguageServer`Test`RunTest`TestRunAll[]];
 	Quit[];
 ];
+
+
+(* ::Subsection:: *)
+(*Run Server*)
 
 
 Needs["WolframLanguageServer`Logger`"];
@@ -121,11 +131,10 @@ Module[
 	];
 			
 	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels];
-	If[MissingQ[loglevel], loglevel = "Debug"];		
+	If[MissingQ[loglevel], loglevel = "debug"];
 
-(*	stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"];
-	If[MissingQ[stream], stream = "stdio"];		
-*)
+	(*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"];
+	If[MissingQ[stream], stream = "stdio"];*)
 	
 	logstreams = {
 		OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"],
@@ -134,6 +143,9 @@ Module[
 
 	LoggerStart[loglevel, logstreams];
 	$Messages = logstreams; 
+	
+	WolframLanguageServer`Theme = ArgumentValue["--theme", "dark" | "light"];
+	If[MissingQ[WolframLanguageServer`Theme], WolframLanguageServer`Theme = "dark"];
 	
 	LogInfo @ "Initializing Wolfram Language Server";
 	
@@ -150,5 +162,5 @@ Module[
 	DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
 	<< WolframLanguageServer`Server`;
-	LogDebug @ WolframLanguageServer`Server`WLServerStart["Port" -> port]
+	LogDebug @ WolframLanguageServer`Server`WLServerStart["Port" -> port, "WorkingDir" -> WolframLanguageServer`RootDirectory]
 ];
