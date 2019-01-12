@@ -131,7 +131,7 @@ Module[
 	];
 			
 	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels];
-	If[MissingQ[loglevel], loglevel = "debug"];
+	If[MissingQ[loglevel], loglevel = "info"];
 
 	(*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"];
 	If[MissingQ[stream], stream = "stdio"];*)
