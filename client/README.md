@@ -1,31 +1,25 @@
-# Wolfram Language Server
+# Visual Studio Code Client for Wolfram Language Server
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
->by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
+- by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
 
-**Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
-[Language Server Protocol (LSP)](https://microsoft.github.io/language-server-protocol)
-for Wolfram Mathematica. This server is implemented in Wolfram Mathematica
-itself. From now on, you can use this extension on every [editor that supports
+
+`Wolfram Language Server (WLServer)` is an implementation of the Microsoft's
+[Language Server Protocol
+(LSP)](https://microsoft.github.io/language-server-protocol) for Wolfram
+Mathematica. This server is implemented in Wolfram Mathematica itself. From now
+on, you can use this extension on every [editor that supports
 LSP](https://microsoft.github.io/language-server-protocol/implementors/tools/).
 
-Our philosophy is to provide experience as good as the Wolfram frontend itself
-with addition power from the editor.
-
-We have provided the client-side code for VS Code, which is based on some slight
+This is the client-side code for VS Code, which is based on some slight
 modifications of [Microsoft's LSP
 example](https://github.com/Microsoft/vscode-extension-samples/tree/master/lsp-sample).
-If you are using other tools supporting LSP, some slight modifications to the
-client would certainly work too.
-
-In the following text, I would explain some details of the project, assuming the
-client is what we provided.
+However, you still need to install the server on our github repo, [WLServer](https://github.com/kenkangxgwe/lsp-wl) .
 
 ## Installation
 
-**Requirements**
- <a name="ref1"></a>
+**Requirements** <a name="ref1"></a>
 - Wolfram Mathematica (11.2 or higher[<sup>1</sup>](#footnote1))  
 Which is the only requirement.
 
@@ -36,7 +30,7 @@ git clone https://github.com/kenkangxgwe/lsp-wl.git
 ```
 
 To install the client, currently, it is released on [Visual Studio Marketplace:
-Wolfram Language Server](). 
+Wolfram Language Server]().
 
 ## Client Settings
 
@@ -78,20 +72,12 @@ then choose dark[<sup>2</sup>](#footnote2). <a name="ref2"> </a>
   error is not supported at the moment.
   
 This is an early releasing, so more features are on its way. Syntax highlight is
-not supported for there are already good enough highlighters like [Wolfram Language](https://marketplace.visualstudio.com/items?itemName=flipphillips.wolfram-language).
+not supported for there are already good enough highlighters like [Wolfram
+Language](https://marketplace.visualstudio.com/items?itemName=flipphillips.wolfram-language).
 
-Here is a full list of [LSP features](https://microsoft.github.io/language-server-protocol/specification).
+Here is a full list of [LSP
+features](https://microsoft.github.io/language-server-protocol/specification).
 
-## Donations :dollar:
-
-If you really like this extension, please donate to us! **$5(or equivalently ￥35)**, which is only the price of a
-cup of coffee :coffee: would certainly brighten our day! Your donation would be
-the motivation for us to move forward, thanks in advance :smile:. 
-
-- Paypal: qwe95123@126.com
-- 支付宝(附二维码): 13916018006
-
-![支付宝二维码](https://github.com/kenkangxgwe/lsp-wl/images/alipay.jpg)
 
 ## Footnotes
 
