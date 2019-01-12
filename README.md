@@ -28,7 +28,7 @@ client would certainly work too.
 1. Download the [server](https://github.com/kenkangxgwe/lsp-wl) from its
    repository.
 
-  ```
+  ``` sh
   git clone https://github.com/kenkangxgwe/lsp-wl.git
   ```
 
@@ -58,6 +58,17 @@ Socket is the only channel that we currently support.
   (Levels: `error`, `warn`, `info`, `debug`. Default: `info`)
 * `--test, -t` to run the unit test for the server.
 
+If you want to run the server from Mathematica you can use the following code.
+
+``` mathematica
+initfile = "/path/to/lsp-wl/init.wls";
+args = {};
+Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[Null]]},
+    Catch[<< (initfile)]
+];
+```
+
+This is a good way to see the results from the unit tests.
 
 ## Features
 
