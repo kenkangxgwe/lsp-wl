@@ -521,7 +521,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 			If[
 				(* (Names[token] != {}) ||  *)
 				(Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage"),
-				(genUri[token] <> "\n" <> genImg[token, 450] <> "\n" <> "```typescript" <> StringRepeat["\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
+				(genUri[token] <> "\n" <> genImg[token, 450] <> "\n" <> "```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
 				token
 			 ] 
 		|>
@@ -578,7 +578,7 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 		"documentation" -> <|
 			"kind" -> "markdown",
 			"value" -> (genImg[token, 300] <> "\n" <> genUri[token] <> "\n" <>
-				"```typescript" <> StringRepeat["\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n")
+				"```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n")
 			|>		
 		|>}, newState}
 ];
