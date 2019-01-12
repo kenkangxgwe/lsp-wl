@@ -99,7 +99,6 @@
     "scripts": {
         "update-vscode": "vscode-install",
         "postinstall": "vscode-install",
-        "vscode:prepublish": "npm run update-vscode && npm run compile",
         "compile": "tsc -p ./tsconfig.json",
         "watch": "tsc -w -p ./tsconfig.json",
         "test": "sh ./scripts/e2e.sh"
