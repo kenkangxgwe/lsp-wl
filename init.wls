@@ -90,9 +90,13 @@ Options:
     --test, -t                     Run all tests
     --log=loglevel, -l loglevel    Specifiy logging level as debug, info, warn or error (default: info)
     --socket port                  Start a socket server on port (default: 6536)
-    --theme=dark/light             Specify the text color in pictures according to client theme (default: dark)
     --version, -v                  Print the version.
     --help, -h                     Print this help message
+
+\"initializationOptions\": {
+    \"theme\" = \"dark\"|\"light\"       // Specify the text color in pictures according to client theme (default: dark)
+}
+
 "];
 	Quit[];
 ];
@@ -157,9 +161,6 @@ Module[
 
 	LoggerStart[loglevel, logstreams];
 	$Messages = logstreams; 
-	
-	WolframLanguageServer`Theme = ArgumentValue["--theme", "dark" | "light"];
-	If[MissingQ[WolframLanguageServer`Theme], WolframLanguageServer`Theme = "dark"];
 	
 	LogInfo @ "Initializing Wolfram Language Server";
 	

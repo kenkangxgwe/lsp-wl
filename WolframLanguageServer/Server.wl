@@ -35,7 +35,8 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
-	"client" -> (_SocketClient | _TcpSocketClient | Null)
+	"client" -> (_SocketClient | _TcpSocketClient | Null),
+	"theme" -> "dark" | "light"
 |>];
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>, "client" -> Null|>];
 (*Place where the temporary img would be stored, delete after usage.*)
@@ -453,9 +454,14 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 
 handleRequest["initialize", msg_, state_] := Module[
 	{
-		newState = state
+		newState = state, theme
 	},
-
+	
+	(* Check Client Capabilities *)
+	theme = msg["params"]["initializationOptions"]["theme"];
+	If[MissingQ[theme], theme = "dark"];
+	newState = ReplaceKey[newState, "theme" -> theme];
+	
 	{"Continue", {"result", <|
 		"capabilities" -> <|
 			"textDocumentSync" -> 2,
@@ -472,20 +478,25 @@ handleRequest["initialize", msg_, state_] := Module[
 
 
 genUri[t_String] := "Website Reference -> [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)";
-  
-genImg[token_String, width_Integer] := Module[
+
+Options[genImg] := {
+	"Theme" -> "dark"
+};
+
+genImg[token_String, width_Integer, o:OptionsPattern[]] := Module[
 	{
-		tempImgPath, background
+		tempImgPath, background, theme
 	},
 	
-	background = If[WolframLanguageServer`Theme === "light", Black, White];
+	{theme} = OptionValue[genImg, {o}, {"Theme"}];
+	background = If[theme === "light", Black, White];
 	tempImgPath = FileNameJoin[{tempDirPath, CreateUUID[] <> ".svg"}];
 	(* Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]]; *)
 	Export[tempImgPath, 
 		Style[
-			Pane[StringReplace[#, StartOfLine -> "\[FilledSmallCircle] "], width, Alignment -> Left], FontSize -> 13, background
-			]& @* (#::usage&) @ Symbol[token]
-		];
+			Pane[StringReplace[#, StartOfLine -> "\[FilledSmallCircle] "], .85*width, Alignment -> Left], FontSize -> 13, background
+		]& @* (#::usage&) @ Symbol[token]
+	];
 	(* "![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" <> "```" <> StringRepeat[StringJoin[CharacterRange["a", "z"]], 4] <> "```" *)
 	"![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" 
 	(* "![" <> ToString[(#::usage&) @ Symbol[token]] <> "](" <> tempImgPath <> ")" *)
@@ -521,7 +532,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 			If[
 				(* (Names[token] != {}) ||  *)
 				(Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage"),
-				(genUri[token] <> "\n" <> genImg[token, 450] <> "\n" <> "```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
+				(genUri[token] <> "\n" <> genImg[token, 450, "Theme" -> state["theme"]] <> "\n" <> "```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
 				token
 			 ] 
 		|>
@@ -578,7 +589,7 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 		"kind" -> If[StringTake[token, 1] === "$", 6, 3], 
 		"documentation" -> <|
 			"kind" -> "markdown",
-			"value" -> (genImg[token, 300] <> "\n" <> genUri[token] <> "\n" <>
+			"value" -> (genImg[token, 300, "Theme" -> state["theme"]] <> "\n" <> genUri[token] <> "\n" <>
 				"```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n")
 			|>		
 		|>}, newState}
