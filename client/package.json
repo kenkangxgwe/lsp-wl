@@ -1,21 +1,30 @@
 {
-    "name": "lsp-client",
-    "description": "VSCode client of the Wolfram Language Server",
-    "author": "lsp-wl",
-    "license": "MIT",
-    "version": "0.0.1",
+    "name": "lsp-wl-client",
+    "version": "0.1.0",
     "publisher": "lsp-wl",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/kenkangxgw/lsp-wl"
-    },
+    "author": "kenkangxgwe",
+    "license": "MIT",
+    "displayName": "Wolfram Language Server",
+    "description": "VSCode client of the Wolfram Language Server.",
+    "main": "./out/extension",
     "engines": {
-        "vscode": "^1.25.0"
+        "vscode": "^1.23.0"
     },
     "activationEvents": [
         "onLanguage:wolfram"
     ],
-    "main": "./out/extension",
+    "categories": ["Programming Languages"],
+    "preview": true,
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/kenkangxgwe/lsp-wl.git"
+    },
+    "homepage": "http://github.com/kenkangxgwe/lsp-wl/tree/master/client/README.md",
+    "icon": "images/logo.png",
+    "galleryBanner": {
+		"color": "#3C3C3C",
+		"theme": "dark"
+	},
     "contributes": {
         "configuration": {
             "type": "object",
@@ -104,5 +113,15 @@
         "@types/mocha": "^5.2.0",
         "@types/node": "^8.10.36",
         "typescript": "2.8.3"
-    }
+    },
+    "contributors": [
+        {
+            "name": "kenkangxgwe",
+            "email": "kenkangxgwe@gmail.com"
+        },
+        {
+            "name": "hxianglong",
+            "email": "hxianglong@gmail.com"
+        }
+    ]
 }
