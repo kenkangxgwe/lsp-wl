@@ -91,8 +91,22 @@ Options:
     --log=loglevel, -l loglevel    Specifiy logging level as debug, info, warn or error (default: info)
     --socket port                  Start a socket server on port (default: 6536)
     --theme=dark/light             Specify the text color in pictures according to client theme (default: dark)
+    --version, -v                  Print the version.
     --help, -h                     Print this help message
 "];
+	Quit[];
+];
+
+
+(* ::Subsection:: *)
+(*Version*)
+
+
+WolframLanguageServer`Version = "0.1.0";
+If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
+	Print["
+Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
+Wolfram Language " <> $Version <> "\n"];
 	Quit[];
 ];
 

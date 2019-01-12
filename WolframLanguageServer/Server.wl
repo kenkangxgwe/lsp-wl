@@ -561,6 +561,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 (* ::Subsection:: *)
 (*completion resolve*)
 
+
 (* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
 provided her. *)
 handleRequest["completionItem/resolve", msg_, state_] := Module[
@@ -824,7 +825,7 @@ ServerError[errorCode_?ErrorTypeQ, msg_String] := {
 (*Misc*)
 
 
-WLServerVersion[] := "0.00";
+WLServerVersion[] := WolframLanguageServer`Version;
 
 
 WLServerDebug[] := Print["This is a debug function."];
