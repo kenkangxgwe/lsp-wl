@@ -221,7 +221,6 @@ TcpSocketHandler[state_WorkState] := Module[
 			Quit[]
 		];
 	]&);
-	LogDebug @ newstate;
 	TcpSocketHandler[newstate];
 ];
 
@@ -472,17 +471,23 @@ handleRequest["initialize", msg_, state_] := Module[
 (*hover*)
 
 
-genUri[t_String] := "Website Reference: [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)";
+genUri[t_String] := "Website Reference -> [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)";
   
-genImg[token_String] := Module[
+genImg[token_String, width_Integer] := Module[
 	{
 		tempImgPath, background
 	},
 	
 	background = If[WolframLanguageServer`Theme === "light", Black, White];
 	tempImgPath = FileNameJoin[{tempDirPath, CreateUUID[] <> ".svg"}];
-	Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]];
-	"![" <> "test" <> "](" <> tempImgPath <> ")"
+	(* Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]]; *)
+	Export[tempImgPath, 
+		Style[
+			Pane[StringReplace[#, StartOfLine -> "\[FilledSmallCircle] "], width, Alignment -> Left], FontSize -> 13, background
+			]& @* (#::usage&) @ Symbol[token]
+		];
+	(* "![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" <> "```" <> StringRepeat[StringJoin[CharacterRange["a", "z"]], 4] <> "```" *)
+	"![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" 
 	(* "![" <> ToString[(#::usage&) @ Symbol[token]] <> "](" <> tempImgPath <> ")" *)
 ]; 
  
@@ -516,7 +521,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 			If[
 				(* (Names[token] != {}) ||  *)
 				(Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage"),
-				(genImg[token] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n"),
+				(genUri[token] <> "\n" <> genImg[token, 450] <> "\n" <> "```typescript" <> StringRepeat["\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
 				token
 			 ] 
 		|>
@@ -572,7 +577,8 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 		"kind" -> If[StringTake[token, 1] === "$", 6, 3], 
 		"documentation" -> <|
 			"kind" -> "markdown",
-			"value" -> genUri[token] ~ StringReplace ~ ("\n" -> "\n\n")
+			"value" -> (genImg[token, 300] <> "\n" <> genUri[token] <> "\n" <>
+				"```typescript" <> StringRepeat["\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n")
 			|>		
 		|>}, newState}
 ];
@@ -759,12 +765,12 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 		)
 		);
 
-	LogDebug @ newState["openedDocs"] @ doc["uri"];
+	(* LogDebug @ newState["openedDocs"] @ doc["uri"]; *)
 	LogInfo @ ("Change Document " <> doc["uri"]);
 	(* LogDebug @ ("Last few string " <> ToString[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], InputForm]); *)
-	LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]);
-	LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]);
-	LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]);
+	(* LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
+	(* LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
+	(* LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]); *)
 	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
 	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"])); *)
 	(*Give diagnostics when a new line is finished.*)
