@@ -10,7 +10,7 @@ import {
 export function activate(context: ExtensionContext): void {
 
     const config: WorkspaceConfiguration = workspace.getConfiguration("WolframLanguageServer");
-    let wolframkernel: string = config.get<string>("WolframKernelPath");
+    let wolframkernel: string = config.get<string>("WolframPath");
     let wlServerDir: string = config.get<string>("WLServerPath");
     let socketport: number = Number(config.get<number>("Port"));
     let theme: string = config.get<string>("Theme");

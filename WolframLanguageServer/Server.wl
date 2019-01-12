@@ -461,7 +461,7 @@ handleRequest["initialize", msg_, state_] := Module[
 		"capabilities" -> <|
 			"textDocumentSync" -> 2,
 			"hoverProvider" -> True,
-			"completionProvider" -> <|"resolveProvider" -> False, "triggerChracters" -> Append[CharacterRange["A", "Z"], "$"]|>
+			"completionProvider" -> <|"resolveProvider" -> True, "triggerChracters" -> Append[CharacterRange["A", "Z"], "$"]|>
 		|>
 	|>}, newState}
 ];
@@ -482,7 +482,8 @@ genImg[token_String] := Module[
 	background = If[WolframLanguageServer`Theme === "light", Black, White];
 	tempImgPath = FileNameJoin[{tempDirPath, CreateUUID[] <> ".svg"}];
 	Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]];
-	"![test](" <> tempImgPath <> ")"
+	"![" <> "test" <> "](" <> tempImgPath <> ")"
+	(* "![" <> ToString[(#::usage&) @ Symbol[token]] <> "](" <> tempImgPath <> ")" *)
 ]; 
  
 (*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
@@ -513,7 +514,8 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		{"result", 
 		<| "contents" -> 
 			If[
-				(Names[token] != {}) || ((Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage")),
+				(* (Names[token] != {}) ||  *)
+				(Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage"),
 				(genImg[token] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n"),
 				token
 			 ] 
@@ -547,6 +549,31 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	{"Continue", {"result", <|
 		"isIncomplete" -> False, 
 		"items" -> genAssc /@ Names[token] 
+		|>}, newState}
+];
+
+
+(* ::Subsection:: *)
+(*completion resolve*)
+
+(* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
+provided her. *)
+handleRequest["completionItem/resolve", msg_, state_] := Module[
+	{
+		newState = state, token 
+	},
+	token = msg["params"]["label"];
+	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
+	(* LogDebug @ ("Kind: " <> ToString[If[StringTake[token, 1] === "$", 6, 3], InputForm]); *)
+	(* LogDebug @ ("Documentation: " <> (genImg[token] <> "\n" <> genUri[token])); *)
+	{"Continue", {"result", <|
+		"label" -> token, 
+		(*whether it is system variable or system function*)
+		"kind" -> If[StringTake[token, 1] === "$", 6, 3], 
+		"documentation" -> <|
+			"kind" -> "markdown",
+			"value" -> genUri[token] ~ StringReplace ~ ("\n" -> "\n\n")
+			|>		
 		|>}, newState}
 ];
 
