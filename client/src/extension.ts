@@ -12,6 +12,9 @@ export function activate(context: ExtensionContext): void {
     const config: WorkspaceConfiguration = workspace.getConfiguration("WolframLanguageServer");
     let wolframkernel: string = config.get<string>("WolframPath");
     let wlServerDir: string = config.get<string>("WLServerPath");
+    if (wlServerDir[-1] !== "\\" && wlServerDir[-1] !== "/") {
+        wlServerDir += "/";
+    }
     let socketport: number = Number(config.get<number>("Port"));
     let theme: string = config.get<string>("Theme");
     let serverOptions: NodeModule = {
