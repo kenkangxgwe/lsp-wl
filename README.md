@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/wolfram-language-server-logo-clipped.png)
+![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
 > by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
 
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
@@ -151,7 +151,7 @@ thanks in advance :smile:.
 - Paypal: qwe95123@126.com
 - Alipay (With QRCode): 13916018006  
 ![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/alipay.jpg)
+QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/alipay.jpg)
 
 ## Footnotes
 
