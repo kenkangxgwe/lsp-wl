@@ -70,8 +70,11 @@ This is a good way to see the results from the unit tests.
 
 You may also specify the following `initializationOptions`.
 
-- `"theme": "dark" | "light"` specifies the documentation text color since it is
-rendered to SVG image for better typesetting. (Default: `dark`)
+- `"theme": "dark" | "light"` For better typesetting of documentation, SVG
+images are used in the popup such as hovering. Since the background is
+transparent, this setting is to ensure the text in the images are actually
+visible. If you use dark themes, then choose `dark` <a name="ref2">
+</a>[<sup>2</sup>](#footnote2). (Default: `dark`)
 
 ## Features
 

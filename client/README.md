@@ -45,7 +45,7 @@ After the extension is launched, go to **Preference -> Settings -> User Settings
 - *Theme:* For better typesetting of documentation, SVG images are used in the
 popup for hovering. Since the background is transparent, this setting is to
 ensure the text in the images are actually visible. If you use dark themes, then
-choose `dark`<a name="ref2"> </a>[<sup>2</sup>](#footnote2).
+choose `dark` <a name="ref2"> </a>[<sup>2</sup>](#footnote2).
 
 - *WLServer Path:* The path to the server repository.
 
