@@ -12,20 +12,6 @@ Language](http://www.wolfram.com/language). This server is
 implemented in Wolfram Language itself.
 
 Our current goal is to provide the experience as good as the Mathematica FrontEnd 
-with addition power fr# Wolfram Language Server
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/wolfram-language-server-logo-clipped.png)
-> by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
-
-**Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
-[Language Server Protocol
-(LSP)](https://microsoft.github.io/language-server-protocol) for [Wolfram
-Language](http://www.wolfram.com/language). This server is
-implemented in Wolfram Language itself.
-
-Our current goal is to provide the experience as good as the Mathematica FrontEnd 
 with addition power from the editor.
 
 We have provided the client-side code for VS Code in this repo, which is based on some slight
@@ -62,11 +48,30 @@ wolframscript -f /path/to/lsp-wl/init.wls [args]
 
 The posible arguments for the server are
 
-* `--help, -h` to print help information.
-* `--socket=port` to assign the port that the server connect to. (Default:
+- `--help, -h` to print help information.
+- `--socket=port` to assign the port that the server connect to. (Default:
 `6536`)  
 Socket is the only channel that we currently support.
-* `--log=lev
+- `--log=level, -l level` to specify the logging level of the server.
+  (Levels: `error`, `warn`, `info`, `debug`. Default: `info`)
+- `--test, -t` to run the unit test for the server.
+
+If you want to run the server from Mathematica you can use the following code.
+
+``` mathematica
+initfile = "/path/to/lsp-wl/init.wls";
+args = {};
+Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[Null]]},
+    Catch[<< (initfile)]
+];
+```
+
+This is a good way to see the results from the unit tests.
+
+You may also specify the following `initializationOptions`.
+
+- `"theme": "dark" | "light"` specifies the documentation text color since it is
+rendered to SVG image for better typesetting. (Default: `dark`)
 
 ## Features
 
