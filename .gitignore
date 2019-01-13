@@ -74,3 +74,6 @@ typings/
 
 # output for typescript
 **/out
+
+# cache fodler
+wlServerCache/

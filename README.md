@@ -47,7 +47,7 @@ client would certainly work too.
   ```
 
 2. Install the client. Currently, we provide the VS Code extension on [Visual
-Studio Marketplace: Wolfram Language Server]()
+Studio Marketplace: Wolfram Language Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
 
 ## Run the Server
 
@@ -89,9 +89,9 @@ Language](https://marketplace.visualstudio.com/items?itemName=flipphillips.wolfr
 
 Here is a full list of [LSP features](https://microsoft.github.io/language-server-protocol/specification).
 
-## Contributions
+## Contribute
 
-### Design Principle
+### Design Principles
 
 1. The files are located according to its context name. The `init.wls` is the
    entry script that parses the commandline arguments, loads packages

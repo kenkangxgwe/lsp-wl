@@ -29,7 +29,7 @@ However, you still need to manually install the
   ```
 
 2. Install the client extenstion from [Visual Studio Marketplace: Wolfram
-Language Server]().
+Language Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client).
 
 ## Client Settings
 
