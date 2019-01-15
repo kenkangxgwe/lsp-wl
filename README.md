@@ -5,6 +5,22 @@
 ![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
 > by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
 
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Wolfram Language Server](#wolfram-language-server)
+    - [Installation](#installation)
+    - [Run the Server](#run-the-server)
+    - [Features](#features)
+    - [Contribute](#contribute)
+        - [Design Principles](#design-principles)
+        - [Todo list](#todo-list)
+    - [Donations :dollar:](#donations-dollar)
+    - [Footnotes](#footnotes)
+
+<!-- markdown-toc end -->
+
+
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
 [Language Server Protocol
 (LSP)](https://microsoft.github.io/language-server-protocol) for [Wolfram
