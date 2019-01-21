@@ -727,7 +727,54 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 
 (* ::Subsection:: *)
 (*textSync/DidChange*)
-
+handleContentChange[state_, contentChange_, uri_String] := Module[
+	{
+		newState = state, getPos, s, e
+	},
+	LogDebug @ "Begin handle content change.";
+	s = contentChange["range"] @ "start";
+	e = contentChange ["range"] @ "end";
+	(*helper function to get the absolute position*)
+	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) 
+	+ r["character"];
+	(* if new elements are added, the length is 0. *)
+	(* LogDebug @ contentChanges; *)
+	(* LogDebug @ s; *)
+	(* LogDebug @ e; *)
+	(* LogDebug @ "This is position before."; *)
+	(* LogDebug @ newState["openedDocs"][uri]["position"]; *)
+	(* LogDebug @ "This is full text before:"; *)
+	(* LogDebug @ newState["openedDocs"][uri]["text"]; *)
+	(* LogDebug @ "This is position start and end"; *)
+	(* LogDebug @ getPos[s]; *)
+	(* LogDebug @ (getPos[e] - 1); *)
+	(* LogDebug @ "This is position string start and end"; *)
+	(* LogDebug @ (newState["openedDocs"][uri]["text"] ~ StringPart ~ getPos[s]); *)
+	(* LogDebug @ (newState["openedDocs"][uri]["text"] ~ StringPart ~ (getPos[e] - 1));  *)
+	
+	newState = newState~ReplaceKey~(
+		{"openedDocs", uri, "text"} -> (
+		If[contentChange["rangeLength"] == 0, 
+		StringInsert[newState["openedDocs"][uri]["text"], contentChange["text"], 
+		getPos[s]],
+		StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], 
+		{getPos[s], getPos[e] - 1}]
+		]
+		)
+		);
+	(* Update the position *)
+	newState = newState~ReplaceKey~(
+		{"openedDocs", uri, "position"} -> (
+		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
+		)
+		);
+	(* LogDebug @ "This is full text after:"; *)
+	(* LogDebug @ newState["openedDocs"][uri]["text"]; *)
+	(* LogDebug @ "This is position before."; *)
+	(* LogDebug @ newState["openedDocs"][uri]["position"]; *)
+	
+	newState
+];
 
 handleNotification["textDocument/didChange", msg_, state_] := Module[
 	{
@@ -740,42 +787,11 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	(* newState["openedDocs"][doc["uri"]]["version"] = doc["version"]; *)
 	newState = newState~ReplaceKey~({"openedDocs", doc["uri"], "version"} -> doc["version"]);
 	(* There are three cases, delete, replace and add. *)
-	contentChanges = First @ msg["params"]["contentChanges"];
-	s = contentChanges["range"] @ "start";
-	e = contentChanges ["range"] @ "end";
-	getPos[r_] :=  newState["openedDocs"][doc["uri"]]["position"]~Part~(r["line"] + 1) 
-	+ r["character"];
-	
-	(* LogDebug @ contentChanges;
-	LogDebug @ s;
-	LogDebug @ e;
-	LogDebug @ "This is position.";
-	LogDebug @ newState["openedDocs"][doc["uri"]]["position"];
-	LogDebug @ "This is full text";
-	LogDebug @ newState["openedDocs"][doc["uri"]]["text"];
-	LogDebug @ "This is position start and end";
-	LogDebug @ getPos[s];
-	LogDebug @ (getPos[e] - 1);
-	LogDebug @ "This is position string start and end";
-	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ getPos[s]);
-	LogDebug @ (newState["openedDocs"][doc["uri"]]["text"] ~ StringPart ~ (getPos[e] - 1)); *)
-	
-	(* if new elements are added, the length is 0. *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", doc["uri"], "text"} -> (
-		If[contentChanges["rangeLength"] == 0, 
-		StringInsert[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
-		getPos[s]],
-		StringReplacePart[newState["openedDocs"][doc["uri"]]["text"], contentChanges["text"], 
-		{getPos[s], getPos[e] - 1}]]
-		)
-		);
-	(* Update the position *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", doc["uri"], "position"} -> (
-		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][doc["uri"]]["text"], "\n"], 1]
-		)
-		);
+	contentChanges = msg["params"]["contentChanges"];
+	(* Apply all the content changes. *)
+	Do[newState = handleContentChange[newState, change, doc["uri"]], {change, contentChanges}];
+	(* LogDebug @ "This is full text in didchange after handleContentChange:"; *)
+	(* LogDebug @ newState["openedDocs"][doc["uri"]]["text"]; *)
 
 	(* LogDebug @ newState["openedDocs"] @ doc["uri"]; *)
 	LogInfo @ ("Change Document " <> doc["uri"]);
