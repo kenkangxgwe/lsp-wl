@@ -21,9 +21,10 @@ Begin["`Private`"];
 ClearAll[Evaluate[Context[] <> "*"]];
 
 
-Needs["WolframLanguageServer`Specification`"];
-Needs["WolframLanguageServer`Logger`"];
 Needs["WolframLanguageServer`DataType`"];
+Needs["WolframLanguageServer`Logger`"];
+Needs["WolframLanguageServer`Specification`"];
+Needs["WolframLanguageServer`Token`"];
 
 
 (* ::Section:: *)
@@ -466,7 +467,7 @@ handleRequest["initialize", msg_, state_] := Module[
 		"capabilities" -> <|
 			"textDocumentSync" -> 2,
 			"hoverProvider" -> True,
-			"completionProvider" -> <|"resolveProvider" -> True, "triggerChracters" -> Append[CharacterRange["A", "Z"], "$"]|>
+			"completionProvider" -> <|"resolveProvider" -> True, "triggerChracters" -> {}|>
 		|>
 	|>}, newState}
 ];
@@ -477,31 +478,6 @@ handleRequest["initialize", msg_, state_] := Module[
 (*hover*)
 
 
-genUri[t_String] := "Website Reference -> [" <> "*" <> t <> "*" <> "](https://reference.wolfram.com/language/ref/" <> t <> ".html)";
-
-Options[genImg] := {
-	"Theme" -> "dark"
-};
-
-genImg[token_String, width_Integer, o:OptionsPattern[]] := Module[
-	{
-		tempImgPath, background, theme
-	},
-	
-	{theme} = OptionValue[genImg, {o}, {"Theme"}];
-	background = If[theme === "light", Black, White];
-	tempImgPath = FileNameJoin[{tempDirPath, CreateUUID[] <> ".svg"}];
-	(* Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]]; *)
-	Export[tempImgPath, 
-		Style[
-			Pane[StringReplace[#, StartOfLine -> "\[FilledSmallCircle] "], .85*width, Alignment -> Left], FontSize -> 13, background
-		]& @* (#::usage&) @ Symbol[token]
-	];
-	(* "![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" <> "```" <> StringRepeat[StringJoin[CharacterRange["a", "z"]], 4] <> "```" *)
-	"![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" 
-	(* "![" <> ToString[(#::usage&) @ Symbol[token]] <> "](" <> tempImgPath <> ")" *)
-]; 
- 
 (*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
 (*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
 handleRequest["textDocument/hover", msg_, state_] := Module[
@@ -529,11 +505,12 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	{"Continue", 
 		{"result", 
 		<| "contents" -> 
-			If[
-				(* (Names[token] != {}) ||  *)
-				(Evaluate[Symbol[token]]::usage // ToString) != (token <> "::usage"),
-				(genUri[token] <> "\n" <> genImg[token, 450, "Theme" -> state["theme"]] <> "\n" <> "```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n"),
-				token
+			If[Names[token] === {} && Context[token] === "Global`",
+			    token,
+			    If[Head[ToExpression[token <> "::usage"]] === MessageName,
+			        token,
+				    TokenDocumentation[token]
+				]
 			 ] 
 		|>
 		},
@@ -559,13 +536,13 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	(*The position is tricky here, we have to read one character ahead.*)
 	pos = LspPosition[<|"line" -> p["line"], "character" -> If[# > 0, # - 1, #]& @ p["character"]|>];
 	(*Token is a patten here.*)
-	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos] <> "*";
+	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
-	genAssc[t_] := <|"label" -> t|>;
+	genAssc[t_] := <|"label" -> t, "kind" -> TokenKind[t]|>;
 	{"Continue", {"result", <|
 		"isIncomplete" -> False, 
-		"items" -> genAssc /@ Names[token] 
-		|>}, newState}
+		"items" -> genAssc /@ TokenCompletionList[token] 
+	|>}, newState}
 ];
 
 
@@ -586,13 +563,12 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 	{"Continue", {"result", <|
 		"label" -> token, 
 		(*whether it is system variable or system function*)
-		"kind" -> If[StringTake[token, 1] === "$", 6, 3], 
+		"kind" -> TokenKind[token], 
 		"documentation" -> <|
 			"kind" -> "markdown",
-			"value" -> (genImg[token, 300, "Theme" -> state["theme"]] <> "\n" <> genUri[token] <> "\n" <>
-				"```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```") ~ StringReplace ~ ("\n" -> "\n\n")
-			|>		
-		|>}, newState}
+			"value" -> TokenDocumentation[token]
+        |>		
+	|>}, newState}
 ];
 
 
@@ -691,42 +667,49 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 ];
 
 
-diagnoseTextDocument[text_TextDocument, uri_String] := Module[
+(* ::Subsection:: *)
+(*textSync/DidChange*)
+
+
+handleNotification["textDocument/didChange", msg_, state_] := Module[
 	{
-		txt = text["text"], pos = text["position"], len, line, character
+		newState = state, doc, contentChanges, s, e, debug, getPos
 	},
-	LogDebug @ "Begin Diagnostics";
-	len = SyntaxLength[txt];
-	If[len <= StringLength[txt], 
-		line = First @ FirstPosition[pos, u_ /; u > len] - 2; 
-		character = len - pos[[line + 1]];
-		<|
-			"uri" -> uri,
-			"diagnostics"  -> 
-			{
-				<|
-					"range" -> <|
-						"start" -> <|
-							"line" -> line, 
-							"character" -> character
-						|>,
-						"end" -> <|
-							"line" -> line, 
-							"character" -> character
-					|>
-				|>,
-				"source" -> "Wolfram",
-				"message" -> "Invalid syntax in or before the given position."
-				|>
-			}
-		|>
+	debug = False;
+	doc = msg["params"]["textDocument"];
+	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
+	Assert[newState["openedDocs"][doc["uri"]]["version"] < doc["version"]];
+	(* newState["openedDocs"][doc["uri"]]["version"] = doc["version"]; *)
+	newState = newState~ReplaceKey~({"openedDocs", doc["uri"], "version"} -> doc["version"]);
+	(* There are three cases, delete, replace and add. *)
+	contentChanges = msg["params"]["contentChanges"];
+	(* Apply all the content changes. *)
+	Do[newState = handleContentChange[newState, change, doc["uri"]], {change, contentChanges}];
+	(* LogDebug @ "This is full text in didchange after handleContentChange:"; *)
+	(* LogDebug @ newState["openedDocs"][doc["uri"]]["text"]; *)
+
+	(* LogDebug @ newState["openedDocs"] @ doc["uri"]; *)
+	LogInfo @ ("Change Document " <> doc["uri"]);
+	(* LogDebug @ ("Last few string " <> ToString[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], InputForm]); *)
+	(* LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
+	(* LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
+	(* LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]); *)
+	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
+	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"])); *)
+	(*Give diagnostics when a new line is finished.*)
+	If[StringLength[newState["openedDocs"][doc["uri"]]["text"]] >= 2,
+		If[True (*StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]*),
+			(* {"Continue", {diagnoseTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
+			(* {"Continue", {}, newState} *)
+		(* ], *)
+		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"]}, newState},
+		{"Continue", {}, newState}S
+		],
+		{"Continue", {}, newState}
 	]
 ];
 
 
-
-(* ::Subsection:: *)
-(*textSync/DidChange*)
 handleContentChange[state_, contentChange_, uri_String] := Module[
 	{
 		newState = state, getPos, s, e
@@ -776,43 +759,38 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	newState
 ];
 
-handleNotification["textDocument/didChange", msg_, state_] := Module[
-	{
-		newState = state, doc, contentChanges, s, e, debug, getPos
-	},
-	debug = False;
-	doc = msg["params"]["textDocument"];
-	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	Assert[newState["openedDocs"][doc["uri"]]["version"] < doc["version"]];
-	(* newState["openedDocs"][doc["uri"]]["version"] = doc["version"]; *)
-	newState = newState~ReplaceKey~({"openedDocs", doc["uri"], "version"} -> doc["version"]);
-	(* There are three cases, delete, replace and add. *)
-	contentChanges = msg["params"]["contentChanges"];
-	(* Apply all the content changes. *)
-	Do[newState = handleContentChange[newState, change, doc["uri"]], {change, contentChanges}];
-	(* LogDebug @ "This is full text in didchange after handleContentChange:"; *)
-	(* LogDebug @ newState["openedDocs"][doc["uri"]]["text"]; *)
 
-	(* LogDebug @ newState["openedDocs"] @ doc["uri"]; *)
-	LogInfo @ ("Change Document " <> doc["uri"]);
-	(* LogDebug @ ("Last few string " <> ToString[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], InputForm]); *)
-	(* LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
-	(* LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
-	(* LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]); *)
-	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
-	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"])); *)
-	(*Give diagnostics when a new line is finished.*)
-	If[StringLength[newState["openedDocs"][doc["uri"]]["text"]] >= 2,
-		If[StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression],
-			(* {"Continue", {diagnoseTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
-			(* {"Continue", {}, newState} *)
-		(* ], *)
-		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"]}, newState},
-		{"Continue", {}, newState}
-		],
-		{"Continue", {}, newState}
-	]
+diagnoseTextDocument[text_TextDocument, uri_String] := Module[
+	{
+		txt = text["text"], pos, len,
+		errors
+	},
+	
+	
+	errors = If[SyntaxQ[txt], 
+	    {},
+	    LogDebug @ "Found Syntax Error";
+		len = SyntaxLength[txt];
+		pos = ToLspPosition[text, len];
+		{
+	        <|
+				"range" -> <|
+					"start" -> First@pos,
+					"end" -> First@pos
+				|>,
+				"serverity" -> DiagnosticSeverity["Error"],
+				"source" -> "Wolfram",
+				"message" -> "Invalid syntax at the given position."
+			|>
+		}
+	];
+		
+	<|
+		"uri" -> uri,
+		"diagnostics"  -> errors
+    |>
 ];
+
 
 
 (* ::Subsection:: *)
@@ -838,13 +816,25 @@ handleNotification[_, msg_, state_] := Module[
 
 (* Error Message *)
 
-ServerError[errorCode_?ErrorTypeQ, msg_String] := {
-	"error",
-	<|
-		"code" -> ErrorDict[errorCode], 
-		"message" -> msg
-	|>
-};
+ServerError[errorType_String, msg_String] := Module[
+    {
+        errorCode
+    },
+    
+    errorCode = ErrorCodes[errorCode];
+    If[MissingQ[errorCode],
+        LogError["Invalid error type: " <> errorType];
+        errorCode = ErrorCodes["UnknownErrorCode"]
+    ];
+    
+    {
+        "error",
+	    <|
+		    "code" -> errorCode, 
+		    "message" -> msg
+	    |>
+    }
+];
 
 
 
