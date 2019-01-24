@@ -1,5 +1,6 @@
 # Wolfram Language Server
 
+[![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
