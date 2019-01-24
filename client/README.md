@@ -49,7 +49,7 @@ choose `dark` <a name="ref2"> </a>[<sup>2</sup>](#footnote2).
 
 - *WLServer Path:* The path to the server repository.
 
-- *Wolfram Path:* The path of the `Wolfram` executable.  
+- *Wolfram Path:* The path of the `Wolfram` executable. **(NOT `Mathematica` or `WolframKernel`)**  
   For **Windows** users, the default path is `C:\Program Files\Wolfram
   Research\Mathematica\11.*\wolfram.exe`.  
   For **MaxOS** users, the default path is
