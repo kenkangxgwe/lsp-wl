@@ -16,17 +16,16 @@ Begin["`Private`"];
 Construct[ClearAll, Context[] <> "*"];
 
 
-TestRunAll[] := Column[TestRunContext /@ TestContexts];
+TestRunAll[] := Column[TestRunContext /@ (TestContexts)];
 
 
 TestRunContext[context_String] := Module[
 	{
 		report
 	},
-	
-	report = TestReport[Get[context]];
-	
-	ShowTestReport[report, context]
+	Reap[Get[context], context, Rule]
+	// Replace[{_, {ctx_ -> tests_}} :> ShowTestReport[TestReport[tests], ctx]]
+
 ];
 
 

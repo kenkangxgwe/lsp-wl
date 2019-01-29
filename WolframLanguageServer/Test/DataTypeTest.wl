@@ -4,16 +4,16 @@ BeginPackage["WolframLanguageServer`Test`DataTypeTest`"];
 Construct[ClearAll, Context[] <> "*"];
 
 
-TestedContext = "WolframLanguageServer`DataType`";
-Tests::usage = StringTemplate["Tests for `` context."][TestedContext];
-Needs[TestedContext];
-
-
 Begin["`Private`"];
 
 
 Construct[ClearAll, Context[] <> "*"];
-Tests := {
+TestedContext = "WolframLanguageServer`DataType`";
+(*Tests::usage = StringTemplate["Tests for `` context."][TestedContext];*)
+Needs[TestedContext];
+
+
+Tests = {
 
 VerificationTest[
 	AssociationSameQ @@@ {
@@ -115,11 +115,10 @@ VerificationTest[
 
 };
 
+Sow[#, "WolframLanguageServer`Test`DataTypeTest`"]& /@ Tests;
+
 
 End[];
 
 
 EndPackage[];
-
-
-Tests

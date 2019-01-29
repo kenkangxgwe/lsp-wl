@@ -4,12 +4,15 @@ BeginPackage["WolframLanguageServer`Test`TextDocumentTest`"];
 Construct[ClearAll, Context[] <> "*"];
 
 
-TestedContext = "WolframLanguageServer`Specification`";
-Tests::usage = StringTemplate["Tests for `` context."][TestedContext];
-Needs[TestedContext];
+
 
 
 Begin["`Private`"];
+
+
+TestedContext = "WolframLanguageServer`Specification`";
+Tests::usage = StringTemplate["Tests for `` context."][TestedContext];
+Needs[TestedContext];
 
 
 Construct[ClearAll, Context[] <> "*"];
@@ -60,11 +63,10 @@ VerificationTest[
 ]
 };
 
+Sow[#, "WolframLanguageServer`Test`TextDocumentTest`"]& /@ Tests;
+
 
 End[];
 
 
 EndPackage[];
-
-
-Tests
