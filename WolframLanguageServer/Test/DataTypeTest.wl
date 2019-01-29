@@ -96,6 +96,21 @@ VerificationTest[
 	studentEmpty @@@ {{"id", 1}, {"name", "Jane Doe"}, {"sex", "Female"}, {"courses", <||>}},
 	{5, "Jane Doe", "Female", <||>},
 	TestID -> "Getter with default value"
+],
+
+VerificationTest[
+    TypeUsage[Student, "types a student."];
+    Student::usage,
+    "Student[<|id -> _?NumberQ, name -> _String, sex -> Male | Female, courses -> Association[(_Integer -> _String)...]|>] types a student.",
+    TestID -> "Type usage 1"
+],
+
+VerificationTest[
+    TypeUsage[VoidType, "is a void type."];
+    DeclareType[VoidType, <||>];
+    VoidType::usage,
+    "VoidType[<||>] is a void type.",
+    TestID -> "Type usage 2"
 ]
 
 };

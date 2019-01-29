@@ -10,18 +10,16 @@ BeginPackage["WolframLanguageServer`Specification`"];
 Construct[ClearAll, Context[] <> "*"];
 
 
-TextDocument::usage = "The type of text document.";
+TextDocument::usage = "is the type of the text document.";
 CreateTextDocument::usage = "CreateTextDocument[text_String, version_Integer] returns a TextDocument object";
 GetToken::usage = "GetToken[doc_TextDocument, pos_LspPosition] returns the token located at the given position";
+GetLine::usage = "GetLine[doc_TextDocument, line_Integer] returns the specific line of the TextDocument.";
+
+
+LspPosition::usage = "is type of Position interface in LSP.";
+LspRange::usage = "is type of Range interface in LSP.";
 FromLspPosition::usage = "FromLspPosition[doc_TextDocument, pos_LspPosition] returns the index of the character at given LspPosition.";
 ToLspPosition::usage = "ToLspPosition[doc_TextDocument, index_Integer] returns the LspPosition of the character at given index.";
-
-
-LspPosition::usage = "The type of Position interface in LSP.";
-
-LspRange::usage = "The type of Range interface in LSP.";
-
-
 
 
 (* ::Section:: *)
@@ -153,18 +151,17 @@ CreateTextDocument[text_String, version_Integer] := (TextDocument[<|
 (*GetToken*)
 
 
-StringPositionUntil[text_String, pattern_, pos_Integer, dir:(-1|1)] := Module[
+GetToken[doc_TextDocument, pos_LspPosition] := Module[
 	{
-		curchar, newpos
+		beginpos, endpos, curpos
 	},
-	
-	If[pos <= 0 || pos > StringLength[text], Return[pos]];
-	
-	curchar = StringPart[text, pos];
-	If[StringMatchQ[pattern] @ curchar,
-		pos,
-		newpos = pos + dir;
-		StringPositionUntil[text, pattern, newpos, dir]
+		
+	curpos = FromLspPosition[doc, pos];
+	beginpos = FindTokenBegin[doc@"text", curpos];
+	endpos = FindTokenEnd[doc@"text", curpos];
+	If[curpos < beginpos || endpos < curpos,
+		"",
+		StringTake[doc@"text", {beginpos, endpos}]
 	]
 ];
 
@@ -185,19 +182,43 @@ FindTokenBegin[text_String, pos_Integer] := Module[
 FindTokenEnd[text_String, pos_Integer] := StringPositionUntil[text, Except[IdentifierPostfixPattern], pos, 1] - 1;
 
 
-GetToken[doc_TextDocument, pos_LspPosition] := Module[
+StringPositionUntil[text_String, pattern_, pos_Integer, dir:(-1|1)] := Module[
 	{
-		beginpos, endpos, curpos
+		curchar, newpos
 	},
-		
-	curpos = FromLspPosition[doc, pos];
-	beginpos = FindTokenBegin[doc@"text", curpos];
-	endpos = FindTokenEnd[doc@"text", curpos];
-	If[curpos < beginpos || endpos < curpos,
-		"",
-		StringTake[doc@"text", {beginpos, endpos}]
+	
+	If[pos <= 0 || pos > StringLength[text], Return[pos]];
+	
+	curchar = StringPart[text, pos];
+	If[StringMatchQ[pattern] @ curchar,
+		pos,
+		newpos = pos + dir;
+		StringPositionUntil[text, pattern, newpos, dir]
 	]
 ];
+
+
+(* ::Subsection:: *)
+(*GetLine*)
+
+
+GetLine[doc_TextDocument, line_Integer] := Module[
+    {
+        totalLine = Length[doc@"position"], totalLength = Length[doc@"text"]
+    },
+    LogDebug[doc];
+    Which[line > totalLine || line < 1,
+        "",
+    line == totalLine,
+        StringTake[doc@"text", {Last[doc@"position"], totalLength}],
+    True,
+        StringTake[doc@"text", Part[doc@"position", {line, line + 1}] - {0, 2}]
+    ]
+];
+
+
+(* ::Subsection:: *)
+(*FromLspPosition <-> Index*)
 
 
 FromLspPosition[doc_TextDocument, pos_LspPosition] := Part[doc@"position", (pos@"line" + 1)] + pos@"character";
