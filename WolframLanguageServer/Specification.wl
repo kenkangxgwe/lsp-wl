@@ -18,6 +18,8 @@ GetLine::usage = "GetLine[doc_TextDocument, line_Integer] returns the specific l
 
 LspPosition::usage = "is type of Position interface in LSP.";
 LspRange::usage = "is type of Range interface in LSP.";
+TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
+ the new text is considered to be the full content of the document.";
 FromLspPosition::usage = "FromLspPosition[doc_TextDocument, pos_LspPosition] returns the index of the character at given LspPosition.";
 ToLspPosition::usage = "ToLspPosition[doc_TextDocument, index_Integer] returns the LspPosition of the character at given index.";
 
@@ -135,6 +137,7 @@ Needs["WolframLanguageServer`DataType`"];
 DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"-> {_Integer...}|>];
 DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>];
 DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>];
+DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>];
 
 
 (* ::Subsection:: *)
@@ -142,9 +145,29 @@ DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>];
 
 
 CreateTextDocument[text_String, version_Integer] := (TextDocument[<|
-	"text" -> text, "version" -> version, 
+	"text" -> StringReplace[text, "\r\n" -> "\n"], "version" -> version, 
 	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[text, "\n"], 1] 
 |>]);
+
+
+ChangeText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
+    {
+        range, newtext
+    },
+    
+    range = contextChange["range"] ;
+    newtext = StringReplace[contextChange["text"], "\r\n" -> "\n"];
+    
+    If[MissingQ[range], 
+        Return[ReplaceKey[doc, "text" -> newtext]]
+    ];
+    
+    StringReplacePart[doc@"text", {
+        FromLspPosition[range@"start"],
+        FromLspPosition[range@"end"] - 1
+    }, newtext]
+    
+];
 
 
 (* ::Subsection:: *)
@@ -221,7 +244,30 @@ GetLine[doc_TextDocument, line_Integer] := Module[
 (*FromLspPosition <-> Index*)
 
 
-FromLspPosition[doc_TextDocument, pos_LspPosition] := Part[doc@"position", (pos@"line" + 1)] + pos@"character";
+FromLspPosition[doc_TextDocument, pos_LspPosition] := Module[
+    {
+        line, linePos, totalLines, lineWidth, textLength
+    },
+    
+    textLength = Length[doc@"text"];
+    totalLines = Length[doc@"position"];
+    line = pos@"line" + 1;
+    linePos = Part[doc@"position", line];
+    
+    If[line > totalLines, 
+        Return[textLength]
+    ];
+    
+    lineWidth = If[line == totalLines,
+        textLength - linePos,
+        Part[doc@"position", line + 1] - linePos
+    ];
+    
+    linePos + If[pos@"character" > lineWidth,
+        lineWidth,
+        pos@"character"
+    ]
+];
 
 
 ToLspPosition[doc_TextDocument, index_Integer] := Module[

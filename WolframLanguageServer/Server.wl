@@ -762,35 +762,85 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 
 diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	{
-		txt = text["text"], pos, len,
-		errors
+		txt = text["text"], start, end
 	},
 	
 	
-	errors = If[SyntaxQ[txt], 
-	    {},
-	    LogDebug @ "Found Syntax Error";
-		len = SyntaxLength[txt];
-		pos = ToLspPosition[text, len];
+	Block[
 	    {
-	        <|
+	        OpenRead=(#1&) (* read from streams instead of files *)
+	    },
+
+	    txt
+	    // ToCharacterCode
+	    // FromCharacterCode
+	    // StringToStream
+	    // GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors (* find first error using internel funciton*)
+	]
+    // Replace[{
+        {GeneralUtilities`FileLine[_InputStream, line_Integer] -> error_String} :> ( (* if found an error *)
+            LogDebug @ "Found Syntax Error";
+            start = ToLspPosition[text, Part[text@"position", line]];
+            end = ToLspPosition[text,
+                If[line == Length[text@"position"],
+                    Length[txt], (* last char *)
+                    Part[text@"position", line + 1] - 1 (* end of the line *)
+                ]
+            ];
+    		LogDebug @ "Error line: " <> GetLine[text, start["line"]];
+        	{<|
 				"range" -> <|
-					"start" -> First@pos,
-					"end" -> First@pos
+	    		    "start" -> First @ start,
+	    		    "end" -> First @ end
 	    	    |>,
-				"serverity" -> DiagnosticSeverity["Error"],
+	        	"severity" -> ToSeverity[error],
 	        	"source" -> "Wolfram",
-				"message" -> "Invalid syntax at the given position."
-			|>
-		}
-	];
-		
-	<|
+	        	"message" -> ErrorMessage[error]
+	        |>}
+	    )
+	}]
+	// (<|
 		"uri" -> uri,
-		"diagnostics"  -> errors
-    |>
+		"diagnostics"  -> #1
+    |> &)
 ];
 
+
+ToSeverity[error_String] := (
+    Replace[error, {
+        (* error *)
+        "SyntaxError" -> "Error",
+        "Mismatched*" -> "Error",
+        "UnknownError" -> "Error",
+        (* warning *)
+        "ImplicitNull" -> "Warning",
+        "ImplicitTimes" -> "Warning",
+        "MissingDefinition" -> "Warning",
+        (* information *)
+        "MultilineAssociationSyntax" -> "Information",
+        "PackageDirectiveEndsInSemicolon" -> "Information",
+        _ -> "Information"
+    }] // DiagnosticSeverity
+);
+
+
+ErrorMessage[error_String] := (
+    Replace[error, {
+        "SyntaxError" -> "The expression is in complete.",
+        "MismatchedParenthesis" -> "The parenthesis \"()\" do not match",
+        "MismatchedBracket" -> "The bracket \"[]\" do not match",
+        "MismatchedBrace" -> "The brace \"{}\" do not match",
+        "UnknownError" -> "An unknown error is found.",
+        (* warning *)
+        "ImplicitNull" -> "Comma encountered with no adjacent expression. The expression will be treated as Null.",
+        "ImplicitTimes" -> "An implicit Times[] is found. Maybe you missed a semi-colon (\";\")?",
+        "MissingDefinition" -> "Cannoot not find the definition.",
+        (* information *)
+        "MultilineAssociationSyntax" -> "Multiline association syntax",
+        "PackageDirectiveEndsInSemicolon" -> "Package directive ends in semicolon.",
+        _ :> error
+    }]
+);
 
 
 (* ::Subsection:: *)
