@@ -62,7 +62,7 @@ Options[WLServerStart] = {
 
 WLServerStart[o:OptionsPattern[]] :=Module[
 	{
-		(*Options:*) port, stream, workingDir,
+		(*Options:*) port, stream, workingDir, tempDirPath,
 		connection
 	},
 
@@ -72,12 +72,14 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 
 	(*Temporary cache.*)
 	tempDirPath = FileNameJoin[{workingDir, "wlServerCache"}];
-	(*Clear the cache of last time usage.*)
-	If[DirectoryQ[tempDirPath], DeleteDirectory[tempDirPath, DeleteContents -> True]];
-	(*Create temporary file.*)
-	If[!DirectoryQ[tempDirPath], 
+	
+	If[DirectoryQ[tempDirPath], 
+	    (*Clear the cache of last time usage.*)
+	    DeleteDirectory[tempDirPath, DeleteContents -> True],
+    	(*Create temporary file.*)
 		If[CreateDirectory[tempDirPath] == $Failed, 
-		(LogError @ "Create cache directory failed, please make sure there is no file named cache in the working directory."; Return[])
+		    LogError @ "Create cache directory failed, please make sure there is no file named cache in the working directory.";
+		    Return[]
 		]
 	];
 	LogDebug @ ("Cache: " <> tempDirPath);
@@ -115,6 +117,7 @@ DeclareType[SocketClient, <|
 	"socket" -> _SocketObject
 |>];
 
+(* Not using this handler due to ZMQ is not supported yet, please see handler for TCP *)
 SocketHandler[packet_Association] := Module[
 	{
 		bytearray = packet["DataByteArray"],
@@ -175,7 +178,7 @@ SocketHandler[packet_Association] := Module[
 	{serverStatus, serverState} = handleMessage[message, serverState];
 	If[serverStatus === "Stop",
 		LogInfo["Server stopped. Last Message: " <> message];
-		Quit[];
+		Return[];
 	];
 
 ];
@@ -199,34 +202,39 @@ TcpSocketHandler[state_WorkState] := Module[
 	client["socket"]
 	// SocketReadMessage
 	// Curry[parseRPCBytes][{client["contentLengthRemain", 0], client["lastMessage", {}]}]
-	//(If[Length @ Last @ # == 2,
-		client = Fold[ReplaceKey, client, {
-			"contentLengthRemain" -> First @ Last @ #,
-			"lastMessage" -> Last @ Last @ #
-		}];
-		newstate = ReplaceKey[newstate, "client" -> client];
-		Most @ #,
-		client = Fold[ReplaceKey, client, {
-			"contentLengthRemain" -> 0,
-			"lastMessage" -> {}
-		}];
-		newstate = ReplaceKey[newstate, "client" -> client];
-		#
-	]&)
+	// Replace[{
+	    {msg___, {remain_, last_}} :> (
+	        client = Fold[ReplaceKey, client, {
+	        	"contentLengthRemain" -> remain,
+		    	"lastMessage" -> last
+	    	}];
+        	newstate = ReplaceKey[newstate, "client" -> client];
+	        {msg}
+	    ),
+	    msg_ :> (
+    	    client = Fold[ReplaceKey, client, {
+    	    	"contentLengthRemain" -> 0,
+	    	    "lastMessage" -> {}
+	        }];
+	        newstate = ReplaceKey[newstate, "client" -> client];
+	        msg
+	    )
+	}]
 	// (Prepend[#, {"Continue", newstate}]&) (* lambda requested here to delay the evaluation of state *)
 	// Fold[handleMessage]
 	// Catch
-	// (If[# =!= {},
-		{serverStatus, newstate} = #;
-		If[serverStatus === "Stop",
-			LogInfo["Server stopped. Last Message: " <> message];
-			Quit[]
-		];
-	]&);
-	TcpSocketHandler[newstate];
-];
+	// Replace[{
+	    {"Stop", ns_} :> (
+	        LogInfo["Server stopped"];
+			Return[ns]
+	    ),
+	    {_, ns_} :> ns,
+	    {} :> newstate (* No message, delayed to use the latest newstate *)
+	}]
+] // TcpSocketHandler; (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
+(* Removed, use tcp handler instead *)
 WLServerListen[connection:("stdio" | _SocketObject), state_WorkState] := Block[{$RecursionLimit = Infinity}, Module[
 	{
 		newMsg, serverStatus, client, newState = state
@@ -343,10 +351,10 @@ parseRPCBytes[msgbytes:(_ByteArray|{}), prefix_:{0, {}}] := Module[
 	If[contentLengthRemain != 0,
 		consumeLength = Min[contentLengthRemain, Length[msgbytes]];
 		{curBytes, restBytes} = TakeDrop[msgbytes, consumeLength];
-		curBytes = If[lastBytes === {},
-			curBytes,
-			lastBytes ~Join~ curBytes
-		];
+		curBytes = Replace[lastBytes, {
+		    {} -> curBytes,
+		    _ -> lastBytes ~ Join~ curBytes
+		}];
 		contentLengthRemain = contentLengthRemain - consumeLength;
 		If[contentLengthRemain == 0,
 			Return[Prepend[parseRPCBytes[restBytes], ImportByteArray[curBytes, "RawJSON"]]],
@@ -354,12 +362,14 @@ parseRPCBytes[msgbytes:(_ByteArray|{}), prefix_:{0, {}}] := Module[
 		]
 	];
 	
-	headerEndPosition = SequencePosition[Normal @ msgbytes, RPCPatterns["SequenceSplitPattern"], 1];
-	headerEndPosition = If[Length[headerEndPosition] == 1,
-		Last @ First @ headerEndPosition,
-		LogDebug["Invalid message:" <> ToString[Normal@msgbytes]];
-		Return[{}]
-	];
+	headerEndPosition = SequencePosition[Normal @ msgbytes, RPCPatterns["SequenceSplitPattern"], 1]
+	    // Replace[{
+	        {{_, endPos_}} :> endPos,
+	        _ -> (
+	            LogDebug["Invalid message:" <> ToString[Normal @ msgbytes]];
+		        Return[{}]
+		    )
+	    }];
 	LogInfo @ ByteArrayToString[msgbytes];
 	{curBytes, restBytes} = TakeDrop[msgbytes, headerEndPosition];
 	
@@ -387,7 +397,7 @@ constructRPCBytes[msg_Association] := Module[
 NotificationQ[msg_Association] := MissingQ[msg["id"]];
 
 handleMessage[{"Stop", state_WorkState}, msg_Association] := 
-	Throw[{"Stop", state}];
+	Throw[{"Stop", state}, "Stop"];
 
 handleMessage[{"Continue", state_WorkState}, msg_Association] := 
 	handleMessage[msg, state];
@@ -428,16 +438,17 @@ sendResponse[client_, reqid_, {resType_, res_}] := Module[
 	{
 		id
 	},
-		If[MissingQ[reqid],
-        <|
+	
+    Replace[reqid, {
+	    _Missing -> <|
 			"method" -> "textDocument/publishDiagnostics",
 			resType -> res
 		|>,
-		<|
+		_ -> <|
 			"id" -> reqid,
 			resType -> res
-		|>
-		]
+        |>
+	}]
 	// LogInfo
 	// constructRPCBytes
 	// WriteMessage[client]
@@ -459,8 +470,7 @@ handleRequest["initialize", msg_, state_] := Module[
 	},
 	
 	(* Check Client Capabilities *)
-	theme = msg["params"]["initializationOptions"]["theme"];
-	If[MissingQ[theme], theme = "dark"];
+	theme = msg["params"]["initializationOptions"]["theme"] // Replace[_Missing -> "dark"];
 	newState = ReplaceKey[newState, "theme" -> theme];
 	
 	{"Continue", {"result", <|
@@ -502,19 +512,16 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	(* LogDebug @ ("Cache file : " <> genImg[]); *)
 	(*generate a picture, which is redundant at the moment.*)
 	(* genImg[] := "![test](file:///D:/Code/lsp-wl/test.png)"; *)
-	{"Continue", 
-		{"result", 
-		<| "contents" -> 
-			If[Names[token] === {} && Context[token] === "Global`",
-			    token,
-			    If[Head[ToExpression[token <> "::usage"]] === MessageName,
-			        token,
-				    TokenDocumentation[token]
-				]
-			 ] 
-		|>
-		},
-	newState}
+	{"Continue", {"result", <|
+	    "contents" -> 
+		    If[Names[token] === {} && Context[token] === "Global`",
+		        token,
+		        Replace[ToExpression[token <> "::usage"], {
+		            _MessageName -> token,
+			        _ -> TokenDocumentation[token]
+			    }]
+		     ] 
+	|>}, newState}
 			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token] <> "\n" <> genImg[]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
 			(* <|"kind" -> "markdown", "value" -> *)
@@ -534,7 +541,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	},
 	p = msg["params"]["position"];
 	(*The position is tricky here, we have to read one character ahead.*)
-	pos = LspPosition[<|"line" -> p["line"], "character" -> If[# > 0, # - 1, #]& @ p["character"]|>];
+	pos = LspPosition[<|"line" -> p["line"], "character" -> Replace[p["character"], c_?Positive :> c - 1]|>];
 	(*Token is a patten here.*)
 	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
@@ -587,7 +594,7 @@ handleRequest[_, msg_, state_] := Module[
 	LogError[responseMsg];
 	LogDebug @ msg;
 	{"Continue", ServerError["MethodNotFound", responseMsg], state}
-	];
+];
 
 
 (* ::Section:: *)
@@ -636,11 +643,7 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
 	docs~AssociateTo~(
-		doc["uri"] -> 
-		TextDocument[<|
-			"text" -> doc["text"], "version" -> doc["version"], 
-			"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[doc["text"], "\n"], 1] 
-		|>]
+		doc["uri"] -> CreateTextDocument[doc["text"], doc["version"]]
 	);
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
 	LogInfo @ ("Opened Document " <> doc["uri"]);
@@ -703,7 +706,7 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 			(* {"Continue", {}, newState} *)
 		(* ], *)
 		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"]}, newState},
-		{"Continue", {}, newState}S
+		{"Continue", {}, newState}
 		],
 		{"Continue", {}, newState}
 	]
@@ -718,8 +721,7 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	s = contentChange["range"] @ "start";
 	e = contentChange ["range"] @ "end";
 	(*helper function to get the absolute position*)
-	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) 
-	+ r["character"];
+	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) + r["character"];
 	(* if new elements are added, the length is 0. *)
 	(* LogDebug @ contentChanges; *)
 	(* LogDebug @ s; *)
@@ -737,20 +739,18 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	
 	newState = newState~ReplaceKey~(
 		{"openedDocs", uri, "text"} -> (
-		If[contentChange["rangeLength"] == 0, 
-		StringInsert[newState["openedDocs"][uri]["text"], contentChange["text"], 
-		getPos[s]],
-		StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], 
-		{getPos[s], getPos[e] - 1}]
-		]
+		    If[contentChange["rangeLength"] == 0, 
+        		StringInsert[newState["openedDocs"][uri]["text"], contentChange["text"], getPos[s]],
+	        	StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], {getPos[s], getPos[e] - 1}]
+	    	]
 		)
-		);
+	);
 	(* Update the position *)
 	newState = newState~ReplaceKey~(
 		{"openedDocs", uri, "position"} -> (
-		Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
+	    	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
 		)
-		);
+    );
 	(* LogDebug @ "This is full text after:"; *)
 	(* LogDebug @ newState["openedDocs"][uri]["text"]; *)
 	(* LogDebug @ "This is position before."; *)
@@ -772,14 +772,14 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	    LogDebug @ "Found Syntax Error";
 		len = SyntaxLength[txt];
 		pos = ToLspPosition[text, len];
-		{
+	    {
 	        <|
 				"range" -> <|
 					"start" -> First@pos,
 					"end" -> First@pos
-				|>,
+	    	    |>,
 				"serverity" -> DiagnosticSeverity["Error"],
-				"source" -> "Wolfram",
+	        	"source" -> "Wolfram",
 				"message" -> "Invalid syntax at the given position."
 			|>
 		}

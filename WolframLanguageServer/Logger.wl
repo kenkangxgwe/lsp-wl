@@ -21,7 +21,11 @@ LoggerStart[level_, streams:{_OutputStream..}] := Module[
 		levelno, head
 	},
 	
-	levelno = If[MissingQ[#], Length[LoggingLevels], First @ #]& @ FirstPosition[LoggingLevels, level];
+	levelno = FirstPosition[LoggingLevels, level]
+	    // Replace[{
+	        _Missing -> Length[LoggingLevels],
+	        {l_} :> l
+	    }];
 	
 	{LogError, LogWarn, LogInfo, LogDebug} = 
 		(Function[{lvl},
