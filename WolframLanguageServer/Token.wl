@@ -100,7 +100,7 @@ GenMdText[token_String] := Module[
 	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
 	usageString = ToMarkdown[ToExpression[token <> "::usage"]] //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]};
 	StringReplace[usageString, {
-        StartOfLine -> "* ",
+        StartOfLine -> "___\n",
 	    "\n"->"\n\n"
 	}] <> "\n\n"
 ];
