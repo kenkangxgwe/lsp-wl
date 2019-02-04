@@ -677,13 +677,13 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 		newState = state, contentChanges 
 	},
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	Assert[newState["openedDocs"][uri]["version"] < doc["version"]];
+	Assert[newState["openedDocs"][uri]["version"] == doc["version"] - 1];
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 	newState = newState~ReplaceKey~({"openedDocs", uri, "version"} -> doc["version"]);
 	(* There are three cases, delete, replace and add. *)
-	contentChanges = msg["params"]["contentChanges"];
+	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
 	(* Apply all the content changes. *)
-	Do[newState = handleContentChange[newState, change, uri], {change, contentChanges}];
+	newState = ReplaceKey[newState, {"openedDocs", uri} -> LogDebug@Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
 	LogInfo @ ("Change Document " <> uri);
 	(* Give diagnostics when a new line is finished. *)
 	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}
@@ -716,35 +716,35 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 ];
 
 
-diagnoseTextDocument[text_TextDocument, uri_String] := Module[
+diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
 	{
-		txt = text["text"], start, end
+		txt = doc["text"], start, end
 	},
 	
 	
-	Block[
-	    {
-	        OpenRead=(#1&) (* read from streams instead of files *)
-	    },
-
 	txt
 	// ToCharacterCode
 	// FromCharacterCode
 	// StringToStream
-	    // GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors (* find first error using internel funciton*)
-	]
-    // Replace[{
-        {GeneralUtilities`FileLine[_InputStream, line_Integer] -> error_String} :> ( (* if found an error *)
+	// Block[
+	    {
+	        OpenRead = (#1&) (* read from streams instead of files *)
+	    },
+
+	    GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors[#] (* find first error using internel funciton*)
+	]&
+    // Cases[
+        (GeneralUtilities`FileLine[_InputStream, line_Integer] -> error_String) :> ( (* if found an error *)
             LogDebug @ "Found Syntax Error";
-            start = ToLspPosition[text, Part[text@"position", line]];
-            end = ToLspPosition[text,
-                If[line == Length[text@"position"],
-                    Length[txt], (* last char *)
-                    Part[text@"position", line + 1] - 1 (* end of the line *)
+            start = ToLspPosition[doc, Part[doc@"position", line]];
+            end = ToLspPosition[doc,
+                If[line == Length[doc@"position"],
+                    StringLength[txt], (* last char *)
+                    Part[doc@"position", line + 1] - 1 (* end of the line *)
                 ]
             ];
-    		LogDebug @ "Error line: " <> GetLine[text, start["line"]];
-        	{<|
+    		LogDebug @ "Error line: " <> GetLine[doc, line];
+        	<|
 				"range" -> <|
 	    		    "start" -> First @ start,
 	    		    "end" -> First @ end
@@ -752,9 +752,9 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	        	"severity" -> ToSeverity[error],
 	        	"source" -> "Wolfram",
 	        	"message" -> ErrorMessage[error]
-	        |>}
+	        |>
 	    )
-	}]
+	]
 	// (<|
 		"uri" -> uri,
 		"diagnostics"  -> #1
@@ -813,7 +813,6 @@ handleNotification[_, msg_, state_] := Module[
 	(*Echo @ msg;*)
 	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
 ];
-
 
 
 (* ::Subsection:: *)

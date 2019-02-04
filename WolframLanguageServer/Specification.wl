@@ -12,6 +12,7 @@ Construct[ClearAll, Context[] <> "*"];
 
 TextDocument::usage = "is the type of the text document.";
 CreateTextDocument::usage = "CreateTextDocument[text_String, version_Integer] returns a TextDocument object";
+ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input.";
 GetToken::usage = "GetToken[doc_TextDocument, pos_LspPosition] returns the token located at the given position";
 GetLine::usage = "GetLine[doc_TextDocument, line_Integer] returns the specific line of the TextDocument.";
 
@@ -127,6 +128,7 @@ SymbolKind = <|
 
 Begin["`Private`"];
 Construct[ClearAll, Context[] <> "*"];
+Needs["WolframLanguageServer`Logger`"];
 Needs["WolframLanguageServer`DataType`"];
 
 
@@ -156,9 +158,9 @@ CreateTextDocument[text_String, version_Integer] := Module[
 ];
 
 
-ChangeText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
+ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
     {
-        range, newtext
+        range, newtext, newdoc
     },
     
     range = contextChange["range"] ;
@@ -168,10 +170,12 @@ ChangeText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Mo
         Return[ReplaceKey[doc, "text" -> newtext]]
     ];
     
-    StringReplacePart[doc@"text", {
-        FromLspPosition[range@"start"],
-        FromLspPosition[range@"end"] - 1
-    }, newtext]
+    newdoc = ReplaceKey[doc, "text" -> StringReplacePart[doc@"text", newtext, {
+        FromLspPosition[doc, range@"start"],
+        FromLspPosition[doc, range@"end"] - 1
+    }]];
+    
+    ReplaceKey[newdoc, "position" -> Prepend[(1 + #)& /@ First /@ StringPosition[newdoc["text"], "\n"], 1]]
     
 ];
 
@@ -233,9 +237,9 @@ StringPositionUntil[text_String, pattern_, pos_Integer, dir:(-1|1)] := Module[
 
 GetLine[doc_TextDocument, line_Integer] := Module[
     {
-        totalLine = Length[doc@"position"], totalLength = Length[doc@"text"]
+        totalLine = Length[doc@"position"], totalLength = StringLength[doc@"text"]
     },
-    LogDebug[doc];
+    
     Which[line > totalLine || line < 1,
         "",
     line == totalLine,
@@ -269,8 +273,8 @@ FromLspPosition[doc_TextDocument, pos_LspPosition] := Module[
         Part[doc@"position", line + 1] - linePos
     ];
     
-    linePos + If[pos@"character" >= lineWidth,
-        lineWidth - 1,
+    linePos + If[pos@"character" > lineWidth,
+        lineWidth,
         pos@"character"
     ]
 ];
