@@ -31,8 +31,8 @@ LoggerStart[level_, streams:{_OutputStream..}] := Module[
 		(Function[{lvl},
 			Function[{msg},
 				Function[{stream}, WriteString[stream,
-					"[" <> StringPadRight[ToUpperCase[lvl], 5] <> " " 
-					<> DateString["ISODateTime"] <> "] " <> ToString[msg] <> "\n"
+					Snippet["[" <> StringPadRight[ToUpperCase[lvl], 5] <> " " 
+					<> DateString["ISODateTime"] <> "] " <> ToString[msg], 20] <> "\n"
 				]] /@ streams; msg
 			]
 			(*Echo[#, lvl, ##2]&*)
