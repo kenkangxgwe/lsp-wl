@@ -619,18 +619,18 @@ handleNotification["$/cancelRequest", msg_, state_] := Module[
 (* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
 handleNotification["textDocument/didOpen", msg_, state_] := Module[
 	{
-		newState = state, doc, docs
+		doc = msg["params"]["textDocument"], 
+		uri = msg["params"]["textDocument"]["uri"], 
+		newState = state, docs
 	},
 	LogDebug @ "Begin Handle DidOpen.";
-	doc = msg["params"]["textDocument"];
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
 	docs~AssociateTo~(
-		doc["uri"] -> CreateTextDocument[doc["text"], doc["version"]]
+		uri -> CreateTextDocument[doc["text"], doc["version"]]
 	);
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
-	LogInfo @ ("Opened Document " <> doc["uri"]);
-	{"Continue", {}, newState}
+	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}
 ];
 
 
@@ -659,7 +659,7 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 
 handleNotification["textDocument/didChange", msg_, state_] := Module[
 	{
-        doc = msg["params"]["textDocument"], uri=doc["uri"], 
+        doc = msg["params"]["textDocument"], uri=msg["params"]["textDocument"]["uri"], 
 		newState = state, contentChanges 
 	},
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
@@ -689,7 +689,7 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	newState = newState~ReplaceKey~(
 		{"openedDocs", uri, "text"} -> (
 			(* Surprisingly, when the end is smaller than the start, the StringReplacePart would function as StringInsert. *)
-			StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], {getPos[s], getPos[e] - 1}]
+			StringReplacePart[newState["openedDocs"][uri]["text"], StringReplace[contentChange["text"], "\r\n" -> "\n"], {getPos[s], getPos[e] - 1}]
 		)
 	);
 	(* Update the position *)
