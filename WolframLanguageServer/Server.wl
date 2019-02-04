@@ -521,7 +521,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	LogDebug @ ("Names of token: " <> Names[token]);
 	{"Continue", {"result", <|
 	    "contents" -> 
-		    If[Names[token] === {} && Context[token] === "Global`",
+		    If[Names[token] === {} || Context[token] === "Global`",
 		        token,
 		        Replace[ToExpression[token <> "::usage"], {
 		            _MessageName -> token,

@@ -37,12 +37,13 @@ Options[TokenDocumentation] = {
     "TempDir" -> $TemporaryDirectory
 };
 
-TokenDocumentation[token_, o: OptionsPattern[]] := Module[
+TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
     {
         format, theme, tempdir
     },
     
     {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}];
+    If[Head[ToExpression[token<>"::usage"]] === MessageName, Return[""]];
     StringJoin[{
         GenHeader[token],
         "\t",
