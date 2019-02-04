@@ -144,10 +144,16 @@ DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength
 (*CreateTextDocument*)
 
 
-CreateTextDocument[text_String, version_Integer] := (TextDocument[<|
-	"text" -> StringReplace[text, "\r\n" -> "\n"], "version" -> version, 
-	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[text, "\n"], 1] 
-|>]);
+CreateTextDocument[text_String, version_Integer] := Module[
+    {
+        newtext = StringReplace[text, "\r\n" -> "\n"]
+    },
+    
+    TextDocument[<|
+	    "text" -> newtext, "version" -> version, 
+    	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[newtext, "\n"], 1] 
+    |>]
+];
 
 
 ChangeText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
@@ -249,7 +255,7 @@ FromLspPosition[doc_TextDocument, pos_LspPosition] := Module[
         line, linePos, totalLines, lineWidth, textLength
     },
     
-    textLength = Length[doc@"text"];
+    textLength = StringLength[doc@"text"];
     totalLines = Length[doc@"position"];
     line = pos@"line" + 1;
     linePos = Part[doc@"position", line];
@@ -259,12 +265,12 @@ FromLspPosition[doc_TextDocument, pos_LspPosition] := Module[
     ];
     
     lineWidth = If[line == totalLines,
-        textLength - linePos,
+        textLength - linePos + 1,
         Part[doc@"position", line + 1] - linePos
     ];
     
-    linePos + If[pos@"character" > lineWidth,
-        lineWidth,
+    linePos + If[pos@"character" >= lineWidth,
+        lineWidth - 1,
         pos@"character"
     ]
 ];

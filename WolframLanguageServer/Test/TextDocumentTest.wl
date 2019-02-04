@@ -17,9 +17,9 @@ Needs[TestedContext];
 
 Construct[ClearAll, Context[] <> "*"];
 
-samplecode = "data1=Table[Sqrt[1-x^2-y^2],{x,-1,1,0.05},{y,-1,1,0.05}];
-data2=Table[-Sqrt[1-x^2-y^2],{x,-1,1,0.05},{y,-1,1,0.05}];
-ListPlot3D[{data1,data2},PlotStyle\[Rule]{Yellow,Cyan},BoxRatios\[Rule]Automatic,DataRange\[Rule]{{-1,1},{-1,1}}]
+samplecode = "data1=Table[Sqrt[1-x^2-y^2],{x,-1,1,0.05},{y,-1,1,0.05}];\n\
+data2=Table[-Sqrt[1-x^2-y^2],{x,-1,1,0.05},{y,-1,1,0.05}];\n\
+ListPlot3D[{data1,data2},PlotStyle\[Rule]{Yellow,Cyan},BoxRatios\[Rule]Automatic,DataRange\[Rule]{{-1,1},{-1,1}}]\n\
 ";
 
 Tests := {
@@ -32,6 +32,27 @@ VerificationTest[
 		"position" -> {1, 59, 118, 214}
 	|>],
 	TestID -> "Constructor"
+],
+
+VerificationTest[
+    pos = LspPosition[<|"line" -> 0, "character" -> 0|>];
+    FromLspPosition[sampletextdoc, pos],
+    1,
+    TestID -> "FromLspPosition 1"
+],
+
+VerificationTest[
+    pos = LspPosition[<|"line" -> 1, "character" -> 1000|>];
+    FromLspPosition[sampletextdoc, pos],
+    117,
+    TestID -> "FromLspPosition 2"
+],
+
+VerificationTest[
+    pos = LspPosition[<|"line" -> 3, "character" -> 1|>];
+    FromLspPosition[sampletextdoc, pos],
+    213,
+    TestID -> "FromLspPosition 3"
 ],
 
 VerificationTest[
@@ -61,6 +82,7 @@ VerificationTest[
 	"x",
 	TestID -> "GetToken 4"
 ]
+
 };
 
 Sow[#, "WolframLanguageServer`Test`TextDocumentTest`"]& /@ Tests;
