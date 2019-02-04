@@ -504,14 +504,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	];
 	
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
-	(* LogDebug @ ("Hover over position: " <> ToString[pos, InputForm]); *)
-	(* LogDebug @ ("Document: " <> ToString[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], InputForm]); *)
-	(* LogDebug @ ("Token head is: " <> Head[token] // ToString); *)
-	(* LogDebug @ ("Hover over token usage: " <> ToString[(#::usage &) @ Symbol[token]]); *)
 	LogDebug @ ("Names of token: " <> Names[token]);
-	(* LogDebug @ ("Cache file : " <> genImg[]); *)
-	(*generate a picture, which is redundant at the moment.*)
-	(* genImg[] := "![test](file:///D:/Code/lsp-wl/test.png)"; *)
 	{"Continue", {"result", <|
 	    "contents" -> 
 		    If[Names[token] === {} && Context[token] === "Global`",
@@ -522,12 +515,6 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 			    }]
 		     ] 
 	|>}, newState}
-			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token] <> "\n" <> genImg[]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
-			(* If[Names[token] === {}, token, (ToString[(#::usage &) @ Symbol[token]] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")]  *)
-			(* <|"kind" -> "markdown", "value" -> *)
-			(* If[Names[token] === {}, token, (ExportString[Style[(#::usage &)@Symbol[token], White], "SVG"] <> "\n" <> genUri[token]) ~ StringReplace ~ ("\n" -> "\n\n")] |> *)
-		
-		(* "range" -> <|"start" -> msg["params"]["position"], "end" ->  msg["params"]["position"]|> *)
 ];
 
 
@@ -565,11 +552,8 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 	},
 	token = msg["params"]["label"];
 	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
-	(* LogDebug @ ("Kind: " <> ToString[If[StringTake[token, 1] === "$", 6, 3], InputForm]); *)
-	(* LogDebug @ ("Documentation: " <> (genImg[token] <> "\n" <> genUri[token])); *)
 	{"Continue", {"result", <|
 		"label" -> token, 
-		(*whether it is system variable or system function*)
 		"kind" -> TokenKind[token], 
 		"documentation" -> <|
 			"kind" -> "markdown",
@@ -610,7 +594,6 @@ handleNotification["initialized", msg_, state_] := Module[
 		newState = state
 	},
 	
-	(* AssociateTo[newState, "initialized" -> True]; *)
 	newState = ReplaceKey[newState, "initialized" -> True];
 	{"Continue", {}, newState}
 ];
@@ -653,14 +636,14 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*textSync/DidClose*)
+(* textSync/DidClose *)
 
 
 handleNotification["textDocument/didClose", msg_, state_] := Module[
 	{
-		newState = state, uri, docs
+		uri = msg["params"]["textDocument"]["uri"], 
+		newState = state, docs
 	},
-	uri = msg["params"]["textDocument"]["uri"];
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
 	docs~KeyDropFrom~uri;
@@ -671,45 +654,25 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*textSync/DidChange*)
+(* textSync/DidChange *)
 
 
 handleNotification["textDocument/didChange", msg_, state_] := Module[
 	{
-		newState = state, doc, contentChanges, s, e, debug, getPos
+        doc = msg["params"]["textDocument"], uri=doc["uri"], 
+		newState = state, contentChanges 
 	},
-	debug = False;
-	doc = msg["params"]["textDocument"];
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	Assert[newState["openedDocs"][doc["uri"]]["version"] < doc["version"]];
-	(* newState["openedDocs"][doc["uri"]]["version"] = doc["version"]; *)
-	newState = newState~ReplaceKey~({"openedDocs", doc["uri"], "version"} -> doc["version"]);
+	Assert[newState["openedDocs"][uri]["version"] < doc["version"]];
+	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
+	newState = newState~ReplaceKey~({"openedDocs", uri, "version"} -> doc["version"]);
 	(* There are three cases, delete, replace and add. *)
 	contentChanges = msg["params"]["contentChanges"];
 	(* Apply all the content changes. *)
-	Do[newState = handleContentChange[newState, change, doc["uri"]], {change, contentChanges}];
-	(* LogDebug @ "This is full text in didchange after handleContentChange:"; *)
-	(* LogDebug @ newState["openedDocs"][doc["uri"]]["text"]; *)
-
-	(* LogDebug @ newState["openedDocs"] @ doc["uri"]; *)
-	LogInfo @ ("Change Document " <> doc["uri"]);
-	(* LogDebug @ ("Last few string " <> ToString[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], InputForm]); *)
-	(* LogDebug @ ("Syntax length " <>  ToString @ SyntaxLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
-	(* LogDebug @ ("Document length " <> ToString @ StringLength[newState["openedDocs"][doc["uri"]]["text"]]); *)
-	(* LogDebug @ ("Document position " <> ToString @ newState["openedDocs"][doc["uri"]]["position"]); *)
-	(* LogDebug @ ("Syntax check " <> ToString @ StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]); *)
-	(* LogDebug @ (ToString @ (newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"])); *)
-	(*Give diagnostics when a new line is finished.*)
-	If[StringLength[newState["openedDocs"][doc["uri"]]["text"]] >= 2,
-		If[True (*StringMatchQ[StringTake[newState["openedDocs"][doc["uri"]]["text"], -5], "(.|\\s)*;\r?\n?(.|\\s)*" // RegularExpression]*),
-			(* {"Continue", {diagnoseTextDocument[newState["openedDocs"][doc["uri"]], doc["uri"]]}, newState}, *)
-			(* {"Continue", {}, newState} *)
-		(* ], *)
-		{"Continue", {"params", newState["openedDocs"][doc["uri"]]~diagnoseTextDocument~doc["uri"]}, newState},
-		{"Continue", {}, newState}
-		],
-		{"Continue", {}, newState}
-	]
+	Do[newState = handleContentChange[newState, change, uri], {change, contentChanges}];
+	LogInfo @ ("Change Document " <> uri);
+	(* Give diagnostics when a new line is finished. *)
+	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}
 ];
 
 
@@ -723,26 +686,10 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	(*helper function to get the absolute position*)
 	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) + r["character"];
 	(* if new elements are added, the length is 0. *)
-	(* LogDebug @ contentChanges; *)
-	(* LogDebug @ s; *)
-	(* LogDebug @ e; *)
-	(* LogDebug @ "This is position before."; *)
-	(* LogDebug @ newState["openedDocs"][uri]["position"]; *)
-	(* LogDebug @ "This is full text before:"; *)
-	(* LogDebug @ newState["openedDocs"][uri]["text"]; *)
-	(* LogDebug @ "This is position start and end"; *)
-	(* LogDebug @ getPos[s]; *)
-	(* LogDebug @ (getPos[e] - 1); *)
-	(* LogDebug @ "This is position string start and end"; *)
-	(* LogDebug @ (newState["openedDocs"][uri]["text"] ~ StringPart ~ getPos[s]); *)
-	(* LogDebug @ (newState["openedDocs"][uri]["text"] ~ StringPart ~ (getPos[e] - 1));  *)
-	
 	newState = newState~ReplaceKey~(
 		{"openedDocs", uri, "text"} -> (
-		    If[contentChange["rangeLength"] == 0, 
-        		StringInsert[newState["openedDocs"][uri]["text"], contentChange["text"], getPos[s]],
-	        	StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], {getPos[s], getPos[e] - 1}]
-	    	]
+			(* Surprisingly, when the end is smaller than the start, the StringReplacePart would function as StringInsert. *)
+			StringReplacePart[newState["openedDocs"][uri]["text"], contentChange["text"], {getPos[s], getPos[e] - 1}]
 		)
 	);
 	(* Update the position *)
@@ -751,11 +698,6 @@ handleContentChange[state_, contentChange_, uri_String] := Module[
 	    	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
 		)
     );
-	(* LogDebug @ "This is full text after:"; *)
-	(* LogDebug @ newState["openedDocs"][uri]["text"]; *)
-	(* LogDebug @ "This is position before."; *)
-	(* LogDebug @ newState["openedDocs"][uri]["position"]; *)
-	
 	newState
 ];
 
@@ -826,7 +768,7 @@ ToSeverity[error_String] := (
 
 ErrorMessage[error_String] := (
     Replace[error, {
-        "SyntaxError" -> "The expression is in complete.",
+        "SyntaxError" -> "The expression is incomplete.",
         "MismatchedParenthesis" -> "The parenthesis \"()\" do not match",
         "MismatchedBracket" -> "The bracket \"[]\" do not match",
         "MismatchedBrace" -> "The brace \"{}\" do not match",
