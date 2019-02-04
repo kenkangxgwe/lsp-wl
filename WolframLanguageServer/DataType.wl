@@ -34,6 +34,16 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 		If[MissingQ[value], TypeCheck[default, typekey[key]], value]
 	];
     
+    ConstructType[parameters_Association, typename] := Module[
+        {
+        },
+        
+        typename[Association[
+            (# -> ConstructType[parameters[#], typekey[#]]&)
+            /@ Intersection[Keys[typekey], Keys[parameters]]
+        ]]
+    ];
+    
     (* Keys and Patterns *)
 	Keys[typename] ^= Keys[typekey];
 	KeyPatterns[typename] = typekey;
@@ -61,12 +71,69 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 
 
 (* ::Section:: *)
+(*Default Constructor*)
+
+
+ConstructType[parameters_, pattern_] := If[MatchQ[parameters, pattern], parameters,
+    Replace[pattern, {
+        Verbatim[Pattern][_, obj_] :> ConstructType[parameters, obj],
+        Verbatim[Blank][h_] :> ConstructType[parameters, h],
+        _ :> Missing["ConstructorNotFound", {parameters, pattern}]
+    }]
+];
+
+ConstructType[parameters_, pattern:Verbatim[Alternatives][ps__]] := (
+    ConstructTypeAlternatives[parameters, {{ps}, Missing["ConstructorNotFound", {parameters, pattern}]}]
+);
+
+ConstructTypeAlternatives[parameters_, {{}, res_}] := res;
+ConstructTypeAlternatives[parameters_, {{p_, ps___}, res_}] := ConstructTypeAlternatives[parameters,
+    ConstructType[parameters, p]
+    // Replace[{
+        _Missing -> {{ps}, res},
+        newres_ :> {{}, newres}
+    }]
+];
+
+ConstructType[parameters_List, pattern:List[(Verbatim[Repeated]|Verbatim[RepeatedNull])[p_]]] := (
+    ConstructTypeList[p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+);
+
+ConstructType[parameters_List, pattern:List[(Verbatim[BlankSequence]|Verbatim[BlankNullSequence])[p_]]] := (
+    ConstructTypeList[_p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+);
+
+ConstructTypeList[p_, {{}, res_}] := res;
+ConstructTypeList[p_, {{param_, params___}, res_}] := ConstructTypeList[p, 
+    ConstructType[param, p]
+    // Replace[{
+        _Missing ->  {{}, MissingQ["ConstructorNotFound"]},
+        curRes_ :> {{params}, Append[res, curRes]}
+    }]
+];
+
+ConstructType[parameters_Association, pattern:Association[(Verbatim[Repeated]|Verbatim[RepeatedNull])[Rule[key_, val_]]]] := (
+    ConstructType[Keys[parameters], {key...}]
+    // Replace[{
+        _Missing -> Missing["ConstructorNotFound", {parameters, pattern}],
+        res1_ :> (
+            ConstructType[Values[parameters], {val...}]
+            // Replace[{
+                _Missing -> Missing["ConstructorNotFound", {parameters, pattern}],
+                res2_ :> Association[Thread[res1 -> res2]]
+            }]
+        )
+    }]
+);
+
+
+(* ::Section:: *)
 (*TypeCheck*)
 
 
 TypeCheck[v_?MissingQ, _] := v;
 TypeCheck[_, p_?MissingQ] := p;
-TypeCheck[val_, pat_] := If[MatchQ[val, pat], val, Missing["PatternMismatch", pat]];
+TypeCheck[val_, pat_] := If[MatchQ[val, pat], val, Missing["PatternMismatch", {val, pat}]];
 
 
 (* ::Section:: *)
