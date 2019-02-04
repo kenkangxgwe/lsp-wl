@@ -28,6 +28,14 @@ Needs["WolframLanguageServer`Token`"];
 
 
 (* ::Section:: *)
+(*Utility*)
+
+
+FoldWhile[f_, x_, list_List, test_] := FoldWhile[f, Prepend[list, x], test];
+FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take[#, 2]]&, list, Length[#] > 1 && test[First[#]]&]];
+
+
+(* ::Section:: *)
 (*Start Server*)
 
 
@@ -94,9 +102,10 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 	
 	LogInfo["Server started, listening from port " <> ToString[port] <> "..."];
 	(*LogInfo[WLServerListen[connection, InitialState]];*)
-
-	TcpSocketHandler[ReplaceKey[InitialState, "client" -> TcpSocketClient[<|"socket" -> connection|>]]]
-	
+    
+    Block[{$IterationLimit = Infinity},
+	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> TcpSocketClient[<|"socket" -> connection|>]]]
+	]
 	(*Block[{serverState = InitialState},
 		SocketListen[connection, SocketHandler,
 			HandlerFunctionsKeys -> {"SourceSocket", "DataByteArray", "DataBytes", "MultipartComplete"}
@@ -211,7 +220,7 @@ TcpSocketHandler[state_WorkState] := Module[
         	newstate = ReplaceKey[newstate, "client" -> client];
 	        {msg}
 	    ),
-	    msg_ :> (
+	    msg_List :> (
     	    client = Fold[ReplaceKey, client, {
     	    	"contentLengthRemain" -> 0,
 	    	    "lastMessage" -> {}
@@ -220,9 +229,7 @@ TcpSocketHandler[state_WorkState] := Module[
 	        msg
 	    )
 	}]
-	// (Prepend[#, {"Continue", newstate}]&) (* lambda requested here to delay the evaluation of state *)
-	// Fold[handleMessage]
-	// Catch
+	// (handleMessageList[#, newstate]&) (* lambda requested here to delay the evaluation of newstate *)
 	// Replace[{
 	    {"Stop", ns_} :> (
 	        LogInfo["Server stopped"];
@@ -262,7 +269,7 @@ WLServerListen[connection:("stdio" | _SocketObject), state_WorkState] := Block[{
 ]];
 
 
-(* ::Section:: *)
+(* ::Section::Closed:: *)
 (*StreamIO*)
 
 
@@ -365,8 +372,9 @@ parseRPCBytes[msgbytes:(_ByteArray|{}), prefix_:{0, {}}] := Module[
 	headerEndPosition = SequencePosition[Normal @ msgbytes, RPCPatterns["SequenceSplitPattern"], 1]
 	    // Replace[{
 	        {{_, endPos_}} :> endPos,
-	        _ -> (
+	        err_ :> (
 	            LogDebug["Invalid message:" <> ToString[Normal @ msgbytes]];
+	            LogDebug["err: " <> ToString[err]];
 		        Return[{}]
 		    )
 	    }];
@@ -396,11 +404,17 @@ constructRPCBytes[msg_Association] := Module[
 
 NotificationQ[msg_Association] := MissingQ[msg["id"]];
 
+(* deprecated, use handleMessageList instead *)
 handleMessage[{"Stop", state_WorkState}, msg_Association] := 
 	Throw[{"Stop", state}, "Stop"];
 
+(* deprecated, use handleMessageList instead *)
 handleMessage[{"Continue", state_WorkState}, msg_Association] := 
 	handleMessage[msg, state];
+
+handleMessageList[msgs_List, state_WorkState] := (
+    FoldWhile[handleMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
+);
 
 handleMessage[msg_Association, state_WorkState] := Module[
 	{
@@ -713,10 +727,10 @@ diagnoseTextDocument[text_TextDocument, uri_String] := Module[
 	        OpenRead=(#1&) (* read from streams instead of files *)
 	    },
 
-	    txt
-	    // ToCharacterCode
-	    // FromCharacterCode
-	    // StringToStream
+	txt
+	// ToCharacterCode
+	// FromCharacterCode
+	// StringToStream
 	    // GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors (* find first error using internel funciton*)
 	]
     // Replace[{
