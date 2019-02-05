@@ -86,21 +86,12 @@ Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[N
 
 This is a good way to see the results from the unit tests.
 
-You may also specify the following `initializationOptions`.
-
-- `"theme": "dark" | "light"` For better typesetting of documentation, SVG
-images are used in the popup such as hovering. Since the background is
-transparent, this setting is to ensure the text in the images are actually
-visible. If you use dark themes, then choose `dark` <a name="ref2">
-</a>[<sup>2</sup>](#footnote2). (Default: `dark`)
-
 ## Features
 
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
-![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.jpg)
+![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.jpg)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -108,14 +99,12 @@ QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
-![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.jpg)
+![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.jpg)
 
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
 
-![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.jpg)
+![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.jpg)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
@@ -153,10 +142,6 @@ It will be nice if you want to make a contribution to the following topic.
 * It will be helpful to implement a stdio channel, so that the Mathematica
   earlier than 11.2 will also be supported.
 
-* Since we embed SVG image in the `markupContent[]` and VS Code client cannot
-  resize the popup window according to its size, it is hard to tweak the image
-  width and the font size on every machine. We are looking for a better solution.
-  
 * More editor clients are needed. You can feel free to open a repository and
   create a pull request to add the clients in README.md once your client is released.
   
@@ -184,11 +169,4 @@ QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/alipa
 
 <a name="footnote1"> </a> **[1]** `SocketListen[]` is used for server-client
 communication, which is introduced since 11.2. We plan to support stdio for
-better compatibility [^](#ref1)
-
-<a name="footnote2"> </a> **[2]** This reminds me of a joke making fun of
-Project Managers. A programmer, who cannot put up with endless unreasonable
-requests from his project manager, complained about one stupid task from him
-online, which is to automatically change the theme of the app with the conion, 'Add an option for
-users to choose when launching the app, what is the color of your cell phone
-protector. Then change the them accordingly.' [^](#ref2)
+better compatibility. [^](#ref1)
