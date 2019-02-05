@@ -4,6 +4,19 @@
 
 > by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong)
 
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Visual Studio Code Client for Wolfram Language Server](#visual-studio-code-client-for-wolfram-language-server)
+    - [Installation](#installation)
+    - [Client Settings](#client-settings)
+    - [Features](#features)
+    - [Footnotes](#footnotes)
+
+<!-- markdown-toc end -->
+
+*Please be advised to git pull the lastest version, which has been released on 02/05/2019*.
+
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
 [Language Server Protocol
 (LSP)](https://microsoft.github.io/language-server-protocol) for [Wolfram

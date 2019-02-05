@@ -10,18 +10,16 @@
 **Table of Contents**
 
 - [Wolfram Language Server](#wolfram-language-server)
-  - [Installation](#installation)
-  - [Run the Server](#run-the-server)
-  - [Features](#features)
-  - [Contribute](#contribute)
-    - [Design Principles](#design-principles)
-    - [Todo list](#todo-list)
-  - [Donations :dollar:](#donations-dollar)
-  - [Footnotes](#footnotes)
+    - [Installation](#installation)
+    - [Run the Server](#run-the-server)
+    - [Features](#features)
+    - [Contribute](#contribute)
+        - [Design Principles](#design-principles)
+        - [Todo list](#todo-list)
+    - [Donations :dollar:](#donations-dollar)
+    - [Footnotes](#footnotes)
 
 <!-- markdown-toc end -->
-
-*Please be advised to git pull lastest version, which has been released on 02/05/2019*.
 
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
 [Language Server Protocol
