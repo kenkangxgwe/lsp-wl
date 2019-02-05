@@ -1,6 +1,6 @@
 {
     "name": "lsp-wl-client",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "publisher": "lsp-wl",
     "author": "kenkangxgwe",
     "license": "MIT",
@@ -8,7 +8,7 @@
     "description": "VSCode client of the Wolfram Language Server.",
     "main": "./out/extension",
     "engines": {
-        "vscode": "^1.23.0"
+        "vscode": "^1.25.0"
     },
     "activationEvents": [
         "onLanguage:wolfram"
@@ -97,10 +97,10 @@
     },
     "dependencies": {
         "npm": "^6.5.0",
-        "vscode": "^1.1.26",
-        "vscode-languageclient": "^5.2.1"
+        "vscode-languageclient": "^4.1.4"
     },
     "devDependencies": {
+        "vscode": "^1.1.24",
         "@types/mocha": "^5.2.0",
         "@types/node": "^8.10.36",
         "typescript": "2.8.3"
