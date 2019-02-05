@@ -85,6 +85,7 @@ ToMarkdown[input_String] := Module[
 	            SqrtBox[x_] :> ("Sqrt[" <> ToMarkdown[x] <> "]"),
 	            RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
 	            "\[Rule]" -> "\[RightArrow]",
+	            "\[TwoWayRule]" -> "\[LeftRightArrow]",
 	            (*"\[Ellipsis]" \[Rule] "...",*)
 	            (*"\[DoubleRightArrow]" \[Rule] " => ",*)
 	            Nothing
@@ -101,7 +102,7 @@ GenMdText[token_String] := Module[
 	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
 	usageString = ToMarkdown[ToExpression[token <> "::usage"]] //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]};
 	StringReplace[usageString, {
-        StartOfLine -> "___\n",
+        StartOfLine -> "---\n\n",
 	    "\n"->"\n\n"
 	}] <> "\n\n"
 ];
