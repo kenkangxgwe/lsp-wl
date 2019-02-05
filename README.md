@@ -89,7 +89,7 @@ This is a good way to see the results from the unit tests.
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
-![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/hover.png)
+![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.png)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -97,12 +97,12 @@ This is a good way to see the results from the unit tests.
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
-![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/completion.png)
+![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.png)
 
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
 
-![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/diagnostics.png)
+![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.png)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
