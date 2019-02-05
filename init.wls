@@ -94,7 +94,7 @@ Options:
 (*Version*)
 
 
-WolframLanguageServer`Version = "0.1.0";
+WolframLanguageServer`Version = "0.1.1";
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
 	Print["
 Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
