@@ -21,6 +21,7 @@
 
 <!-- markdown-toc end -->
 
+*Please be advised to git pull lastest version, which has been released on 02/05/2019*.
 
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
 [Language Server Protocol
@@ -98,14 +99,23 @@ visible. If you use dark themes, then choose `dark` <a name="ref2">
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
+![Alipay
+QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.jpg)
+
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
 
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
+![Alipay
+QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.jpg)
+
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
+
+![Alipay
+QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.jpg)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
