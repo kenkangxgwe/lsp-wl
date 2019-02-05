@@ -1,6 +1,6 @@
 {
     "name": "lsp-wl-client",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "publisher": "lsp-wl",
     "author": "kenkangxgwe",
     "license": "MIT",
@@ -8,12 +8,14 @@
     "description": "VSCode client of the Wolfram Language Server.",
     "main": "./out/extension",
     "engines": {
-        "vscode": "^1.23.0"
+        "vscode": "^1.25.0"
     },
     "activationEvents": [
         "onLanguage:wolfram"
     ],
-    "categories": ["Programming Languages"],
+    "categories": [
+        "Programming Languages"
+    ],
     "preview": true,
     "repository": {
         "type": "git",
@@ -22,9 +24,9 @@
     "homepage": "http://github.com/kenkangxgwe/lsp-wl/tree/master/client/README.md",
     "icon": "images/logo.png",
     "galleryBanner": {
-		"color": "#3C3C3C",
-		"theme": "dark"
-	},
+        "color": "#3C3C3C",
+        "theme": "dark"
+    },
     "contributes": {
         "configuration": {
             "type": "object",
@@ -64,16 +66,6 @@
                     "type": "string",
                     "default": "/path/to/lsp-wl",
                     "description": "Path to wolfram language server folder."
-                },
-                "WolframLanguageServer.Theme": {
-                    "scope": "user",
-                    "type": "string",
-                    "enum": [
-                        "dark",
-                        "light"
-                    ],
-                    "default": "dark",
-                    "description": "The theme for the picture in hover action."
                 }
             }
         },
@@ -105,10 +97,10 @@
     },
     "dependencies": {
         "npm": "^6.5.0",
-        "vscode": "^1.1.21",
         "vscode-languageclient": "^4.1.4"
     },
     "devDependencies": {
+        "vscode": "^1.1.24",
         "@types/mocha": "^5.2.0",
         "@types/node": "^8.10.36",
         "typescript": "2.8.3"

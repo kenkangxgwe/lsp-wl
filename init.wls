@@ -19,22 +19,18 @@ Please see the help info below.
 (*RootDirectory*)
 
 
-WolframLanguageServer`CommandLine = If[$ScriptCommandLine === {},
-	$CommandLine ~Drop~ 2,
-	$ScriptCommandLine
-];
+(* If $ScriptCommandLine is empty, use $CommandLine instead *)
+WolframLanguageServer`CommandLine = Replace[$ScriptCommandLine, {} -> $CommandLine ~Drop~ 2];
 
-WolframLanguageServer`RootDirectory = DirectoryName[If[$InputFileName === "",
-	First @ WolframLanguageServer`CommandLine,
-	$InputFileName
-]] // (* relative path to absolute path *)
-(Which[
-	# === "",
-		Directory[],
-	StringStartsQ[#, "./"|"../"],
-		FileNameJoin[{Directory[], #}],
-	True, #
-]&);
+WolframLanguageServer`RootDirectory = (
+    $InputFileName
+    // Replace["" -> First @ WolframLanguageServer`CommandLine] (* If empty, use CommandLine *)
+    // DirectoryName (* root folder *)
+    // Replace[{ (* relative path to absolute path *)
+        "" -> Directory[],
+        relpath:(("./"|"../") ~~ ___ ):> FileNameJoin[{Directory[], relpath}]
+    }]
+);
 
 PrependTo[$Path, WolframLanguageServer`RootDirectory];
 
@@ -47,25 +43,17 @@ WolframLanguageServer`CommandLine = Flatten[Rest[WolframLanguageServer`CommandLi
 
 ArgumentValue[keyPattern_, valuePattern_:Blank[]] := Module[
 	{
-		keyPos, argValue
 	},
 
-	keyPos = FirstPosition[WolframLanguageServer`CommandLine, keyPattern];
-	If[MissingQ[keyPos],
-		Return[Missing["NotSpecified"]],
-		keyPos = First @ keyPos
-	];	
-	
-	If[keyPos == Length[WolframLanguageServer`CommandLine],
-		Return[Missing["ValueMissing"]];
-	];
-	
-	argValue = Part[WolframLanguageServer`CommandLine, keyPos + 1];
-	
-	If[MatchQ[argValue, valuePattern],
-		argValue,
-		Missing["PatternNotMatch"]
-	]
+	FirstPosition[WolframLanguageServer`CommandLine, keyPattern]
+	// Replace[{
+	    _Missing -> Missing["NotSpecified"],
+	    {Length[WolframLanguageServer`CommandLine]} -> Missing["ValueMissing"], (* last argument *)
+	    {keyPos_} :> (
+	        Part[WolframLanguageServer`CommandLine, keyPos + 1]
+	        // Replace[{Except[_?(MatchQ[valuePattern])] -> Missing["PatternNotMatch"]}]
+	    )
+	}]
 ];
 
 
@@ -106,7 +94,7 @@ Options:
 (*Version*)
 
 
-WolframLanguageServer`Version = "0.1.0";
+WolframLanguageServer`Version = "0.1.1";
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
 	Print["
 Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
@@ -142,17 +130,17 @@ Module[
 		ContextPattern, ExportedFunctions
 	},
 
-	port = ArgumentValue["--socket", _?(StringMatchQ[NumberString])];
-	port = If[MissingQ[port],
-		6536,
-		ToExpression[port]
-	];
+	port = ArgumentValue["--socket", _?(StringMatchQ[NumberString])]
+	    // Replace[{
+	        _Missing -> 6536,
+	        p_ :> ToExpression[p]
+	    }];
 			
-	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels];
-	If[MissingQ[loglevel], loglevel = "info"];
+	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels]
+	    // Replace[_Missing -> "debug"];
 
-	(*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"];
-	If[MissingQ[stream], stream = "stdio"];*)
+	(*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"]
+	    // Replace[_Missing, "stdio"];*)
 	
 	logstreams = {
 		OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"](*,
@@ -177,5 +165,6 @@ Module[
 	DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
 	<< WolframLanguageServer`Server`;
-	LogDebug @ WolframLanguageServer`Server`WLServerStart["Port" -> port, "WorkingDir" -> WolframLanguageServer`RootDirectory]
+	LogDebug @ WolframLanguageServer`Server`WLServerStart["Port" -> port, "WorkingDir" -> WolframLanguageServer`RootDirectory];
+	Quit[]
 ];

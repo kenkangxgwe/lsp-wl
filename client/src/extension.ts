@@ -16,7 +16,6 @@ export function activate(context: ExtensionContext): void {
         wlServerDir += "/";
     }
     let socketport: number = Number(config.get<number>("Port"));
-    let theme: string = config.get<string>("Theme");
     let serverOptions: NodeModule = {
         module: wlServerDir + "init.wls",
         runtime: wolframkernel,
@@ -34,9 +33,6 @@ export function activate(context: ExtensionContext): void {
         documentSelector: ["wolfram"],
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher("**/*.*")
-        },
-        initializationOptions: {
-            theme: theme
         }
     };
 

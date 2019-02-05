@@ -1,9 +1,25 @@
 # Wolfram Language Server
 
+[![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/wolfram-language-server-logo-clipped.png)
+![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
 > by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
+
+<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+**Table of Contents**
+
+- [Wolfram Language Server](#wolfram-language-server)
+    - [Installation](#installation)
+    - [Run the Server](#run-the-server)
+    - [Features](#features)
+    - [Contribute](#contribute)
+        - [Design Principles](#design-principles)
+        - [Todo list](#todo-list)
+    - [Donations :dollar:](#donations-dollar)
+    - [Footnotes](#footnotes)
+
+<!-- markdown-toc end -->
 
 **Wolfram Language Server (WLServer)** is an implementation of the Microsoft's
 [Language Server Protocol
@@ -68,18 +84,12 @@ Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[N
 
 This is a good way to see the results from the unit tests.
 
-You may also specify the following `initializationOptions`.
-
-- `"theme": "dark" | "light"` For better typesetting of documentation, SVG
-images are used in the popup such as hovering. Since the background is
-transparent, this setting is to ensure the text in the images are actually
-visible. If you use dark themes, then choose `dark` <a name="ref2">
-</a>[<sup>2</sup>](#footnote2). (Default: `dark`)
-
 ## Features
 
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
+
+![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/hover.png)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -87,8 +97,12 @@ visible. If you use dark themes, then choose `dark` <a name="ref2">
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
+![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/completion.png)
+
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
+
+![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/diagnostics.png)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
@@ -126,10 +140,6 @@ It will be nice if you want to make a contribution to the following topic.
 * It will be helpful to implement a stdio channel, so that the Mathematica
   earlier than 11.2 will also be supported.
 
-* Since we embed SVG image in the `markupContent[]` and VS Code client cannot
-  resize the popup window according to its size, it is hard to tweak the image
-  width and the font size on every machine. We are looking for a better solution.
-  
 * More editor clients are needed. You can feel free to open a repository and
   create a pull request to add the clients in README.md once your client is released.
   
@@ -151,17 +161,10 @@ thanks in advance :smile:.
 - Paypal: qwe95123@126.com
 - Alipay (With QRCode): 13916018006  
 ![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/alipay.jpg)
+QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/alipay.jpg)
 
 ## Footnotes
 
 <a name="footnote1"> </a> **[1]** `SocketListen[]` is used for server-client
 communication, which is introduced since 11.2. We plan to support stdio for
-better compatibility [^](#ref1)
-
-<a name="footnote2"> </a> **[2]** This reminds me of a joke making fun of
-Project Managers. A programmer, who cannot put up with endless unreasonable
-requests from his project manager, complained about one stupid task from him
-online, which is to automatically change the theme of the app with the conion, 'Add an option for
-users to choose when launching the app, what is the color of your cell phone
-protector. Then change the them accordingly.' [^](#ref2)
+better compatibility. [^](#ref1)

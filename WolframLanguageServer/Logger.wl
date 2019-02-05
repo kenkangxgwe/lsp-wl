@@ -21,14 +21,18 @@ LoggerStart[level_, streams:{_OutputStream..}] := Module[
 		levelno, head
 	},
 	
-	levelno = If[MissingQ[#], Length[LoggingLevels], First @ #]& @ FirstPosition[LoggingLevels, level];
+	levelno = FirstPosition[LoggingLevels, level]
+	    // Replace[{
+	        _Missing -> Length[LoggingLevels],
+	        {l_} :> l
+	    }];
 	
 	{LogError, LogWarn, LogInfo, LogDebug} = 
 		(Function[{lvl},
 			Function[{msg},
 				Function[{stream}, WriteString[stream,
-					"[" <> StringPadRight[ToUpperCase[lvl], 5] <> " " 
-					<> DateString["ISODateTime"] <> "] " <> ToString[msg] <> "\n"
+					Snippet["[" <> StringPadRight[ToUpperCase[lvl], 5] <> " " 
+					<> DateString["ISODateTime"] <> "] " <> ToString[msg], 20] <> "\n"
 				]] /@ streams; msg
 			]
 			(*Echo[#, lvl, ##2]&*)
