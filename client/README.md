@@ -59,7 +59,7 @@ Restart VS Code to take effect.
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
-![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.jpg)
+![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/hover.png)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -67,12 +67,12 @@ Restart VS Code to take effect.
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
-![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.jpg)
+![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/completion.png)
 
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
   
-![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.jpg)
+![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/diagnostics.png)
 
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
