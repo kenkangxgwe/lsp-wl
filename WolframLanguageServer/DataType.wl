@@ -90,24 +90,24 @@ ConstructTypeAlternatives[parameters_, {{}, res_}] := res;
 ConstructTypeAlternatives[parameters_, {{p_, ps___}, res_}] := ConstructTypeAlternatives[parameters,
     ConstructType[parameters, p]
     // Replace[{
-        _Missing -> {{ps}, res},
+        _Missing :> {{ps}, res},
         newres_ :> {{}, newres}
     }]
 ];
 
 ConstructType[parameters_List, pattern:List[(Verbatim[Repeated]|Verbatim[RepeatedNull])[p_]]] := (
-    ConstructTypeList[p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+    ConstructTypeList[p, {parameters, {}}] // Replace[_Missing :> Missing["ConstructorNotFound", {parameters, pattern}]]
 );
 
 ConstructType[parameters_List, pattern:List[(Verbatim[BlankSequence]|Verbatim[BlankNullSequence])[p_]]] := (
-    ConstructTypeList[_p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+    ConstructTypeList[_p, {parameters, {}}] // Replace[_Missing :> Missing["ConstructorNotFound", {parameters, pattern}]]
 );
 
 ConstructTypeList[p_, {{}, res_}] := res;
 ConstructTypeList[p_, {{param_, params___}, res_}] := ConstructTypeList[p, 
     ConstructType[param, p]
     // Replace[{
-        _Missing ->  {{}, MissingQ["ConstructorNotFound"]},
+        _Missing :>  {{}, MissingQ["ConstructorNotFound"]},
         curRes_ :> {{params}, Append[res, curRes]}
     }]
 ];
@@ -115,7 +115,7 @@ ConstructTypeList[p_, {{param_, params___}, res_}] := ConstructTypeList[p,
 ConstructType[parameters_Association, pattern:Association[(Verbatim[Repeated]|Verbatim[RepeatedNull])[Rule[key_, val_]]]] := (
     ConstructType[Keys[parameters], {key...}]
     // Replace[{
-        _Missing -> Missing["ConstructorNotFound", {parameters, pattern}],
+        _Missing :> Missing["ConstructorNotFound", {parameters, pattern}],
         res1_ :> (
             ConstructType[Values[parameters], {val...}]
             // Replace[{
