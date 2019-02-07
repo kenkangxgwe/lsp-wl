@@ -86,6 +86,8 @@ ToMarkdown[input_String] := Module[
 	            RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
 	            "\[Rule]" -> "\[RightArrow]",
 	            "\[TwoWayRule]" -> "\[LeftRightArrow]",
+	            "\[LeftAssociation]" -> "<|",
+	            "\[RightAssociation]" -> "|>",
 	            (*"\[Ellipsis]" \[Rule] "...",*)
 	            (*"\[DoubleRightArrow]" \[Rule] " => ",*)
 	            Nothing
