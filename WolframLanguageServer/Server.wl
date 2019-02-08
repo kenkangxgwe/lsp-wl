@@ -44,7 +44,7 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
-	"client" -> (_SocketClient | _TcpSocketClient | Null),
+	"client" -> (_SocketClient | _SocketObject | _StdioClient | "stdio" | Null),
 	"theme" -> "dark" | "light"
 |>];
 InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>, "client" -> Null|>];
@@ -63,21 +63,24 @@ InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>, "clie
 
 
 Options[WLServerStart] = {
-	"Port" -> 6536,
 	"Stream" -> "socket" (* "stdio" is no implemented *),
+	"ClientPid" -> Null,
+	"Port" -> 6536,
+	"Pipe" -> Null,
 	"WorkingDir" -> $TemporaryDirectory
 };
 
 WLServerStart[o:OptionsPattern[]] :=Module[
 	{
-		(*Options:*) port, stream, workingDir, tempDirPath,
-		connection
+		(*Options:*) clientPid, port, pipe, stream, workingDir, tempDirPath,
+		connection, stdin, stdout
 	},
 
-	{port, stream, workingDir} = OptionValue[WLServerStart, {o}, {"Port", "Stream", "WorkingDir"}];
-
+	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
+    If[clientPid === Null, clientPid = GetParentPid[]];
 	(* If[FileExistsQ[Last @ $Path <> "Cache"], LogError @ "Please delete a file named cache in working directory first."]; *)
 
+    
 	(*Temporary cache.*)
 	tempDirPath = FileNameJoin[{workingDir, "wlServerCache"}];
 	
@@ -85,27 +88,71 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 	    (*Clear the cache of last time usage.*)
 	    DeleteDirectory[tempDirPath, DeleteContents -> True],
     	(*Create temporary file.*)
-		If[CreateDirectory[tempDirPath] == $Failed, 
-		    LogError @ "Create cache directory failed, please make sure there is no file named cache in the working directory.";
-		    Return[]
-		]
+		CreateDirectory[tempDirPath]
+		// Replace[$Failed :> (
+		    LogError["Create cache directory failed, please make sure there is no file named cache in the working directory."];
+		    Quit[1]
+		)]
 	];
 	LogDebug @ ("Cache: " <> tempDirPath);
 	
-	LogInfo["Starting language server through "<> stream <> " stream"];
-	connection = Switch[stream,
-		"stdio",
-			"stdio",
-		"socket",
-			Check[t`conn = SocketConnect[port, "TCP"(*"ZMQ_Stream"*)], Nothing]
-	];
-	
-	LogInfo["Server started, listening from port " <> ToString[port] <> "..."];
-	(*LogInfo[WLServerListen[connection, InitialState]];*)
+	LogInfo["Language server is connecting the client through "<> stream <> "."];
+	Replace[stream, {
+	    "stdio" | "pipe" :> (
+	        LogError["Communication through " <> stream <> " is not implemented"];
+	        Quit[1]
+	    ),
+		"stdio" :> (
+		    (* stdin is a InputStream connecting to the STDOUT of the client, vice versa *)
+		    connection = StartProcess[{"D:\\Programs\\msys64\\usr\\bin\\cat.exe"}]
+		    // Replace[{
+		        {proc_} :> proc,
+		        {} :> (LogError["Cannot find client process."]; Quit[1])
+		    }];
+		    stdin = LogDebugCheck[t`stdin = ProcessConnection[connection, "StandardOutput"], Nothing];
+			stdout = LogDebugCheck[t`stdout = OutputStream["stdout", 1], Nothing];
+			LogInfo["Server listening from pid " <> ToString[clientPid] <> "..."];
+			Block[{$IterationLimit = Infinity},
+			    StdioHandler[ReplaceKey[InitialState, "client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]]
+			]
+	    ),
+	    "pipe" :> (
+	        LogDebug[pipe];
+	        connection = OpenRead["!cat "<>pipe, BinaryFormat -> True];
+	        While[True,
+	            Pause[1];
+	            LogDebug[ReadByteArray[connection]]
+	        ]
+	        
+	    ),
+	    "tcp-server" :> (
+	        connection = Check[t`conn = SocketOpen[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
+			// Replace[$Failed :> (LogError["Cannot start tcp server."]; Quit[1])];
+
+	        LogInfo["Server listening to port " <> ToString[port] <> "..."];
+	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
-    Block[{$IterationLimit = Infinity},
-	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> TcpSocketClient[<|"socket" -> connection|>]]]
-	]
+            Block[{$IterationLimit = Infinity},
+        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> waitForClient[connection]]]
+        	]
+	    ),
+		"socket" :> (
+			connection = Check[t`conn = SocketConnect[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
+			// Replace[$Failed :> (LogError["Cannot connect to client via socket."]; Quit[1])];
+			
+	        LogInfo["Server listening from port " <> ToString[port] <> "..."];
+	        (*LogInfo[WLServerListen[connection, InitialState]];*)
+    
+            Block[{$IterationLimit = Infinity},
+        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> connection]]
+        	]
+        ),
+        _ :> (
+            LogError[stream <> "is invalid."];
+            Quit[1]
+        )
+	}]
+
 	(*Block[{serverState = InitialState},
 		SocketListen[connection, SocketHandler,
 			HandlerFunctionsKeys -> {"SourceSocket", "DataByteArray", "DataBytes", "MultipartComplete"}
@@ -115,8 +162,28 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 ];
 
 
+waitForClient[{client_SocketObject}] := (LogInfo["Client connected"]; client);
+waitForClient[server_SocketObject] := waitForClient[Pause[1]; Replace[LogDebug@server["ConnectedClients"],{
+    {} :> server,
+    {client_SocketObject} :> {client}
+}]]
+
+
+GetParentPid[] = (
+    SystemProcesses["PID" -> $ProcessID]
+    // Replace[{
+        {} :> Null,
+        {proc_} :> proc["PPID"]
+    }]
+)
+
+
 (* ::Subsection:: *)
 (*WLServerListen*)
+
+
+(* ::Subsubsection:: *)
+(*ZMQ  (not working)*)
 
 
 DeclareType[SocketClient, <|
@@ -193,83 +260,57 @@ SocketHandler[packet_Association] := Module[
 ];
 
 
-DeclareType[TcpSocketClient, <|
-	"lastMessage" -> _ByteArray | {},
-	"contentLengthRemain" -> _Integer,
-	"socket" -> _SocketObject
-|>];
+(* ::Subsubsection:: *)
+(*Tcp Socket*)
+
 
 TcpSocketHandler[state_WorkState] := Module[
 	{
-		bytearray,
-		client = state["client"],
-		headertext, contentlength, 
-		consumelength, message,
-		newstate = state, serverStatus
+		client = state["client"]
 	},
 
-	client["socket"]
-	// SocketReadMessage
-	// Curry[parseRPCBytes][{client["contentLengthRemain", 0], client["lastMessage", {}]}]
+    handleMessageList[ReadMessages[client], state]
 	// Replace[{
-	    {msg___, {remain_, last_}} :> (
-	        client = Fold[ReplaceKey, client, {
-	        	"contentLengthRemain" -> remain,
-		    	"lastMessage" -> last
-	    	}];
-        	newstate = ReplaceKey[newstate, "client" -> client];
-	        {msg}
-	    ),
-	    msg_List :> (
-    	    client = Fold[ReplaceKey, client, {
-    	    	"contentLengthRemain" -> 0,
-	    	    "lastMessage" -> {}
-	        }];
-	        newstate = ReplaceKey[newstate, "client" -> client];
-	        msg
-	    )
-	}]
-	// (handleMessageList[#, newstate]&) (* lambda requested here to delay the evaluation of newstate *)
-	// Replace[{
-	    {"Stop", ns_} :> (
+	    {"Stop", newstate_} :> (
 	        LogInfo["Server stopped"];
-			Return[ns]
+			Return[newstate]
 	    ),
-	    {_, ns_} :> ns,
-	    {} :> newstate (* No message, delayed to use the latest newstate *)
+	    {_, newstate_} :> newstate,
+	    {} :> state (* No message *)
 	}]
 ] // TcpSocketHandler; (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
-(* Removed, use tcp handler instead *)
-WLServerListen[connection:("stdio" | _SocketObject), state_WorkState] := Block[{$RecursionLimit = Infinity}, Module[
+(* ::Subsubsection:: *)
+(*Stdio (not working)*)
+
+
+DeclareType[StdioClient, <|
+	"lastMessage" -> _ByteArray | {},
+	"contentLengthRemain" -> _Integer,
+	"process" -> _ProcessObject,
+	"stdin" -> _InputStream,
+	"stdout" -> _OutputStream
+|>];
+
+StdioHandler[state_WorkState] := Module[
 	{
-		newMsg, serverStatus, client, newState = state
+		client = state["client"]
 	},
-	
-	connection
-(*	// SelectClient
-	// ((client = #)&)
-	// LogDebug*)
-	// ReadMessageBytes
-	// LogDebug @* ByteArrayToString
-	// StringToByteArray
-	// parseRPCBytes (* parse into multiple messages *)
-	// LogDebug
-	// Prepend[{"Continue", state}] (* initial parameter for Fold *)
-	// Fold[handleMessage[client]] (* handle messages and send responses one by one *)
-	// Catch (* Catch early stop *)
-	// ((serverStatus = #)&);
 
-	If[First @ serverStatus === "Stop",
-		Return[Last@serverStatus],
-		newState = Last @ serverStatus
-	];
-	WLServerListen[connection, newState]
-]];
+	handleMessageList[ReadMessages[client], state]
+	// Replace[{
+	    {"Stop", newstate_} :> (
+	        LogInfo["Server stopped"];
+			Return[newstate]
+	    ),
+	    {_, newstate_} :> newstate,
+	    {} :> state (* No message *)
+	}]
+] // StdioHandler; (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
-(* ::Section::Closed:: *)
+(* ::Section:: *)
 (*StreamIO*)
 
 
@@ -295,8 +336,102 @@ SelectClient["stdio"] := "stdio";
 (*ReadMessage*)
 
 
-ReadMessageBytes[client_SocketObject] := client // SocketReadMessage;
-ReadMessageBytes["stdio"] := (LogDebug@InputString[]) // StringToByteArray;
+(* ::Subsubsection:: *)
+(*Socket*)
+
+
+ReadMessages[client_SocketObject] := ReadMessagesImpl[client, {{0, {}}, {}}]
+ReadMessagesImpl[client_SocketObject, {{0, {}}, msgs:{__Association}}] := msgs
+ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
+    {
+        newstate, curMsg
+    },
+
+    If[remainingLength > 0,
+        (* Read Content *)
+        If[Length[remainingByte] >= remainingLength,
+            {{0, Drop[remainingByte, remainingLength]}, {msgs, ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"]}},
+            (* Read more *)
+            {{remainingLength, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
+        ],
+        (* New header *)
+        Replace[SequencePosition[Normal @ remainingByte, RPCPatterns["SequenceSplitPattern"], 1], {
+	        {{end1_, end2_}} :> (
+	            {{getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]}, {msgs}}
+	        ),
+	        {} :> ( (* Read more *)
+	            {{0, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
+		    )
+	    }]
+	]
+]]
+
+
+(* ::Subsubsection:: *)
+(*StdioClient*)
+
+
+ReadMessages[client_StdioClient] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
+ReadMessagesImpl[client_StdioClient, {{0, {}}, msgs:{__Association}}] := msgs
+ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
+    {
+        newstate, curMsg
+    },
+    
+    LogDebug @ {remainingLength, Normal[remainingByte]};
+    If[remainingLength > 0,
+        (* Read Content *)
+        If[Length[remainingByte] >= remainingLength,
+            {{0, Drop[remainingByte, remainingLength]}, {msgs, ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"]}},
+            (* Read more *)
+            {{remainingLength, ByteArray[remainingByte ~Join~ InputBinary[]]}, {msgs}}
+        ],
+        (* New header *)
+        Replace[SequencePosition[Normal @ remainingByte, RPCPatterns["SequenceSplitPattern"], 1], {
+	        {{end1_, end2_}} :> (
+	            {{getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]}, {msgs}}
+	        ),
+	        {} :> ( (* Read more *)
+	            {{0, ByteArray[remainingByte ~Join~ InputBinary[]]}, {msgs}}
+		    )
+	    }]
+	]
+]]
+
+
+(* ::Subsubsection:: *)
+(*stdio*)
+
+
+ReadMessages["stdio"] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
+ReadMessagesImpl["stdio", {{0, {}}, msgs:{__Association}}] := msgs
+ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", Module[
+    {
+        newstate, curMsg
+    },
+    
+    LogDebug @ {remainingLength, Normal[remainingByte]};
+    If[remainingLength > 0,
+        (* Read Content *)
+        If[Length[remainingByte] >= remainingLength,
+            {{0, Drop[remainingByte, remainingLength]}, {msgs, ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"]}},
+            (* Read more *)
+            {{remainingLength, ByteArray[remainingByte ~Join~ InputBinary[]]}, {msgs}}
+        ],
+        (* New header *)
+        Replace[SequencePosition[Normal @ remainingByte, RPCPatterns["SequenceSplitPattern"], 1], {
+	        {{end1_, end2_}} :> (
+	            {{getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]}, {msgs}}
+	        ),
+	        {} :> ( (* Read more *)
+	            {{0, ByteArray[remainingByte ~Join~ InputBinary[]]}, {msgs}}
+		    )
+	    }]
+	]
+]]
+
+
+InputBinary[] := (LogDebug["waiting for input"];a=Import["!D:\\Programs\\msys64\\usr\\bin\\cat.exe", "Byte"];LogDebug["input done"];a)(*(LogDebug["waiting for input"]; ByteArray[StringToByteArray[InputString[]] ~Join~ {13, 10}])*)
 
 
 (* ::Subsection:: *)
@@ -315,18 +450,20 @@ WriteMessage[client_SocketClient][msglist:{_ByteArray..}] := Module[
 	BinaryWrite[targetsocket, Last@msglist];
 ];
 
-WriteMessage[client_TcpSocketClient][msglist:{_ByteArray..}] := Module[
-	{
-		targetsocket
-	},
-	
-	targetsocket = client["socket"];
-	BinaryWrite[targetsocket, First@msglist];
-	BinaryWrite[targetsocket, Last@msglist];
-];
+
+WriteMessage[client_SocketObject][msglist:{_ByteArray..}] := (
+    BinaryWrite[client, First@msglist];
+    BinaryWrite[client, Last@msglist];
+);
 
 
-WriteMessage["stdio"][msg_ByteArray] := Print[ByteArrayToString[msg]];
+WriteMessage["stdio"][msglist:{_ByteArray..}] := (
+    BinaryWrite[OutputStream["stdout",1], First@msglist];
+    BinaryWrite[OutputStream["stdout",1], Last@msglist];
+);
+
+
+WriteMessage[client_StdioClient][msg_ByteArray] := BinaryWrite[client["stdout"], msg];
 
 
 (* ::Section:: *)
@@ -336,55 +473,9 @@ WriteMessage["stdio"][msg_ByteArray] := Print[ByteArrayToString[msg]];
 RPCPatterns = <|
 	"HeaderByteArray" -> PatternSequence[__, 13, 10, 13, 10],
 	"SequenceSplitPattern" -> {13, 10, 13, 10},
-	"ContentLengthRule" -> "Content-Length: "~~length:NumberString~~"\r\n" :> length,
-	"ContentTypeRule" -> "Content-Type: "~~type_~~"\r\n" :> type
+	"ContentLengthRule" -> "Content-Length: "~~length:NumberString :> length,
+	"ContentTypeRule" -> "Content-Type: "~~type_ :> type
 |>;
-
-
-parseRPCBytes[{}] = {};
-parseRPCBytes[msgbytes:(_ByteArray|{}), prefix_:{0, {}}] := Module[
-	{
-		consumeLength, contentLengthRemain, lastBytes,
-		curBytes, restBytes,
-		headerString, headerEndPosition
-	},
-	
-	{contentLengthRemain, lastBytes} = prefix;
-	
-	If[msgbytes === {},
-		Return[{{contentLengthRemain, lastBytes}}]
-	];
-	
-	If[contentLengthRemain != 0,
-		consumeLength = Min[contentLengthRemain, Length[msgbytes]];
-		{curBytes, restBytes} = TakeDrop[msgbytes, consumeLength];
-		curBytes = Replace[lastBytes, {
-		    {} -> curBytes,
-		    _ -> lastBytes ~ Join~ curBytes
-		}];
-		contentLengthRemain = contentLengthRemain - consumeLength;
-		If[contentLengthRemain == 0,
-			Return[Prepend[parseRPCBytes[restBytes], ImportByteArray[curBytes, "RawJSON"]]],
-			Return[parseRPCBytes[restBytes, {contentLengthRemain, curBytes}]]
-		]
-	];
-	
-	headerEndPosition = SequencePosition[Normal @ msgbytes, RPCPatterns["SequenceSplitPattern"], 1]
-	    // Replace[{
-	        {{_, endPos_}} :> endPos,
-	        err_ :> (
-	            LogDebug["Invalid message:" <> ToString[Normal @ msgbytes]];
-	            LogDebug["err: " <> ToString[err]];
-		        Return[{}]
-		    )
-	    }];
-	LogInfo @ ByteArrayToString[msgbytes];
-	{curBytes, restBytes} = TakeDrop[msgbytes, headerEndPosition];
-	
-	headerString = ByteArrayToString[curBytes, "ASCII"];
-	contentLengthRemain = ToExpression @ First @ StringCases[headerString, RPCPatterns["ContentLengthRule"]];
-	parseRPCBytes[restBytes, {contentLengthRemain, {}}]
-];
 
 
 constructRPCBytes[msg_Association] := Module[
@@ -396,6 +487,14 @@ constructRPCBytes[msg_Association] := Module[
 	headerBytes = StringToByteArray["Content-Length: " <> ToString[Length[jsonBytes]] <> "\r\n\r\n"];
 	{headerBytes, jsonBytes}
 ];
+
+
+getContentLength[header_ByteArray] := getContentLength[ByteArrayToString[header, "ASCII"]];
+getContentLength[header_String] := (header // StringCases[RPCPatterns["ContentLengthRule"]] 
+// Replace[{
+    {len_String} :> LogDebug@ToExpression[len],
+    _ :> (LogError["Unknown header: " <> header]; Quit[1])
+}])
 
 
 (* ::Section:: *)
@@ -412,7 +511,7 @@ handleMessage[{"Stop", state_WorkState}, msg_Association] :=
 handleMessage[{"Continue", state_WorkState}, msg_Association] := 
 	handleMessage[msg, state];
 
-handleMessageList[msgs_List, state_WorkState] := (
+handleMessageList[msgs:{___Association}, state_WorkState] := (
     FoldWhile[handleMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
 );
 
@@ -683,7 +782,7 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	(* There are three cases, delete, replace and add. *)
 	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
 	(* Apply all the content changes. *)
-	newState = ReplaceKey[newState, {"openedDocs", uri} -> LogDebug@Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
+	newState = ReplaceKey[newState, {"openedDocs", uri} -> Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
 	LogInfo @ ("Change Document " <> uri);
 	(* Give diagnostics when a new line is finished. *)
 	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}

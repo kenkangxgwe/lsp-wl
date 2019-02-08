@@ -126,16 +126,38 @@ Needs["WolframLanguageServer`Logger`"];
 
 Module[
 	{
-		stream, logArgPos, loglevel, logstreams, port,
+		stream, logArgPos, loglevel, logstreams, clientPid, port, pipe,
 		ContextPattern, ExportedFunctions
 	},
 
+	stream = Which[
+	    MemberQ[WolframLanguageServer`CommandLine, "--stdio"],
+	    "stdio",
+	    MemberQ[WolframLanguageServer`CommandLine, "--pipe"],
+	    "pipe",
+	    MemberQ[WolframLanguageServer`CommandLine, "--tcp-server"],
+	    "tcp-server",
+	    True,
+		"socket"
+	];
+
+	clientPid = ArgumentValue["--clientProcessId", _?(StringMatchQ[NumberString])]
+	    // Replace[{
+	        p:Except[_Missing] :> ToExpression[p]
+	    }];
+
 	port = ArgumentValue["--socket", _?(StringMatchQ[NumberString])]
+	    // Replace[_Missing :> ArgumentValue["--tcp-server", _?(StringMatchQ[NumberString])]]
 	    // Replace[{
 	        _Missing -> 6536,
 	        p_ :> ToExpression[p]
 	    }];
-			
+	
+    pipe = ArgumentValue["--pipe", _String]
+	    // Replace[{
+	        _Missing :> Null
+	}];
+	
 	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels]
 	    // Replace[_Missing -> "debug"];
 
@@ -165,6 +187,12 @@ Module[
 	DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
 	<< WolframLanguageServer`Server`;
-	LogDebug @ WolframLanguageServer`Server`WLServerStart["Port" -> port, "WorkingDir" -> WolframLanguageServer`RootDirectory];
-	Quit[]
+	LogDebug @ WolframLanguageServer`Server`WLServerStart[
+		"Stream" -> stream,
+		"ClientPid" -> clientPid,
+		"Port" -> port,
+		"Pipe" -> pipe,
+		"WorkingDir" -> WolframLanguageServer`RootDirectory
+	];
+	Quit[0]
 ];
