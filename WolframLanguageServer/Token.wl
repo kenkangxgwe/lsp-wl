@@ -71,9 +71,9 @@ ToMarkdown[input_String] := Module[
 	    Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[
 	        ToExpression[box, StandardForm] //.{
 	            (*RowBox \[Rule] StringJoin,*)
-	            StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
-	            StyleBox[x_, "TR"] :> ToMarkdown[x], 
-	            StyleBox[x_, ShowStringCharacters->True] :> ToMarkdown[x],
+	            StyleBox[x_, "TI", ___] :> ("*" <> ToMarkdown[x] <> "*"),
+	            StyleBox[x_, "TR", ___] :> ToMarkdown[x], 
+	            StyleBox[x_, ___] :> ToMarkdown[x],
 	            SubscriptBox[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
 	            SuperscriptBox["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
 	            SuperscriptBox[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
