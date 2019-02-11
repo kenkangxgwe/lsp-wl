@@ -47,7 +47,7 @@ DeclareType[WorkState, <|
 	"client" -> (_SocketClient | _SocketObject | _StdioClient | "stdio" | Null),
 	"theme" -> "dark" | "light"
 |>];
-InitialState = WorkState[<|"initialized" -> "False", "openedDocs" -> <||>, "client" -> Null|>];
+InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
 (*Place where the temporary img would be stored, delete after usage.*)
 (* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
 (* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
@@ -73,7 +73,7 @@ Options[WLServerStart] = {
 WLServerStart[o:OptionsPattern[]] :=Module[
 	{
 		(*Options:*) clientPid, port, pipe, stream, workingDir, tempDirPath,
-		connection, stdin, stdout
+		connection, stdin, stdout, readpipe
 	},
 
 	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
@@ -118,12 +118,20 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 	    ),
 	    "pipe" :> (
 	        LogDebug[pipe];
-	        connection = OpenRead["!cat "<>pipe, BinaryFormat -> True];
+	        readpipe = LogDebug[OpenRead[StringJoin[{
+	            "\\\\.\\pipe\\wolfram-jsonrpc-",
+	            StringJoin[RandomChoice[
+	                {"0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"}
+	            , 42]],
+                "-sock"
+            }], Method -> "Pipe", BinaryFormat -> True]];
+	        (*connection = OpenRead[pipe, BinaryFormat -> True, Method \[Rule] "Pipe"];*)
+	        connection = OpenWrite[pipe, BinaryFormat -> True, Method -> "Pipe"];
+	        WriteLine[connection, readpipe];
 	        While[True,
-	            Pause[1];
-	            LogDebug[ReadByteArray[connection]]
-	        ]
-	        
+                Pause[1];          
+	            LogDebug[ReadByteArray[readpipe]]
+	        ]	        
 	    ),
 	    "tcp-server" :> (
 	        connection = Check[t`conn = SocketOpen[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
@@ -522,21 +530,27 @@ handleMessage[msg_Association, state_WorkState] := Module[
 	
 	method = msg["method"];
 	LogInfo @ Iconize[msg, method];
-	{serverStatus, response, newState} = Which[
+	Which[
 		(* wrong message before initialization *)
-		state["initialized"] === False && MemberQ[{"initialize", "initialized", "exit"}, method],
-		response = ServerError[
-			"ServerNotInitialized",
-			"The server is not initialized."
-		],
+		!state["initialized"] && !MemberQ[{"initialize", "initialized", "exit"}, method],
+		If[!NotificationQ[msg],
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"error" -> ServerError[
+					"ServerNotInitialized",
+					"The server is not initialized."
+				]
+			|>]
+			(* otherwise, dropped the notification *)
+		];
+		{"Continue", state},
 		(* notification*)
-		NotificationQ[msg], handleNotification[method, msg, newState],
+		NotificationQ[msg],
+		handleNotification[method, msg, newState],
 		(* resquest *)
-		True, handleRequest[method, msg, newState]
-	];
-	(* LogDebug @ (ToString @ response); *)
-	sendResponse[state["client"], msg["id"], response];
-	{serverStatus, newState}
+		True,
+		handleRequest[method, msg, newState]
+	]
 ];
 
 
@@ -544,29 +558,18 @@ handleMessage[msg_Association, state_WorkState] := Module[
 (*Send Response*)
 
 
-(* no response for notification *)
-sendResponse[client_, reqid_, {}] := Nothing[];
-(* normal response *)
-sendResponse[client_, reqid_, {resType_, res_}] := Module[
+(* Both response and notification will call this function *)
+sendResponse[client_, res_Association] := Module[
 	{
-		id
+
 	},
-	
-    Replace[reqid, {
-	    _Missing -> <|
-			"method" -> "textDocument/publishDiagnostics",
-			resType -> res
-		|>,
-		_ -> <|
-			"id" -> reqid,
-			resType -> res
-        |>
-	}]
+
+	Prepend[res, <|"jsonrpc" -> "2.0"|>]
 	// LogInfo
 	// constructRPCBytes
 	// WriteMessage[client]
-];
 
+]
 
 
 (* ::Section:: *)
@@ -584,17 +587,24 @@ handleRequest["initialize", msg_, state_] := Module[
 	
 	(* Check Client Capabilities *)
 	theme = msg["params"]["initializationOptions"]["theme"] // Replace[_Missing -> "dark"];
-	newState = ReplaceKey[newState, "theme" -> theme];
+	newState = ReplaceKey[state, "theme" -> theme];
 	
-	{"Continue", {"result", <|
-		"capabilities" -> <|
-			"textDocumentSync" -> 2,
-			"hoverProvider" -> True,
-			"completionProvider" -> <|"resolveProvider" -> True, "triggerChracters" -> {}|>
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> <|
+			"capabilities" -> <|
+				"textDocumentSync" -> 2,
+				"hoverProvider" -> True,
+				"completionProvider" -> <|
+					"resolveProvider" -> True,
+					"triggerChracters" -> {}
+				|>
+			|>
 		|>
-	|>}, newState}
+	|>];
+	
+	{"Continue", newState}
 ];
-
 
 
 (* ::Subsection:: *)
@@ -605,29 +615,35 @@ handleRequest["initialize", msg_, state_] := Module[
 (*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
 handleRequest["textDocument/hover", msg_, state_] := Module[
 	{
-		newState = state, pos, token
+		pos, token, hover
 	},
-	pos = LspPosition[<|"line" -> msg["params"]["position"]["line"], "character" -> msg["params"]["position"]["character"]|>];
+
+	pos = LspPosition[<|
+		"line" -> msg["params"]["position"]["line"],
+		"character" -> msg["params"]["position"]["character"]
+	|>];
 	(* The head of token is String *)
-	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
-	If[token === "", Return[
-	{"Continue", {"result", <|
-		"contents" -> token
-	|>}, newState}]
-	];
-	
+	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
+
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
 	LogDebug @ ("Names of token: " <> Names[token]);
-	{"Continue", {"result", <|
-	    "contents" -> 
-		    If[Names[token] === {} || Context[token] === "Global`",
-		        token,
-		        Replace[ToExpression[token <> "::usage"], {
-		            _MessageName -> token,
-			        _ -> TokenDocumentation[token]
-			    }]
-		     ] 
-	|>}, newState}
+
+	hover = Which[
+		token === "", Null,
+		Names[token] === {}, Null, (* not defined*)
+		Context[token] === "Global`", Null, (* defined in Global` context*)
+		True, (Replace[ToExpression[token <> "::usage"], {
+			_MessageName :> Null, (* no usage *)
+			_ :> <|"contents" -> TokenDocumentation[token]|>
+		}])
+	];
+	
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> hover
+	|>];
+
+	{"Continue", state}
 ];
 
 
@@ -637,19 +653,28 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		newState = state, p, pos, token, genAssc
+		p, pos, token, genAssc
 	},
 	p = msg["params"]["position"];
 	(*The position is tricky here, we have to read one character ahead.*)
-	pos = LspPosition[<|"line" -> p["line"], "character" -> Replace[p["character"], c_?Positive :> c - 1]|>];
+	pos = LspPosition[<|
+		"line" -> p["line"],
+		"character" -> Replace[p["character"], c_?Positive :> c - 1]
+	|>];
 	(*Token is a patten here.*)
 	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
 	genAssc[t_] := <|"label" -> t, "kind" -> TokenKind[t]|>;
-	{"Continue", {"result", <|
-		"isIncomplete" -> False, 
-		"items" -> genAssc /@ TokenCompletionList[token] 
-	|>}, newState}
+	
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> <|
+			"isIncomplete" -> False, 
+			"items" -> genAssc /@ TokenCompletionList[token] 
+		|>
+	|>];
+	
+	{"Continue", state}
 ];
 
 
@@ -661,21 +686,25 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 provided her. *)
 handleRequest["completionItem/resolve", msg_, state_] := Module[
 	{
-		newState = state, token 
+		token 
 	},
 	token = msg["params"]["label"];
 	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
-	{"Continue", {"result", <|
-		"label" -> token, 
-		"kind" -> TokenKind[token], 
-		"documentation" -> <|
-			"kind" -> "markdown",
-			"value" -> TokenDocumentation[token]
-        |>		
-	|>}, newState}
+	
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> <|
+			"label" -> token, 
+			"kind" -> TokenKind[token], 
+			"documentation" -> <|
+				"kind" -> "markdown",
+				"value" -> TokenDocumentation[token]
+			|>
+		|>
+	|>];
+	
+	{"Continue", state}
 ];
-
-
 
 
 (* ::Subsection:: *)
@@ -687,10 +716,14 @@ handleRequest[_, msg_, state_] := Module[
 		responseMsg
 	},
 	
-	responseMsg = "The request method " <> msg["method"] <> " is invalid or not implemented";
+	responseMsg = "The requested method " <> msg["method"] <> " is invalid or not implemented";
 	LogError[responseMsg];
 	LogDebug @ msg;
-	{"Continue", ServerError["MethodNotFound", responseMsg], state}
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"error" -> ServerError["MethodNotFound", responseMsg]
+	|>];
+	{"Continue", state}
 ];
 
 
@@ -708,7 +741,7 @@ handleNotification["initialized", msg_, state_] := Module[
 	},
 	
 	newState = ReplaceKey[newState, "initialized" -> True];
-	{"Continue", {}, newState}
+	{"Continue", newState}
 ];
 
 
@@ -721,7 +754,7 @@ handleNotification["$/cancelRequest", msg_, state_] := Module[
 		newState = state
 	},
 	
-	{"Continue", {}, newState}
+	{"Continue", newState}
 ];
 
 
@@ -736,6 +769,7 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 		uri = msg["params"]["textDocument"]["uri"], 
 		newState = state, docs
 	},
+
 	LogDebug @ "Begin Handle DidOpen.";
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
@@ -743,7 +777,13 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 		uri -> CreateTextDocument[doc["text"], doc["version"]]
 	);
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
-	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}
+
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
+	|>];
+
+	{"Continue", newState}
 ];
 
 
@@ -762,7 +802,7 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 	docs~KeyDropFrom~uri;
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
 	LogInfo @ ("Close Document " <> uri);
-	{"Continue", {}, newState}
+	{"Continue", newState}
 ];
 
 
@@ -784,8 +824,13 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	(* Apply all the content changes. *)
 	newState = ReplaceKey[newState, {"openedDocs", uri} -> Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
 	LogInfo @ ("Change Document " <> uri);
-	(* Give diagnostics when a new line is finished. *)
-	{"Continue", {"params", newState["openedDocs"][uri]~diagnoseTextDocument~uri}, newState}
+	(* Give diagnostics in real-time *)
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
+	|>];
+
+	{"Continue", newState}
 ];
 
 
@@ -910,7 +955,7 @@ handleNotification[_, msg_, state_] := Module[
 	responseMsg = "The notification " <> msg["method"] <> " is invalid or not implemented";
 	LogError[responseMsg];
 	(*Echo @ msg;*)
-	{"Continue", {} (* ServerError["MethodNotFound", responseMsg] *), state}
+	{"Continue", state}
 ];
 
 
@@ -931,13 +976,10 @@ ServerError[errorType_String, msg_String] := Module[
         errorCode = ErrorCodes["UnknownErrorCode"]
     ];
     
-    {
-        "error",
-	    <|
-		    "code" -> errorCode, 
-		    "message" -> msg
-	    |>
-    }
+	<|
+		"code" -> errorCode, 
+		"message" -> msg
+	|>
 ];
 
 
