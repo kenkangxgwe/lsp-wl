@@ -158,6 +158,10 @@ CreateTextDocument[text_String, version_Integer] := Module[
 ];
 
 
+(* ::Subsection:: *)
+(*ChangeTextDocument*)
+
+
 ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
     {
         range, newtext, newdoc
@@ -166,13 +170,12 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
     range = contextChange["range"] ;
     newtext = StringReplace[contextChange["text"], "\r\n" -> "\n"];
     
-    If[MissingQ[range], 
-        Return[ReplaceKey[doc, "text" -> newtext]]
-    ];
-    
-    newdoc = ReplaceKey[doc, "text" -> StringReplacePart[doc@"text", newtext, {
-        FromLspPosition[doc, range@"start"],
-        FromLspPosition[doc, range@"end"] - 1
+    newdoc = ReplaceKey[doc, "text" -> Replace[range, {
+        _Missing :> newtext,
+        _LspRange :> StringReplacePart[doc@"text", newtext, {
+            FromLspPosition[doc, range@"start"],
+            FromLspPosition[doc, range@"end"] - 1
+        }]
     }]];
     
     ReplaceKey[newdoc, "position" -> Prepend[(1 + #)& /@ First /@ StringPosition[newdoc["text"], "\n"], 1]]

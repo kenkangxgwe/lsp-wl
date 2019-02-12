@@ -299,7 +299,7 @@ TcpSocketHandler[state_WorkState] := Module[
 	    {"Continue", newstate_} :> newstate,
 	    {stop_, newstate_} :> (
 			{stop, newstate}
-	    ),
+		),
 	    {} :> state (* No message *)
 	}]
 ] // TcpSocketHandler (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
@@ -537,7 +537,13 @@ handleMessage[msg_Association, state_WorkState] := Module[
 	},
 	
 	method = msg["method"];
-	LogInfo @ Iconize[msg, method];
+	Replace[method, {
+	    "textDocument/didOpen" | "textDocument/didChange" :> (
+	        LogInfo @ Iconize[method]
+	    ),
+	    _ :> LogInfo @ Iconize[msg, method]
+	}];
+	
 	Which[
 		(* wrong message before initialization *)
 		!state["initialized"] && !MemberQ[{"initialize", "initialized", "exit"}, method],
@@ -688,7 +694,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 		"character" -> Replace[p["character"], c_?Positive :> c - 1]
 	|>];
 	(*Token is a patten here.*)
-	token = GetToken[newState["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
+	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
 	genAssc[t_] := <|"label" -> t, "kind" -> TokenKind[t]|>;
 	
