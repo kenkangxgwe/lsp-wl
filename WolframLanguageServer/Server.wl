@@ -109,8 +109,8 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 		        {proc_} :> proc,
 		        {} :> (LogError["Cannot find client process."]; Quit[1])
 		    }];
-		    stdin = LogDebugCheck[t`stdin = ProcessConnection[connection, "StandardOutput"], Nothing];
-			stdout = LogDebugCheck[t`stdout = OutputStream["stdout", 1], Nothing];
+		    stdin = LogDebug@Check[t`stdin = ProcessConnection[connection, "StandardOutput"], Nothing];
+			stdout = LogDebug@Check[t`stdout = OutputStream["stdout", 1], Nothing];
 			LogInfo["Server listening from pid " <> ToString[clientPid] <> "..."];
 			Block[{$IterationLimit = Infinity},
 			    StdioHandler[ReplaceKey[InitialState, "client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]]
@@ -160,6 +160,17 @@ WLServerStart[o:OptionsPattern[]] :=Module[
             Quit[1]
         )
 	}]
+	// Replace[{
+		{"Stop", _} :> (
+	        LogInfo["Server stopped normally."];
+			Quit[0]
+		),
+		{err_, _} :> (
+	        LogError["Server stopped abnormally."];
+	        LogError[err];
+			Quit[1]
+		)
+	}]
 
 	(*Block[{serverState = InitialState},
 		SocketListen[connection, SocketHandler,
@@ -167,7 +178,7 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 		]
 	]*)
 	
-];
+]
 
 
 waitForClient[{client_SocketObject}] := (LogInfo["Client connected"]; client);
@@ -272,6 +283,12 @@ SocketHandler[packet_Association] := Module[
 (*Tcp Socket*)
 
 
+TcpSocketHandler[{stop_, state_WorkState}]:= (
+    (* close client and return *)
+    LogInfo["Closing socket connection..."];
+    Close /@ Sockets[];
+    {stop, state}
+)
 TcpSocketHandler[state_WorkState] := Module[
 	{
 		client = state["client"]
@@ -279,14 +296,13 @@ TcpSocketHandler[state_WorkState] := Module[
 
     handleMessageList[ReadMessages[client], state]
 	// Replace[{
-	    {"Stop", newstate_} :> (
-	        LogInfo["Server stopped"];
-			Return[newstate]
+	    {"Continue", newstate_} :> newstate,
+	    {stop_, newstate_} :> (
+			{stop, newstate}
 	    ),
-	    {_, newstate_} :> newstate,
 	    {} :> state (* No message *)
 	}]
-] // TcpSocketHandler; (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
+] // TcpSocketHandler (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
 (* ::Subsubsection:: *)
@@ -511,14 +527,6 @@ getContentLength[header_String] := (header // StringCases[RPCPatterns["ContentLe
 
 NotificationQ[msg_Association] := MissingQ[msg["id"]];
 
-(* deprecated, use handleMessageList instead *)
-handleMessage[{"Stop", state_WorkState}, msg_Association] := 
-	Throw[{"Stop", state}, "Stop"];
-
-(* deprecated, use handleMessageList instead *)
-handleMessage[{"Continue", state_WorkState}, msg_Association] := 
-	handleMessage[msg, state];
-
 handleMessageList[msgs:{___Association}, state_WorkState] := (
     FoldWhile[handleMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
 );
@@ -604,6 +612,24 @@ handleRequest["initialize", msg_, state_] := Module[
 	|>];
 	
 	{"Continue", newState}
+];
+
+
+(* ::Subsection:: *)
+(*Shutdown*)
+
+
+handleRequest["shutdown", msg_, state_] := Module[
+	{
+	},
+	
+	
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> Null
+	|>];
+	
+	{"Continue", state}
 ];
 
 
@@ -742,6 +768,19 @@ handleNotification["initialized", msg_, state_] := Module[
 	
 	newState = ReplaceKey[newState, "initialized" -> True];
 	{"Continue", newState}
+];
+
+
+(* ::Subsection:: *)
+(*Exit*)
+
+
+handleNotification["exit", msg_, state_] := Module[
+	{
+
+	},
+	
+	{"Stop", state}
 ];
 
 
