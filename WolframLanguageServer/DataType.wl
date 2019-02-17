@@ -13,6 +13,8 @@ ClearAll[Evaluate[Context[] <> "*"]];
 DeclareType::usage = "DeclareType[typename, <|key_String -> pattern...|>] declares a type given by its name and an association indicating every field and its pattern in the type. \
 typename[key] gets access to the corresponding value. \
 typename[key, default] gets access to the corresponding value. If it is missing, returns the default.";
+ConstructType::usage = "ConstructType[params_Association, type] constructs an object of the given type with specified params."
+TypeUsage::usage = "TypeUsage[type, usage_String] append usage to current type."
 Keys::usage = Keys::usage <> "\nKeys[typename] gives a list of the keys field_i in type typename.";
 KeyPatterns::usage = "KeyPatterns[typename] returns the key-pattern pair of the type.";
 ReplaceKey::usage = "ReplaceKey[object, key -> value] assigns the value to key in given object.
@@ -68,6 +70,10 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 	    Replace[Evaluate[typename]::usage, _MessageName -> "."]
 	}];
 ];
+
+
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
 (* ::Section:: *)
@@ -194,6 +200,9 @@ TypeUsage[typename_Symbol, usage_String] := (
         usage
     }]
 );
+
+
+End[]
 
 
 EndPackage[];
