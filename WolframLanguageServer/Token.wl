@@ -65,7 +65,7 @@ GetUri[token_String] := ("[" <> "*Website Reference*" (*<> "*" <> token <> "*"*)
 
 ToMarkdown[input_] := Replace[input, {
     RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
-    StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "* "),
+    StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
     StyleBox[x_, "TR"] :> ToMarkdown[x], 
     StyleBox[x_, ShowStringCharacters->True] :> ToMarkdown[x],
     (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
@@ -82,6 +82,7 @@ ToMarkdown[input_] := Replace[input, {
     "\[TwoWayRule]" -> "\[LeftRightArrow]",
     "\[LeftAssociation]" -> "<|",
     "\[RightAssociation]" -> "|>",
+    "\[InvisibleSpace]" -> " ",
     (*"\[Ellipsis]" \[Rule] "...",*)
     (*"\[DoubleRightArrow]" \[Rule] " => ",*)
     _String :> StringReplace[input, {
