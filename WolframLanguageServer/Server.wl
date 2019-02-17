@@ -70,7 +70,7 @@ Options[WLServerStart] = {
 	"WorkingDir" -> $TemporaryDirectory
 };
 
-WLServerStart[o:OptionsPattern[]] :=Module[
+WLServerStart[o:OptionsPattern[]] := Module[
 	{
 		(*Options:*) clientPid, port, pipe, stream, workingDir, tempDirPath,
 		connection, stdin, stdout, readpipe
@@ -137,7 +137,7 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 	        connection = Check[t`conn = SocketOpen[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
 			// Replace[$Failed :> (LogError["Cannot start tcp server."]; Quit[1])];
 
-	        LogInfo["Server listening to port " <> ToString[port] <> "..."];
+	        LogInfo["Server listening on port " <> ToString[port] <> "..."];
 	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
             Block[{$IterationLimit = Infinity},
@@ -182,13 +182,13 @@ WLServerStart[o:OptionsPattern[]] :=Module[
 
 
 waitForClient[{client_SocketObject}] := (LogInfo["Client connected"]; client);
-waitForClient[server_SocketObject] := waitForClient[Pause[1]; Replace[LogDebug@server["ConnectedClients"],{
-    {} :> server,
+waitForClient[server_SocketObject] := waitForClient[Replace[LogDebug@server["ConnectedClients"],{
+    {} :> (Pause[1]; server),
     {client_SocketObject} :> {client}
 }]]
 
 
-GetParentPid[] = (
+GetParentPid[] := (
     SystemProcesses["PID" -> $ProcessID]
     // Replace[{
         {} :> Null,
