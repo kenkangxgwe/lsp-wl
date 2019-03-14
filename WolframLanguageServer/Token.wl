@@ -80,6 +80,7 @@ ToMarkdown[input_] := Replace[input, {
     RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
     "\[Rule]" -> "\[RightArrow]",
     "\[TwoWayRule]" -> "\[LeftRightArrow]",
+    "\[LongEqual]" -> "=",
     "\[LeftAssociation]" -> "<|",
     "\[RightAssociation]" -> "|>",
     "\[InvisibleSpace]" -> " ",
