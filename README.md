@@ -3,21 +3,21 @@
 [![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
+![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
 > by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
 - [Wolfram Language Server](#wolfram-language-server)
-    - [Installation](#installation)
-    - [Run the Server](#run-the-server)
-    - [Features](#features)
-    - [Contribute](#contribute)
-        - [Design Principles](#design-principles)
-        - [Todo list](#todo-list)
-    - [Donations :dollar:](#donations-dollar)
-    - [Footnotes](#footnotes)
+  - [Installation](#installation)
+  - [Run the Server](#run-the-server)
+  - [Features](#features)
+  - [Contribute](#contribute)
+    - [Design Principles](#design-principles)
+    - [Todo list](#todo-list)
+  - [Donations :dollar:](#donations-dollar)
+  - [Footnotes](#footnotes)
 
 <!-- markdown-toc end -->
 
@@ -89,7 +89,7 @@ This is a good way to see the results from the unit tests.
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
-![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/hover.png)
+![hover](images/hover.png)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -97,12 +97,12 @@ This is a good way to see the results from the unit tests.
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
-![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/completion.png)
+![completion](images/completion.png)
 
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
 
-![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/diagnostics.png)
+![diagnostics](images/diagnostics.png)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
@@ -160,8 +160,7 @@ thanks in advance :smile:.
 
 - Paypal: qwe95123@126.com
 - Alipay (With QRCode): 13916018006  
-![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/alipay.jpg)
+![Alipay QRCode](images/alipay.jpg)
 
 ## Footnotes
 
