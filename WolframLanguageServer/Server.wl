@@ -44,7 +44,7 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
-	"client" -> (_SocketClient | _SocketObject | _StdioClient | "stdio" | Null),
+	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"theme" -> "dark" | "light"
 |>];
 InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
@@ -72,8 +72,8 @@ Options[WLServerStart] = {
 
 WLServerStart[o:OptionsPattern[]] := Module[
 	{
-		(*Options:*) clientPid, port, pipe, stream, workingDir, tempDirPath,
-		connection, stdin, stdout, readpipe
+		tempDirPath, connection, stdin, stdout, readpipe,
+		(*Options:*) clientPid, port, pipe, stream, workingDir
 	},
 
 	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
@@ -98,7 +98,7 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	
 	LogInfo["Language server is connecting the client through "<> stream <> "."];
 	Replace[stream, {
-	    "stdio" | "pipe" :> (
+	    "stdio" :> (
 	        LogError["Communication through " <> stream <> " is not implemented"];
 	        Quit[1]
 	    ),
@@ -118,20 +118,40 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	    ),
 	    "pipe" :> (
 	        LogDebug[pipe];
-	        readpipe = LogDebug[OpenRead[StringJoin[{
-	            "\\\\.\\pipe\\wolfram-jsonrpc-",
-	            StringJoin[RandomChoice[
-	                {"0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"}
-	            , 42]],
-                "-sock"
-            }], Method -> "Pipe", BinaryFormat -> True]];
-	        (*connection = OpenRead[pipe, BinaryFormat -> True, Method \[Rule] "Pipe"];*)
-	        connection = OpenWrite[pipe, BinaryFormat -> True, Method -> "Pipe"];
-	        WriteLine[connection, readpipe];
-	        While[True,
-                Pause[1];          
-	            LogDebug[ReadByteArray[readpipe]]
-	        ]	        
+			Replace[$OperatingSystem, {
+				"Windows" :> (
+					pipe
+					// StringCases["\\\\.\\pipe\\"~~pipename__ :> pipename]
+					// Replace[{
+						{pipename_String} :> (
+							Needs["NETLink`"];
+							NETLink`InstallNET[];
+							(* Cannot load type for the first run *)
+							NETLink`LoadNETType["System.Byte[]"];
+							NETLink`LoadNETType["System.IO.Pipes.PipeDirection"];
+							NETLink`BeginNETBlock[];
+							Check[
+								connection = t`conn = NETLink`NETNew["System.IO.Pipes.NamedPipeClientStream", ".", pipename, PipeDirection`InOut];
+								connection@Connect[2000],
+								$Failed
+							] // Replace[$Failed :> (LogError["Cannot connect to named pipe."]; Quit[1])];
+
+							LogInfo["Server listening on pipe " <> pipename <> "..."];
+							(*LogInfo[WLServerListen[connection, InitialState]];*)
+				
+							Block[{$IterationLimit = Infinity},
+								TcpSocketHandler[ReplaceKey[InitialState, "client" -> NamedPipe[<|
+									"pipeName" -> pipename, "pipeStream" -> connection
+								|>]]]
+							]
+						),
+						{} :> (
+							(* pipe name error *)
+							LogError["Wrong pipe name"];
+						)
+					}]
+				)
+			}];
 	    ),
 	    "tcp-server" :> (
 	        connection = Check[t`conn = SocketOpen[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
@@ -210,7 +230,13 @@ DeclareType[SocketClient, <|
 	"zmqIdentity" -> (_ByteArray | Null),
 	"contentLengthRemain" -> _Integer,
 	"socket" -> _SocketObject
-|>];
+|>]
+
+DeclareType[NamedPipe, <|
+	"pipeStream" -> _?(NETLink`InstanceOf[#, "System.IO.Pipes.NamedPipeClientStream"]&),
+	"pipeName" -> _String
+|>]
+
 
 (* Not using this handler due to ZMQ is not supported yet, please see handler for TCP *)
 SocketHandler[packet_Association] := Module[
@@ -392,6 +418,31 @@ ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(
 
 
 (* ::Subsubsection:: *)
+(*NamedPipe*)
+
+
+ReadMessages[client_NamedPipe] := {ReadMessagesImpl[client, {}]}
+ReadMessagesImpl[client_NamedPipe, msg_Association] := msg
+ReadMessagesImpl[client_NamedPipe, header_List] := ReadMessagesImpl[client, Module[
+    {
+		pipeStream = client["pipeStream"],
+        newByteArray, newMsg
+    },
+
+    If[MatchQ[header, {RPCPatterns["HeaderByteArray"]}],
+        (* read content *)
+		With[{contentLength = header // ByteArray // getContentLength}, NETLink`NETBlock[
+			newByteArray = NETLink`NETNew["System.Byte[]", contentLength];
+			pipeStream@Read[newByteArray, 0, contentLength];
+			ImportByteArray[ByteArray[NETLink`NETObjectToExpression[newByteArray]], "RawJSON"]
+		]],
+        (* read header *)
+		Append[header, pipeStream@ReadByte[]]
+	]
+]]
+
+
+(* ::Subsubsection:: *)
 (*StdioClient*)
 
 
@@ -472,7 +523,19 @@ WriteMessage[client_SocketClient][msglist:{_ByteArray..}] := Module[
 	BinaryWrite[targetsocket, First@msglist];
 	BinaryWrite[targetsocket, client["zmqIdentity"]];
 	BinaryWrite[targetsocket, Last@msglist];
-];
+]
+
+
+WriteMessage[client_NamedPipe][msglist:{header_ByteArray, content_ByteArray}] := With[
+	{
+		pipeStream = client["pipeStream"]
+	},
+	
+	pipeStream@Write[Normal[header], 0, Length[header]];
+	pipeStream@Write[Normal[content], 0, Length[content]];
+	pipeStream@Flush[];
+
+]
 
 
 WriteMessage[client_SocketObject][msglist:{_ByteArray..}] := (
