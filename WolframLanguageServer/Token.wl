@@ -67,7 +67,7 @@ ToMarkdown[input_] := Replace[input, {
     RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
     StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
     StyleBox[x_, "TR"] :> ToMarkdown[x], 
-    StyleBox[x_, ShowStringCharacters->True] :> ToMarkdown[x],
+    StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x],
     (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
     (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
     (Superscript|SuperscriptBox)[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
@@ -78,14 +78,6 @@ ToMarkdown[input_] := Replace[input, {
     FractionBox[x_, y_] :> (ToMarkdown[x] <> "/" <> ToMarkdown[y]),
     (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> ToMarkdown[x] <> "]"),
     RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
-    "\[Rule]" -> "\[RightArrow]",
-    "\[TwoWayRule]" -> "\[LeftRightArrow]",
-    "\[LongEqual]" -> "=",
-    "\[LeftAssociation]" -> "<|",
-    "\[RightAssociation]" -> "|>",
-    "\[InvisibleSpace]" -> " ",
-    (*"\[Ellipsis]" \[Rule] "...",*)
-    (*"\[DoubleRightArrow]" \[Rule] " => ",*)
     _String :> StringReplace[input, {
         Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[ToMarkdown[ToExpression[box, StandardForm]], InputForm] <> "\)"]
     }],
@@ -101,6 +93,15 @@ GenMdText[token_String] := Module[
 	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
 	usageString = ToMarkdown[ToExpression[token <> "::usage"]](* //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]}*);
 	StringReplace[usageString, {
+        "\[Rule]" -> "\[RightArrow]",
+        "\[TwoWayRule]" -> "\[LeftRightArrow]",
+        "\[LongEqual]" -> "==",
+        "\[Equal]" -> "==",
+        "\[LeftAssociation]" -> "<|",
+        "\[RightAssociation]" -> "|>",
+        "\[InvisibleSpace]" -> " ",
+        "\[Null]" -> "",
+        "`" -> "\\`",
         StartOfLine -> "---\n\n",
 	    "\n"->"\n\n"
 	}] <> "\n\n"
