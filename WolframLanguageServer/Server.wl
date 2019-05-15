@@ -312,7 +312,7 @@ SocketHandler[packet_Association] := Module[
 TcpSocketHandler[{stop_, state_WorkState}]:= (
     (* close client and return *)
     LogInfo["Closing socket connection..."];
-    Close /@ Sockets[];
+	CloseClient[state["client"]];
     {stop, state}
 )
 TcpSocketHandler[state_WorkState] := Module[
@@ -582,6 +582,21 @@ getContentLength[header_String] := (header // StringCases[RPCPatterns["ContentLe
     {len_String} :> LogDebug@ToExpression[len],
     _ :> (LogError["Unknown header: " <> header]; Quit[1])
 }])
+
+
+(* :: Section:: *)
+(*Close client*)
+
+
+CloseClient[client_SocketObject] := Close /@ Sockets[]
+CloseClient[client_NamedPipe] := With[
+	{
+		pipeStream = client["pipeStream"]
+	},
+
+	pipeStream@Close[];
+	NETLink`EndNETBlock[]
+]
 
 
 (* ::Section:: *)

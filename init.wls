@@ -2,12 +2,12 @@
 (* ::Package:: *)
 
 (* Wolfram Language Server *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
+(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
            huxianglong <hxianglong_at_gmail.com>
 *)
 
 
-(* init.wl    
+(* init.wl
 
 This is a script file to initialize the Wolfram Language Server.
 Please see the help info below.
@@ -42,18 +42,18 @@ PrependTo[$Path, WolframLanguageServer`RootDirectory];
 WolframLanguageServer`CommandLine = Flatten[Rest[WolframLanguageServer`CommandLine] ~StringSplit~ "="];
 
 ArgumentValue[keyPattern_, valuePattern_:Blank[]] := Module[
-	{
-	},
+    {
+    },
 
-	FirstPosition[WolframLanguageServer`CommandLine, keyPattern]
-	// Replace[{
-	    _Missing -> Missing["NotSpecified"],
-	    {Length[WolframLanguageServer`CommandLine]} -> Missing["ValueMissing"], (* last argument *)
-	    {keyPos_} :> (
-	        Part[WolframLanguageServer`CommandLine, keyPos + 1]
-	        // Replace[{Except[_?(MatchQ[valuePattern])] -> Missing["PatternNotMatch"]}]
-	    )
-	}]
+    FirstPosition[WolframLanguageServer`CommandLine, keyPattern]
+    // Replace[{
+        _Missing -> Missing["NotSpecified"],
+        {Length[WolframLanguageServer`CommandLine]} -> Missing["ValueMissing"], (* last argument *)
+        {keyPos_} :> (
+            Part[WolframLanguageServer`CommandLine, keyPos + 1]
+            // Replace[{Except[_?(MatchQ[valuePattern])] -> Missing["PatternNotMatch"]}]
+        )
+    }]
 ];
 
 
@@ -62,7 +62,8 @@ ArgumentValue[keyPattern_, valuePattern_:Blank[]] := Module[
 
 
 If[MemberQ[WolframLanguageServer`CommandLine, "-h" | "--help"],
-	Print["
+    Print[
+"
 This is a script file to initialize the Wolfram Language Server.
 You can execute the script from commandline:
 
@@ -77,16 +78,23 @@ Options:
 
     --test, -t                     Run all tests
     --log=loglevel, -l loglevel    Specifiy logging level as debug, info, warn or error (default: info)
-    --socket port                  Start a socket server on port (default: 6536)
+    --socket=port                  Connect to a socket server on port (default: 6536)
+    --tcp-server=port              Start a socket server on port (default: 6536)
+    --pipe=pipeName                Connect via a named pipe (Windows only)
     --version, -v                  Print the version.
     --help, -h                     Print this help message
 
 \"initializationOptions\": {
-    \"theme\" = \"dark\"|\"light\"       // Specify the text color in pictures according to client theme (default: dark)
+    
 }
 
-"];
-	Quit[];
+"
+    ];
+    (* "
+    Deprecated initializationOptions: 
+    \"theme\" = \"dark\"|\"light\"       // Specify the text color in pictures according to client theme (default: dark)
+    " *)
+    Quit[];
 ];
 
 
@@ -96,10 +104,10 @@ Options:
 
 WolframLanguageServer`Version = "0.1.1";
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
-	Print["
+    Print["
 Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
 Wolfram Language " <> $Version <> "\n"];
-	Quit[];
+    Quit[];
 ];
 
 
@@ -108,13 +116,13 @@ Wolfram Language " <> $Version <> "\n"];
 
 
 If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
-	Print["
+    Print["
 Running tests for all.
 "];
-	Off[General::shdw];
-	<< WolframLanguageServer`Test`RunTest`;
-	Print[WolframLanguageServer`Test`RunTest`TestRunAll[]];
-	Quit[];
+    Off[General::shdw];
+    << WolframLanguageServer`Test`RunTest`;
+    Print[WolframLanguageServer`Test`RunTest`TestRunAll[]];
+    Quit[];
 ];
 
 
@@ -125,74 +133,74 @@ Running tests for all.
 Needs["WolframLanguageServer`Logger`"];
 
 Module[
-	{
-		stream, logArgPos, loglevel, logstreams, clientPid, port, pipe,
-		ContextPattern, ExportedFunctions
-	},
+    {
+        stream, logArgPos, loglevel, logstreams, clientPid, port, pipe,
+        ContextPattern, ExportedFunctions
+    },
 
-	stream = Which[
-	    MemberQ[WolframLanguageServer`CommandLine, "--stdio"],
-	    "stdio",
-	    MemberQ[WolframLanguageServer`CommandLine, "--pipe"],
-	    "pipe",
-	    MemberQ[WolframLanguageServer`CommandLine, "--tcp-server"],
-	    "tcp-server",
-	    True,
-		"socket"
-	];
+    stream = Which[
+        MemberQ[WolframLanguageServer`CommandLine, "--stdio"],
+        "stdio",
+        MemberQ[WolframLanguageServer`CommandLine, "--pipe"],
+        "pipe",
+        MemberQ[WolframLanguageServer`CommandLine, "--tcp-server"],
+        "tcp-server",
+        True,
+        "socket"
+    ];
 
-	clientPid = ArgumentValue["--clientProcessId", _?(StringMatchQ[NumberString])]
-	    // Replace[{
-	        p:Except[_Missing] :> ToExpression[p]
-	    }];
+    clientPid = ArgumentValue["--clientProcessId", _?(StringMatchQ[NumberString])]
+        // Replace[{
+            p:Except[_Missing] :> ToExpression[p]
+        }];
 
-	port = ArgumentValue["--socket", _?(StringMatchQ[NumberString])]
-	    // Replace[_Missing :> ArgumentValue["--tcp-server", _?(StringMatchQ[NumberString])]]
-	    // Replace[{
-	        _Missing -> 6536,
-	        p_ :> ToExpression[p]
-	    }];
-	
+    port = ArgumentValue["--socket", _?(StringMatchQ[NumberString])]
+        // Replace[_Missing :> ArgumentValue["--tcp-server", _?(StringMatchQ[NumberString])]]
+        // Replace[{
+            _Missing -> 6536,
+            p_ :> ToExpression[p]
+        }];
+
     pipe = ArgumentValue["--pipe", _String]
-	    // Replace[{
-	        _Missing :> Null
-	}];
-	
-	loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels]
-	    // Replace[_Missing -> "debug"];
+        // Replace[{
+            _Missing :> Null
+    }];
 
-	(*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"]
-	    // Replace[_Missing, "stdio"];*)
-	
-	logstreams = {
-		OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"](*,
-		First @ Streams["stdout"]*)
-	};
+    loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels]
+        // Replace[_Missing -> "debug"];
 
-	LoggerStart[loglevel, logstreams];
-	$Messages = logstreams; 
-	
-	LogInfo @ "Initializing Wolfram Language Server";
-	
-(*	ContextPattern = "WolframLanguageServer`*";
-	ExportedFunctions ={"WLServerStart", "WLServerVersion", "WLServerDebug"};
-	$ContextPath = DeleteCases[$ContextPath, _?(StringMatchQ["WolframLanguageServer`*"])];
-	Unprotect[$Packages];
-	$Packages = DeleteCases[$Packages, _?(StringMatchQ[ContextPattern])];
-	Protect[$Packages];
-	Off[Remove::rmnsm];
-	Remove/@ ExportedFunctions;
-	On[Remove::rmnsm];
+    (*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"]
+        // Replace[_Missing, "stdio"];*)
 
-	DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
+    logstreams = {
+        OpenWrite[WolframLanguageServer`RootDirectory <> "wlserver.log"](*,
+        First @ Streams["stdout"]*)
+    };
+
+    LoggerStart[loglevel, logstreams];
+    $Messages = logstreams;
+
+    LogInfo @ "Initializing Wolfram Language Server";
+
+(*    ContextPattern = "WolframLanguageServer`*";
+    ExportedFunctions ={"WLServerStart", "WLServerVersion", "WLServerDebug"};
+    $ContextPath = DeleteCases[$ContextPath, _?(StringMatchQ["WolframLanguageServer`*"])];
+    Unprotect[$Packages];
+    $Packages = DeleteCases[$Packages, _?(StringMatchQ[ContextPattern])];
+    Protect[$Packages];
+    Off[Remove::rmnsm];
+    Remove/@ ExportedFunctions;
+    On[Remove::rmnsm];
+
+    DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
-	<< WolframLanguageServer`Server`;
-	LogDebug @ WolframLanguageServer`Server`WLServerStart[
-		"Stream" -> stream,
-		"ClientPid" -> clientPid,
-		"Port" -> port,
-		"Pipe" -> pipe,
-		"WorkingDir" -> WolframLanguageServer`RootDirectory
-	];
-	Quit[0]
+    << WolframLanguageServer`Server`;
+    LogDebug @ WolframLanguageServer`Server`WLServerStart[
+        "Stream" -> stream,
+        "ClientPid" -> clientPid,
+        "Port" -> port,
+        "Pipe" -> pipe,
+        "WorkingDir" -> WolframLanguageServer`RootDirectory
+    ];
+    Quit[0]
 ];
