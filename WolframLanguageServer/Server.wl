@@ -45,6 +45,7 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
+	"clientCapabilities" -> _Association,
 	"theme" -> "dark" | "light"
 |>];
 InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
@@ -672,14 +673,16 @@ sendResponse[client_, res_Association] := Module[
 (*Initialize*)
 
 
-handleRequest["initialize", msg_, state_] := Module[
+handleRequest["initialize", msg_, state_WorkState] := Module[
 	{
-		newState = state, theme
+		newState = state, clientCapabilities, theme
 	},
 	
 	(* Check Client Capabilities *)
 	theme = msg["params"]["initializationOptions"]["theme"] // Replace[_Missing -> "dark"];
-	newState = ReplaceKey[state, "theme" -> theme];
+	newState = ReplaceKey[state,
+		"clientCapabilities" -> msg["params"]["capabilities"]
+	];
 	
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
@@ -744,7 +747,9 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		Context[token] === "Global`", Null, (* defined in Global` context*)
 		True, (Replace[ToExpression[token <> "::usage"], {
 			_MessageName :> Null, (* no usage *)
-			_ :> <|"contents" -> TokenDocumentation[token]|>
+			_ :> <|"contents" -> TokenDocumentation[token,
+				"Format" -> First[state["clientCapabilities"]["textDocument"]["hover"]["contentFormat"]]
+			]|>
 		}])
 	];
 	
