@@ -12,7 +12,7 @@ ClearAll[Evaluate[Context[] <> "*"]];
 
 TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
   The possible options are
-  \"Format\" -> \"Text\" | \"Picture\",
+  \"Format\" -> \"plaintext\" | \"markdown\" | \"image\",
   \"Theme\" -> \"Dark\" | \"Light\",
   \"TempDir\" -> $TemporaryDirectory
 ";
@@ -32,7 +32,7 @@ Needs["WolframLanguageServer`Specification`"];
 
 
 Options[TokenDocumentation] = {
-    "Format" -> "Text",
+    "Format" -> "plaintext",
     "Theme" -> "Dark",
     "TempDir" -> $TemporaryDirectory
 };
@@ -48,10 +48,10 @@ TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
         GenHeader[token],
         "\t",
         GetUri[token],
-	    If[format === "Text", 
-	        GenMdText[token],
-	        GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir]
-	    ]
+	    Replace[format, {
+            "plaintext" | "markdown" :> GenMdText[token],
+	        "image" :> GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir]
+	    }]
 	}]
 ];
 
