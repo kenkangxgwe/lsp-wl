@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
-> by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
+> by [kenkangxgwe](https://github.com/kenkangxgwe) and [hxianglong](https://github.com/huxianglong) 
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
@@ -30,7 +30,7 @@ implemented in Wolfram Language itself.
 Our current goal is to provide the experience as good as the Mathematica FrontEnd 
 with addition power from the editor.
 
-We have provided the client-side code for VS Code in this repo, which is based on some slight
+We have provided the client-side code for VS Code [here](https://github.com/kenkangxgwe/vscode-lsp-wl), which is based on some slight
 modifications of [Microsoft's LSP
 example](https://github.com/Microsoft/vscode-extension-samples/tree/master/lsp-sample).
 If you are using other tools supporting LSP, some slight modifications to the
