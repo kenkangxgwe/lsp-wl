@@ -66,8 +66,8 @@ GetUri[token_String] := ("[" <> "*Website Reference*" (*<> "*" <> token <> "*"*)
 ToMarkdown[input_] := Replace[input, {
     RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
     StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
-    StyleBox[x_, "TR"] :> ToMarkdown[x], 
-    StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x],
+    StyleBox[x_, Except["TI"]] :> ToMarkdown[x], 
+    (* StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x], *)
     (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
     (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
     (Superscript|SuperscriptBox)[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
@@ -101,6 +101,7 @@ GenMdText[token_String] := Module[
         "\[RightAssociation]" -> "|>",
         "\[InvisibleSpace]" -> " ",
         "\[Null]" -> "",
+        "~" -> "\\~",
         "`" -> "\\`",
         StartOfLine -> "---\n\n",
 	    "\n"->"\n\n"
