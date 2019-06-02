@@ -1088,6 +1088,32 @@ handleNotification[_, msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
+(*Send Message*)
+
+
+MessageType = <|
+	"Error" -> 1,
+	"Warning" -> 2,
+	"Info" -> 3,
+	"Log" -> 4,
+	"Debug" -> 4
+|>
+
+showMessasge[message_String, msgType_String, state_WorkState] := (
+	MessageType[msgType]
+	// Replace[type:Except[_?MissingQ] :> 
+		sendResponse[state["client"], <|
+			"method" -> "window/showMessage", 
+			"params" -> <|
+				"type" -> type,
+				"message" -> message
+			|>
+		|>]
+	]
+)
+
+
+(* ::Subsection:: *)
 (*Handle Error*)
 
 
