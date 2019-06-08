@@ -21,10 +21,11 @@ Begin["`Private`"];
 ClearAll[Evaluate[Context[] <> "*"]];
 
 
-Needs["WolframLanguageServer`DataType`"];
-Needs["WolframLanguageServer`Logger`"];
-Needs["WolframLanguageServer`Specification`"];
-Needs["WolframLanguageServer`Token`"];
+Needs["WolframLanguageServer`DataType`"]
+Needs["WolframLanguageServer`Logger`"]
+Needs["WolframLanguageServer`Specification`"]
+Needs["WolframLanguageServer`Token`"]
+Needs["GeneralUtilities`"]
 
 
 (* ::Section:: *)
@@ -675,7 +676,7 @@ sendResponse[client_, res_Association] := Module[
 
 handleRequest["initialize", msg_, state_WorkState] := Module[
 	{
-		newState = state, clientCapabilities, theme
+		newState = state, theme
 	},
 	
 	(* Check Client Capabilities *)
