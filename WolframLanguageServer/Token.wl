@@ -33,7 +33,6 @@ Needs["WolframLanguageServer`Specification`"];
 
 Options[TokenDocumentation] = {
     "Format" -> "plaintext",
-    "Theme" -> "Dark",
     "TempDir" -> $TemporaryDirectory
 };
 
@@ -42,15 +41,16 @@ TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
         format, theme, tempdir
     },
     
-    {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}];
+    {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
+    (* {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}]; *)
     If[Head[ToExpression[token<>"::usage"]] === MessageName, Return[""]];
     StringJoin[{
         GenHeader[token],
         "\t",
         GetUri[token],
 	    Replace[format, {
-            "plaintext" | "markdown" :> GenMdText[token],
-	        "image" :> GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir]
+            "plaintext" | "markdown" :> GenMdText[token]
+	        (* "image" :> GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir] *)
 	    }]
 	}]
 ];

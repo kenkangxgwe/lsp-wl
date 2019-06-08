@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Markdown conversion for special characters
 
+### Removed
+
+- SVG image for document information
+
 ## [0.1.1] - 2019-02-05 🧧
 
 ### Added
