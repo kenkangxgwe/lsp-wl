@@ -38,11 +38,11 @@ client would certainly work too.
 
 ## Installation
 
-0. [Wolfram Mathematica](http://www.wolfram.com/mathematica/) (11.2 or
-    higher<a name="ref1"></a>[<sup>1</sup>](#footnote1)).
+0. [Wolfram Mathematica](http://www.wolfram.com/mathematica/) (11.2 or higher<a
+    name="ref1"></a>[<sup>1</sup>](#footnote1)) or [Wolfram
+    Engine](https://www.wolfram.com/engine/) (12.0 or higher).
 
-1. Download the [server](https://github.com/kenkangxgwe/lsp-wl) from its
-   repository.
+1. Use git to clone this repository.
 
   ``` sh
   git clone https://github.com/kenkangxgwe/lsp-wl.git
@@ -65,9 +65,11 @@ wolframscript -f /path/to/lsp-wl/init.wls [args]
 The posible arguments for the server are
 
 - `--help, -h` to print help information.
-- `--socket=port` to assign the port that the server connect to. (Default:
-`6536`)  
-Socket is the only channel that we currently support.
+- `--socket=port` to assign the port to which the server will connect. (Default:
+`6536`)
+- `--tcp-server=port` to assign the port at which the server will start. (Default:
+`6536`)
+- `--pipe=pipename` to specify the pipe name for the server to connect to.
 - `--log=level, -l level` to specify the logging level of the server.
   (Levels: `error`, `warn`, `info`, `debug`. Default: `info`)
 - `--test, -t` to run the unit test for the server.
