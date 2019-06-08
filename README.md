@@ -3,21 +3,21 @@
 [![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![WolframLanguageServerLogo](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/wolfram-language-server-logo-clipped.png)
-> by [kenkangxgwe](mailto:kenkangxgwe@gmail.com) and [hxianglong](https://github.com/huxianglong) 
+![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
+> by [kenkangxgwe](https://github.com/kenkangxgwe) and [hxianglong](https://github.com/huxianglong) 
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
 
 - [Wolfram Language Server](#wolfram-language-server)
-    - [Installation](#installation)
-    - [Run the Server](#run-the-server)
-    - [Features](#features)
-    - [Contribute](#contribute)
-        - [Design Principles](#design-principles)
-        - [Todo list](#todo-list)
-    - [Donations :dollar:](#donations-dollar)
-    - [Footnotes](#footnotes)
+  - [Installation](#installation)
+  - [Run the Server](#run-the-server)
+  - [Features](#features)
+  - [Contribute](#contribute)
+    - [Design Principles](#design-principles)
+    - [Todo list](#todo-list)
+  - [Donations :dollar:](#donations-dollar)
+  - [Footnotes](#footnotes)
 
 <!-- markdown-toc end -->
 
@@ -30,7 +30,7 @@ implemented in Wolfram Language itself.
 Our current goal is to provide the experience as good as the Mathematica FrontEnd 
 with addition power from the editor.
 
-We have provided the client-side code for VS Code in this repo, which is based on some slight
+We have provided the client-side code for VS Code [here](https://github.com/kenkangxgwe/vscode-lsp-wl), which is based on some slight
 modifications of [Microsoft's LSP
 example](https://github.com/Microsoft/vscode-extension-samples/tree/master/lsp-sample).
 If you are using other tools supporting LSP, some slight modifications to the
@@ -38,11 +38,11 @@ client would certainly work too.
 
 ## Installation
 
-0. [Wolfram Mathematica](http://www.wolfram.com/mathematica/) (11.2 or
-    higher<a name="ref1"></a>[<sup>1</sup>](#footnote1)).
+0. [Wolfram Mathematica](http://www.wolfram.com/mathematica/) (11.2 or higher<a
+    name="ref1"></a>[<sup>1</sup>](#footnote1)) or [Wolfram
+    Engine](https://www.wolfram.com/engine/) (12.0 or higher).
 
-1. Download the [server](https://github.com/kenkangxgwe/lsp-wl) from its
-   repository.
+1. Use git to clone this repository.
 
   ``` sh
   git clone https://github.com/kenkangxgwe/lsp-wl.git
@@ -65,9 +65,11 @@ wolframscript -f /path/to/lsp-wl/init.wls [args]
 The posible arguments for the server are
 
 - `--help, -h` to print help information.
-- `--socket=port` to assign the port that the server connect to. (Default:
-`6536`)  
-Socket is the only channel that we currently support.
+- `--socket=port` to assign the port to which the server will connect. (Default:
+`6536`)
+- `--tcp-server=port` to assign the port at which the server will start. (Default:
+`6536`)
+- `--pipe=pipename` to specify the pipe name for the server to connect to.
 - `--log=level, -l level` to specify the logging level of the server.
   (Levels: `error`, `warn`, `info`, `debug`. Default: `info`)
 - `--test, -t` to run the unit test for the server.
@@ -89,7 +91,7 @@ This is a good way to see the results from the unit tests.
 - *Hover:* Provide definitions for Wolfram functions and system variables, such
   as `String` and `$Path`.
 
-![hover](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/hover.png)
+![hover](images/hover.png)
 
 - *Completion:* The completion is triggered by the client automatically.
   Currently, Wolfram functions and system variables would be displayed.
@@ -97,12 +99,12 @@ This is a good way to see the results from the unit tests.
 - *Completion Resolve:* Further information would be provided for the items in
   the list.
 
-![completion](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/completion.png)
+![completion](images/completion.png)
 
 - *Diagnostics:* Syntax error would be underlined. However, the specific syntax
   error is not supported at the moment.
 
-![diagnostics](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/develop/images/diagnostics.png)
+![diagnostics](images/diagnostics.png)
   
 This is an early release, so more features are on the way. Syntax highlight is
 NOT supported according to the design of LSP, but there are already some good
@@ -160,8 +162,7 @@ thanks in advance :smile:.
 
 - Paypal: qwe95123@126.com
 - Alipay (With QRCode): 13916018006  
-![Alipay
-QRCode](https://raw.githubusercontent.com/kenkangxgwe/lsp-wl/master/images/alipay.jpg)
+![Alipay QRCode](images/alipay.jpg)
 
 ## Footnotes
 

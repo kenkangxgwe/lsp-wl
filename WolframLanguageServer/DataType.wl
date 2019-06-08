@@ -13,6 +13,8 @@ ClearAll[Evaluate[Context[] <> "*"]];
 DeclareType::usage = "DeclareType[typename, <|key_String -> pattern...|>] declares a type given by its name and an association indicating every field and its pattern in the type. \
 typename[key] gets access to the corresponding value. \
 typename[key, default] gets access to the corresponding value. If it is missing, returns the default.";
+ConstructType::usage = "ConstructType[params_Association, type] constructs an object of the given type with specified params."
+TypeUsage::usage = "TypeUsage[type, usage_String] append usage to current type."
 Keys::usage = Keys::usage <> "\nKeys[typename] gives a list of the keys field_i in type typename.";
 KeyPatterns::usage = "KeyPatterns[typename] returns the key-pattern pair of the type.";
 ReplaceKey::usage = "ReplaceKey[object, key -> value] assigns the value to key in given object.
@@ -70,6 +72,10 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 ];
 
 
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
+
+
 (* ::Section:: *)
 (*Default Constructor*)
 
@@ -90,24 +96,24 @@ ConstructTypeAlternatives[parameters_, {{}, res_}] := res;
 ConstructTypeAlternatives[parameters_, {{p_, ps___}, res_}] := ConstructTypeAlternatives[parameters,
     ConstructType[parameters, p]
     // Replace[{
-        _Missing -> {{ps}, res},
+        _Missing :> {{ps}, res},
         newres_ :> {{}, newres}
     }]
 ];
 
 ConstructType[parameters_List, pattern:List[(Verbatim[Repeated]|Verbatim[RepeatedNull])[p_]]] := (
-    ConstructTypeList[p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+    ConstructTypeList[p, {parameters, {}}] // Replace[_Missing :> Missing["ConstructorNotFound", {parameters, pattern}]]
 );
 
 ConstructType[parameters_List, pattern:List[(Verbatim[BlankSequence]|Verbatim[BlankNullSequence])[p_]]] := (
-    ConstructTypeList[_p, {parameters, {}}] // Replace[_Missing -> Missing["ConstructorNotFound", {parameters, pattern}]]
+    ConstructTypeList[_p, {parameters, {}}] // Replace[_Missing :> Missing["ConstructorNotFound", {parameters, pattern}]]
 );
 
 ConstructTypeList[p_, {{}, res_}] := res;
 ConstructTypeList[p_, {{param_, params___}, res_}] := ConstructTypeList[p, 
     ConstructType[param, p]
     // Replace[{
-        _Missing ->  {{}, MissingQ["ConstructorNotFound"]},
+        _Missing :>  {{}, MissingQ["ConstructorNotFound"]},
         curRes_ :> {{params}, Append[res, curRes]}
     }]
 ];
@@ -115,7 +121,7 @@ ConstructTypeList[p_, {{param_, params___}, res_}] := ConstructTypeList[p,
 ConstructType[parameters_Association, pattern:Association[(Verbatim[Repeated]|Verbatim[RepeatedNull])[Rule[key_, val_]]]] := (
     ConstructType[Keys[parameters], {key...}]
     // Replace[{
-        _Missing -> Missing["ConstructorNotFound", {parameters, pattern}],
+        _Missing :> Missing["ConstructorNotFound", {parameters, pattern}],
         res1_ :> (
             ConstructType[Values[parameters], {val...}]
             // Replace[{
@@ -194,6 +200,9 @@ TypeUsage[typename_Symbol, usage_String] := (
         usage
     }]
 );
+
+
+End[]
 
 
 EndPackage[];

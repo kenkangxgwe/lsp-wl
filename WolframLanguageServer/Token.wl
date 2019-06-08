@@ -12,7 +12,7 @@ ClearAll[Evaluate[Context[] <> "*"]];
 
 TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
   The possible options are
-  \"Format\" -> \"Text\" | \"Picture\",
+  \"Format\" -> \"plaintext\" | \"markdown\" | \"image\",
   \"Theme\" -> \"Dark\" | \"Light\",
   \"TempDir\" -> $TemporaryDirectory
 ";
@@ -32,8 +32,7 @@ Needs["WolframLanguageServer`Specification`"];
 
 
 Options[TokenDocumentation] = {
-    "Format" -> "Text",
-    "Theme" -> "Dark",
+    "Format" -> "plaintext",
     "TempDir" -> $TemporaryDirectory
 };
 
@@ -42,16 +41,17 @@ TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
         format, theme, tempdir
     },
     
-    {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}];
+    {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
+    (* {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}]; *)
     If[Head[ToExpression[token<>"::usage"]] === MessageName, Return[""]];
     StringJoin[{
         GenHeader[token],
         "\t",
         GetUri[token],
-	    If[format === "Text", 
-	        GenMdText[token],
-	        GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir]
-	    ]
+	    Replace[format, {
+            "plaintext" | "markdown" :> GenMdText[token]
+	        (* "image" :> GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir] *)
+	    }]
 	}]
 ];
 
@@ -63,35 +63,27 @@ GenHeader[token_String] := "**" <> token <> "**";
 GetUri[token_String] := ("[" <> "*Website Reference*" (*<> "*" <> token <> "*"*) <> "](https://reference.wolfram.com/language/ref/" <> token <> ".html)" <> "\n\n");
 
 
-ToMarkdown[input_String] := Module[
-	{
-	
-	},
-	StringReplace[input, {
-	    Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[
-	        ToExpression[box, StandardForm] //.{
-	            (*RowBox \[Rule] StringJoin,*)
-	            StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
-	            StyleBox[x_, "TR"] :> ToMarkdown[x], 
-	            StyleBox[x_, ShowStringCharacters->True] :> ToMarkdown[x],
-	            SubscriptBox[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
-	            SuperscriptBox["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
-	            SuperscriptBox[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
-	            SubsuperscriptBox[x_, y_, z_] :> (ToMarkdown[x] <> "\\_" <> ToMarkdown[y] <> "^" <> ToMarkdown[z]),
-	            UnderscriptBox[x_, y_] :> "Underscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
-	            OverscriptBox[x_, y_] :> "Overscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
-	            UnderoverscriptBox[x_,y_,z_] :> "Underoverscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> ", " <> ToMarkdown[z] <> "]",
-	            FractionBox[x_, y_] :> (ToMarkdown[x] <> "/" <> ToMarkdown[y]),
-	            SqrtBox[x_] :> ("Sqrt[" <> ToMarkdown[x] <> "]"),
-	            RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
-	            "\[Rule]" -> "\[RightArrow]",
-	            (*"\[Ellipsis]" \[Rule] "...",*)
-	            (*"\[DoubleRightArrow]" \[Rule] " => ",*)
-	            Nothing
-	        }, InputForm] <> "\)"
-	    ]
-	}]
-];
+ToMarkdown[input_] := Replace[input, {
+    RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
+    StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
+    StyleBox[x_, Except["TI"]] :> ToMarkdown[x], 
+    (* StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x], *)
+    (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
+    (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
+    (Superscript|SuperscriptBox)[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
+    (Subsuperscript|SubsuperscriptBox)[x_, y_, z_] :> (ToMarkdown[x] <> "\\_" <> ToMarkdown[y] <> "^" <> ToMarkdown[z]),
+    (Underscript|UnderscriptBox)[x_, y_] :> "Underscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
+    (Overscript|OverscriptBox)[x_, y_] :> "Overscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
+    (Underoverscript|UnderoverscriptBox)[x_,y_,z_] :> "Underoverscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> ", " <> ToMarkdown[z] <> "]",
+    FractionBox[x_, y_] :> (ToMarkdown[x] <> "/" <> ToMarkdown[y]),
+    (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> ToMarkdown[x] <> "]"),
+    RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
+    _String :> StringReplace[input, {
+        Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[ToMarkdown[ToExpression[box, StandardForm]], InputForm] <> "\)"]
+    }],
+    _ :> ToString[input]
+}]
+
 
 GenMdText[token_String] := Module[
 	{
@@ -99,9 +91,19 @@ GenMdText[token_String] := Module[
 	},
 	
 	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
-	usageString = ToMarkdown[ToExpression[token <> "::usage"]] //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]};
+	usageString = ToMarkdown[ToExpression[token <> "::usage"]](* //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]}*);
 	StringReplace[usageString, {
-        StartOfLine -> "___\n",
+        "\[Rule]" -> "\[RightArrow]",
+        "\[TwoWayRule]" -> "\[LeftRightArrow]",
+        "\[LongEqual]" -> "==",
+        "\[Equal]" -> "==",
+        "\[LeftAssociation]" -> "<|",
+        "\[RightAssociation]" -> "|>",
+        "\[InvisibleSpace]" -> " ",
+        "\[Null]" -> "",
+        "~" -> "\\~",
+        "`" -> "\\`",
+        StartOfLine -> "---\n\n",
 	    "\n"->"\n\n"
 	}] <> "\n\n"
 ];
