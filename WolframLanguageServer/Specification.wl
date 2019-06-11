@@ -6,23 +6,14 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`Specification`"];
-Construct[ClearAll, Context[] <> "*"];
+BeginPackage["WolframLanguageServer`Specification`"]
+Construct[ClearAll, Context[] <> "*"]
 
 
-TextDocument::usage = "is the type of the text document.";
-CreateTextDocument::usage = "CreateTextDocument[text_String, version_Integer] returns a TextDocument object";
-ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input.";
-GetToken::usage = "GetToken[doc_TextDocument, pos_LspPosition] returns the token located at the given position";
-GetLine::usage = "GetLine[doc_TextDocument, line_Integer] returns the specific line of the TextDocument.";
-
-
-LspPosition::usage = "is type of Position interface in LSP.";
-LspRange::usage = "is type of Range interface in LSP.";
+LspPosition::usage = "is type of Position interface in LSP."
+LspRange::usage = "is type of Range interface in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
- the new text is considered to be the full content of the document.";
-FromLspPosition::usage = "FromLspPosition[doc_TextDocument, pos_LspPosition] returns the index of the character at given LspPosition.";
-ToLspPosition::usage = "ToLspPosition[doc_TextDocument, index_Integer] returns the LspPosition of the character at given index.";
+ the new text is considered to be the full content of the document."
 
 
 (* ::Section:: *)
@@ -34,7 +25,7 @@ DiagnosticSeverity = <|
     "Warning" -> 2,
     "Information" -> 3,
     "Hint" -> 4
-|>;
+|>
 
 
 (* ::Section:: *)
@@ -54,9 +45,8 @@ ErrorCodes = <|
 	"UnknownErrorCode" -> -32001,
 	(* Defined by the protocol *)
 	"RequestCancelled" -> -32800,
-	"ContentModified" -> -32801,
-	Nothing
-|>;
+	"ContentModified" -> -32801
+|>
 
 
 (* ::Section:: *)
@@ -89,7 +79,7 @@ CompletionItemKind = <|
     "Event" -> 23,
     "Operator" -> 24,
     "TypeParameter" -> 25
-|>;
+|>
 
 
 (* ::Section:: *)
@@ -123,181 +113,24 @@ SymbolKind = <|
     "Event" -> 24,
     "Operator" -> 25,
     "TypeParameter" -> 26
-|>;
+|>
 
 
-Begin["`Private`"];
-Construct[ClearAll, Context[] <> "*"];
-Needs["WolframLanguageServer`Logger`"];
-Needs["WolframLanguageServer`DataType`"];
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
+Needs["WolframLanguageServer`DataType`"]
 
 
 (* ::Section:: *)
 (*Server Communication Related Type*)
 
 
-DeclareType[TextDocument, <|"text" -> _String, "version" -> _Integer, "position"-> {_Integer...}|>];
-DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>];
-DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>];
-DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>];
+DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>]
+DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>]
+DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>]
 
 
-(* ::Subsection:: *)
-(*CreateTextDocument*)
+End[]
 
 
-CreateTextDocument[text_String, version_Integer] := Module[
-    {
-        newtext = StringReplace[text, "\r\n" -> "\n"]
-    },
-    
-    TextDocument[<|
-	    "text" -> newtext, "version" -> version, 
-    	"position" -> Prepend[(1 + #)& /@ First /@ StringPosition[newtext, "\n"], 1] 
-    |>]
-];
-
-
-(* ::Subsection:: *)
-(*ChangeTextDocument*)
-
-
-ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := Module[
-    {
-        range, newtext, newdoc
-    },
-    
-    range = contextChange["range"] ;
-    newtext = StringReplace[contextChange["text"], "\r\n" -> "\n"];
-    
-    newdoc = ReplaceKey[doc, "text" -> Replace[range, {
-        _Missing :> newtext,
-        _LspRange :> StringReplacePart[doc@"text", newtext, {
-            FromLspPosition[doc, range@"start"],
-            FromLspPosition[doc, range@"end"] - 1
-        }]
-    }]];
-    
-    ReplaceKey[newdoc, "position" -> Prepend[(1 + #)& /@ First /@ StringPosition[newdoc["text"], "\n"], 1]]
-    
-];
-
-
-(* ::Subsection:: *)
-(*GetToken*)
-
-
-GetToken[doc_TextDocument, pos_LspPosition] := Module[
-	{
-		beginpos, endpos, curpos
-	},
-		
-	curpos = FromLspPosition[doc, pos];
-	beginpos = FindTokenBegin[doc@"text", curpos];
-	endpos = FindTokenEnd[doc@"text", curpos];
-	If[curpos < beginpos || endpos < curpos,
-		"",
-		StringTake[doc@"text", {beginpos, endpos}]
-	]
-];
-
-
-IdentifierPostfixPattern = LetterCharacter|DigitCharacter|"$";
-IdentifierFirstPattern = LetterCharacter|"$";
-
-
-FindTokenBegin[text_String, pos_Integer] := Module[
-	{
-		maybeBeginPos, beginpos
-	},
-	
-	maybeBeginPos = StringPositionUntil[text, Except[IdentifierPostfixPattern], pos, -1] + 1; (* finds potential begin position for the token. *)
-	StringPositionUntil[text, IdentifierFirstPattern, maybeBeginPos, 1] (* ignore digits and return the position. *)
-];
-
-FindTokenEnd[text_String, pos_Integer] := StringPositionUntil[text, Except[IdentifierPostfixPattern], pos, 1] - 1;
-
-
-StringPositionUntil[text_String, pattern_, pos_Integer, dir:(-1|1)] := Module[
-	{
-		curchar, newpos
-	},
-	
-	If[pos <= 0 || pos > StringLength[text], Return[pos]];
-	
-	curchar = StringPart[text, pos];
-	If[StringMatchQ[pattern] @ curchar,
-		pos,
-		newpos = pos + dir;
-		StringPositionUntil[text, pattern, newpos, dir]
-	]
-];
-
-
-(* ::Subsection:: *)
-(*GetLine*)
-
-
-GetLine[doc_TextDocument, line_Integer] := Module[
-    {
-        totalLine = Length[doc@"position"], totalLength = StringLength[doc@"text"]
-    },
-    
-    Which[line > totalLine || line < 1,
-        "",
-    line == totalLine,
-        StringTake[doc@"text", {Last[doc@"position"], totalLength}],
-    True,
-        StringTake[doc@"text", Part[doc@"position", {line, line + 1}] - {0, 2}]
-    ]
-];
-
-
-(* ::Subsection:: *)
-(*FromLspPosition <-> Index*)
-
-
-FromLspPosition[doc_TextDocument, pos_LspPosition] := Module[
-    {
-        line, linePos, totalLines, lineWidth, textLength
-    },
-    
-    textLength = StringLength[doc@"text"];
-    totalLines = Length[doc@"position"];
-    line = pos@"line" + 1;
-    linePos = Part[doc@"position", line];
-    
-    If[line > totalLines, 
-        Return[textLength]
-    ];
-    
-    lineWidth = If[line == totalLines,
-        textLength - linePos + 1,
-        Part[doc@"position", line + 1] - linePos
-    ];
-    
-    linePos + If[pos@"character" > lineWidth,
-        lineWidth,
-        pos@"character"
-    ]
-];
-
-
-ToLspPosition[doc_TextDocument, index_Integer] := Module[
-    {
-        line, char
-    },
-    
-    line = LengthWhile[doc@"position", LessEqualThan[index]] - 1;
-    char = index - Part[doc@"position", line + 1];
-    LspPosition[<|
-        "line" -> line,
-        "character" -> char
-    |>]
-];
-
-
-End[];
-
-
-EndPackage[];
+EndPackage[]

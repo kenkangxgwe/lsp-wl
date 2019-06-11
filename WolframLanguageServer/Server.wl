@@ -24,6 +24,7 @@ ClearAll[Evaluate[Context[] <> "*"]];
 Needs["WolframLanguageServer`DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
+Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
 Needs["GeneralUtilities`"]
 
@@ -941,52 +942,59 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 
 handleNotification["textDocument/didChange", msg_, state_] := Module[
 	{
-        doc = msg["params"]["textDocument"], uri=msg["params"]["textDocument"]["uri"], 
-		newState = state, contentChanges 
+        doc = msg["params"]["textDocument"], uri = msg["params"]["textDocument"]["uri"], 
+		newState, contentChanges 
 	},
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	Assert[newState["openedDocs"][uri]["version"] == doc["version"] - 1];
+	(* TODO: Use ShowMessage instead of Assert *)
+	Assert[state["openedDocs"][uri]["version"] == doc["version"] - 1];
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
-	newState = newState~ReplaceKey~({"openedDocs", uri, "version"} -> doc["version"]);
+
 	(* There are three cases, delete, replace and add. *)
-	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
-	(* Apply all the content changes. *)
-	newState = ReplaceKey[newState, {"openedDocs", uri} -> Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
+	contentChanges = LogDebug@ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
+
 	LogInfo @ ("Change Document " <> uri);
+	newState = state // ReplaceKey[{"openedDocs", uri} -> (
+		(* Apply all the content changes. *)
+		Fold[ChangeTextDocument, state["openedDocs"][uri], contentChanges]
+		// Replace[newDoc_ :> (
+			ReplaceKey[newDoc, "version" -> newDoc["version"]]
+		)]
+	)];
+
 	(* Give diagnostics in real-time *)
-	sendResponse[state["client"], <|
+	(* sendResponse[state["client"], <|
 		"method" -> "textDocument/publishDiagnostics", 
 		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
+	|>]; *)
+
+	(* Clean the diagnostics given last time *)
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> clearDiagnostics[uri]
 	|>];
 
 	{"Continue", newState}
-];
+]
 
 
-handleContentChange[state_, contentChange_, uri_String] := Module[
+(* ::Subsection:: *)
+(* textSync/DidSave *)
+
+
+handleNotification["textDocument/didSave", msg_, state_] := With[
 	{
-		newState = state, getPos, s, e
+		uri = msg["params"]["textDocument"]["uri"]
 	},
-	LogDebug @ "Begin handle content change.";
-	s = contentChange["range"] @ "start";
-	e = contentChange ["range"] @ "end";
-	(*helper function to get the absolute position*)
-	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) + r["character"];
-	(* if new elements are added, the length is 0. *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", uri, "text"} -> (
-			(* Surprisingly, when the end is smaller than the start, the StringReplacePart would function as StringInsert. *)
-			StringReplacePart[newState["openedDocs"][uri]["text"], StringReplace[contentChange["text"], "\r\n" -> "\n"], {getPos[s], getPos[e] - 1}]
-		)
-	);
-	(* Update the position *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", uri, "position"} -> (
-	    	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
-		)
-    );
-	newState
-];
+
+	(* Give diagnostics after save *)
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> state["openedDocs"][uri]~diagnoseTextDocument~uri
+	|>];
+
+	{"Continue", state}
+]
 
 
 diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
@@ -995,6 +1003,7 @@ diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
 	},
 	
 	
+	(* 
 	txt
 	// ToCharacterCode
 	// FromCharacterCode
@@ -1027,12 +1036,20 @@ diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
 	        	"message" -> ErrorMessage[error]
 	        |>
 	    )
-	]
+	] *)
+	DiagnoseDoc[uri, doc]
 	// (<|
 		"uri" -> uri,
 		"diagnostics"  -> #1
     |> &)
-];
+]
+
+clearDiagnostics[uri_String] := (
+	<|
+		"uri" -> uri,
+		"diagnostics"  -> {}
+    |> 
+)
 
 
 ToSeverity[error_String] := (
