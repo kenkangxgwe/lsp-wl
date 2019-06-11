@@ -395,11 +395,7 @@ SelectClient["stdio"] := "stdio";
 
 ReadMessages[client_SocketObject] := ReadMessagesImpl[client, {{0, {}}, {}}]
 ReadMessagesImpl[client_SocketObject, {{0, {}}, msgs:{__Association}}] := msgs
-ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
-    {
-        newstate, curMsg
-    },
-
+ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, (
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -417,7 +413,7 @@ ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(
 		    )
 	    }]
 	]
-]]
+)]
 
 
 (* ::Subsubsection:: *)
@@ -429,7 +425,7 @@ ReadMessagesImpl[client_NamedPipe, msg_Association] := msg
 ReadMessagesImpl[client_NamedPipe, header_List] := ReadMessagesImpl[client, Module[
     {
 		pipeStream = client["pipeStream"],
-        newByteArray, newMsg
+        newByteArray
     },
 
     If[MatchQ[header, {RPCPatterns["HeaderByteArray"]}],
@@ -453,7 +449,6 @@ ReadMessages[client_StdioClient] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
 ReadMessagesImpl[client_StdioClient, {{0, {}}, msgs:{__Association}}] := msgs
 ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
     {
-        newstate, curMsg
     },
     
     LogDebug @ {remainingLength, Normal[remainingByte]};
@@ -483,11 +478,7 @@ ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_
 
 ReadMessages["stdio"] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
 ReadMessagesImpl["stdio", {{0, {}}, msgs:{__Association}}] := msgs
-ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", Module[
-    {
-        newstate, curMsg
-    },
-    
+ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", (
     LogDebug @ {remainingLength, Normal[remainingByte]};
     If[remainingLength > 0,
         (* Read Content *)
@@ -506,7 +497,7 @@ ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{
 		    )
 	    }]
 	]
-]]
+)]
 
 
 InputBinary[] := (LogDebug["waiting for input"];a=Import["!D:\\Programs\\msys64\\usr\\bin\\cat.exe", "Byte"];LogDebug["input done"];a)(*(LogDebug["waiting for input"]; ByteArray[StringToByteArray[InputString[]] ~Join~ {13, 10}])*)
@@ -614,7 +605,7 @@ handleMessageList[msgs:{___Association}, state_WorkState] := (
 
 handleMessage[msg_Association, state_WorkState] := Module[
 	{
-		method, response, newState = state, serverStatus
+		method, newState = state
 	},
 	
 	method = msg["method"];
@@ -900,7 +891,6 @@ handleNotification["textDocument/didOpen", msg_, state_] := Module[
 		newState = state, docs
 	},
 
-	LogDebug @ "Begin Handle DidOpen.";
 	(* get the association, modify and reinsert *)
 	docs = newState["openedDocs"];
 	docs~AssociateTo~(

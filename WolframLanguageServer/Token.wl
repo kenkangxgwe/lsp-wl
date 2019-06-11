@@ -22,9 +22,9 @@ TokenKind::usage = "TokenKind[token_String] returns the symbol kind of input tok
 TokenCompletionList::usage = "TokenCompletionList[token_String] returns a list of predicted completions for the input token.";
 
 
-Begin["`Private`"];
-ClearAll[Evaluate[Context[] <> "*"]];
-Needs["WolframLanguageServer`Specification`"];
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
+Needs["WolframLanguageServer`Specification`"]
 
 
 (* ::Section:: *)
@@ -38,7 +38,7 @@ Options[TokenDocumentation] = {
 
 TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
     {
-        format, theme, tempdir
+        format, (*theme,*) tempdir
     },
     
     {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
@@ -67,6 +67,7 @@ ToMarkdown[input_] := Replace[input, {
     RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
     StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
     StyleBox[x_, Except["TI"]] :> ToMarkdown[x], 
+    StyleBox[x_] :> ToMarkdown[x],
     (* StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x], *)
     (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
     (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> ToMarkdown[y]),

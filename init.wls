@@ -134,7 +134,7 @@ Needs["WolframLanguageServer`Logger`"];
 
 Module[
     {
-        stream, logArgPos, loglevel, logstreams, clientPid, port, pipe,
+        stream, loglevel, logstreams, clientPid, port, pipe,
         ContextPattern, ExportedFunctions
     },
 
