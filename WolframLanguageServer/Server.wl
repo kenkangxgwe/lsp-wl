@@ -47,8 +47,7 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
-	"clientCapabilities" -> _Association,
-	"theme" -> "dark" | "light"
+	"clientCapabilities" -> _Association
 |>];
 InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
 (*Place where the temporary img would be stored, delete after usage.*)
@@ -668,11 +667,12 @@ sendResponse[client_, res_Association] := Module[
 
 handleRequest["initialize", msg_, state_WorkState] := Module[
 	{
-		newState = state, theme
+		newState = state
 	},
+
+	LogDebug["handle/initialize"];
 	
 	(* Check Client Capabilities *)
-	theme = msg["params"]["initializationOptions"]["theme"] // Replace[_Missing -> "dark"];
 	newState = ReplaceKey[state,
 		"clientCapabilities" -> msg["params"]["capabilities"]
 	];
@@ -1149,7 +1149,7 @@ ServerError[errorType_String, msg_String] := Module[
         errorCode
     },
     
-    errorCode = ErrorCodes[errorCode];
+    errorCode = ErrorCodes[errorType];
     If[MissingQ[errorCode],
         LogError["Invalid error type: " <> errorType];
         errorCode = ErrorCodes["UnknownErrorCode"]
