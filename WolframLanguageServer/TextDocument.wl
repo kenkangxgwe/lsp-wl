@@ -178,14 +178,16 @@ FromLspPosition[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-ToLspPosition[doc_TextDocument, index_Integer] := With[
+ToLspPosition[doc_TextDocument, index_Integer, "After"] := 
+    ToLspPosition[doc, index + 1]
+ToLspPosition[doc_TextDocument, index_Integer, _:"Before"] := With[
     {
-        line = LengthWhile[doc@"position", LessEqualThan[index]] - 1
+        line = LengthWhile[doc@"position", LessEqualThan[index]]
     },
     
     LspPosition[<|
-        "line" -> line,
-        "character" -> (index - Part[doc@"position", line + 1])
+        "line" -> line - 1,
+        "character" -> (index - Part[doc@"position", line])
     |>]
 ]
 
@@ -196,14 +198,14 @@ ToLspPosition[doc_TextDocument, index_Integer] := With[
 
 DiagnoseDoc[uri_String, doc_TextDocument] := (
     uri
-    // URL // FileNameSplit // FileNameJoin
+    // FromUri
     // Lint`LintFile
     // ReplaceAll[Lint`Lint[tag_, description_, severity_, data_] :> <|
         "range" -> (
             data[AST`Source]
             // Replace[{{startline_, startchar_}, {endline_, endchar_}} :> <|
                 "start" -> First@ToLspPosition[doc, Part[doc["position"], startline] + startchar - 1],
-                "end" -> First@ToLspPosition[doc, Part[doc["position"], endline] + endchar]
+                "end" -> First@ToLspPosition[doc, Part[doc["position"], Min[endline, Length[doc["position"]]]] + endchar - 1, "After"]
             |>]
         ),
         "severity" -> (
@@ -225,6 +227,219 @@ DiagnoseDoc[uri_String, doc_TextDocument] := (
     |>]
 
 )
+
+
+(* ::Subsection::*)
+(*documentSymbol*)
+
+DeclareType[IndexRange, <|
+    "start" -> _Integer,
+    "end" -> _Integer
+|>]
+
+
+IndexRange[{start_, end_}] := IndexRange[<|
+    "start" -> start,
+    "end" -> end
+|>]
+
+
+ToLspRange[doc_TextDocument, indexRange_IndexRange] := <|
+    "start" -> ToLspPosition[doc, indexRange["start"]],
+    "end" -> ToLspPosition[doc, indexRange["end"], "After"]
+|>
+
+
+DeclareType[CellNode, <|
+    "level" -> _Integer | Infinity,
+    "style" -> _String,
+    "name" -> _String,
+    "range" -> _IndexRange,
+    "selectionRange" -> _IndexRange,
+    "codeRange" -> _IndexRange,
+    "children" -> {___CellNode}
+|>]
+
+
+divideCells[doc_TextDocument] := With[
+    {
+        totalLines = Length[doc@"position"]
+    },
+
+    Table[
+        GetLine[doc, line]
+        // StringCases["(* ::"~~Shortest[style___]~~":: *)" :> style, 1]
+        // Replace[{
+            {style_String} :> (
+                GetLine[doc, line + 1]
+                // Replace[
+                    (
+                        (* if the line contains style definitions, discard it *)
+                        _?(StringContainsQ["(* ::"~~___~~":: *)"])|
+                        (* if the line contains strings outside the comment, discard it *)
+                        _?(Not@*StringMatchQ[WhiteSpace~~"(*"~~___~~"*)"~~WhiteSpace])
+                    ) -> ""
+                ]
+                // StringCases["(*"~~Longest[name___]~~"*)" :> name, 1]
+                // Replace[{
+                    {name_String} :> CellNode[<|
+                        "level" -> StyleLevel[style],
+                        "style" -> style,
+                        "name" -> name,
+                        "range" -> IndexRange[<|
+                            "start" -> Part[doc["position"], line]
+                        |>],
+                        "selectionRange" -> IndexRange[
+                            ((GetLine[doc, line + 1]
+                            // StringPosition["(*"<>name<>"*)"]
+                            // First) + Part[doc["position"], line + 1] - 1)
+                            // Replace[{start_, end_} :> <|
+                                "start" -> start,
+                                "end" -> end
+                            |>]
+                        ],
+                        "codeRange" -> IndexRange[<|
+                            "start" -> Part[doc["position"], line + 2]
+                        |>]
+                    |>],
+                    {} :> CellNode[<|
+                        "level" -> StyleLevel[style],
+                        "style" -> style,
+                        "name" -> "",
+                        "range" -> IndexRange[<|
+                            "start" -> line
+                        |>],
+                        "selectionRange" -> IndexRange[
+                            ((GetLine[doc, line]
+                            // StringPosition["(* ::"<>style<>":: *)"]
+                            // First) + Part[doc["position"], line + 1] - 1)
+                            // Replace[{start_, end_} :> <|
+                                "start" -> start,
+                                "end" -> end
+                            |>]
+                        ],
+                        "codeRange" -> IndexRange[<|
+                            "start" -> Part[doc["position"], line + 1]
+                        |>]
+                    |>]
+                }]
+            ),
+            (* current line does not contain style definitions *)
+            {} :> (
+                Nothing
+            )
+        }],
+        {line, totalLines}
+    ]
+    // Prepend[CellNode[<|
+        "level" -> -1,
+        "children" -> {}
+    |>]]
+    // Append[CellNode[<|
+        "level" -> 0
+    |>]]
+    // Fold[InsertCell]
+    // Key["children"]
+    // Most
+
+]
+
+
+InsertCell[rootCell_CellNode, newCell_CellNode] := (
+
+    rootCell["children"]
+    // Replace[{
+        _?MissingQ|{} :> {
+            "children" -> {newCell},
+            {"codeSelection", "end"} -> (newCell["range"]["start"] - 1)
+        },
+        {preCells___, lastCell_CellNode} :> (
+            If[lastCell["level"] < newCell["level"],
+                (* includes the new cell in the last child *)
+                {
+                    "children" -> {preCells, InsertCell[lastCell, newCell]}
+                },
+                (* append the new cell after the last child *)
+                {
+                    "children" -> {
+                        preCells,
+                        TerminateCell[lastCell, newCell["range"]["start"] - 1],
+                        newCell
+                    }
+                }
+            ]
+        )
+    }]
+    // Curry[Fold, 3][ReplaceKey, rootCell]
+
+)
+
+
+TerminateCell[cell_CellNode, endIndex_Integer] := (
+    cell
+    // ReplaceKey[{"range", "end"} -> endIndex]
+    // ReplaceKeyBy[{"children", -1} -> Curry[TerminateCell][endIndex]]
+)
+
+
+(* ::Subsection:: *)
+(*documentSymbol*)
+
+
+DeclareType[DocumentSymbol, <|
+    "name" -> _String,
+    "detail" -> _String,
+    "kind" -> _Integer,
+    "deprecated" -> _?BooleanQ,
+    "range" -> _LspRange,
+    "selectionRange" -> _LspRange,
+    "children" -> {___DocumentSymbol}
+|>]
+
+
+ToDocumentSymbol[doc_TextDocument, node_] := With[
+    {
+    },
+
+    node
+    // Replace[{
+        _TextDocument :> (
+            node
+            // divideCells
+            // Map[Curry[ToDocumentSymbol, 2][doc]]
+        ),
+        _CellNode :> (DocumentSymbol[<|
+            "name" -> node["name"],
+            "detail" -> node["style"],
+            "kind" -> SymbolKind["String"],
+            "range" -> ToLspRange[doc, node["range"]],
+            "selectionRange" -> ToLspRange[doc, node["selectionRange"]],
+            "children" -> {Curry[ToDocumentSymbol, 2][doc] /@ node["children"]}
+        |>])
+    }]
+    
+]
+
+
+StyleLevel[style_String] := Replace[style, {
+    "Title" -> 1,
+    "Chapter" | "Subtitle" -> 2,
+    "Subchapter" | "Subsubtitle" -> 3,
+    "Section" -> 4,
+    "Subsection" -> 5,
+    "Subsubsection" -> 6,
+    _ -> Infinity
+}]
+
+
+(* FromUri *)
+If[$VersionNumber >= 12.0,
+    FromUri[uri_String] := (uri // URL // FileNameSplit // FileNameJoin),
+    If[$OperatingSystem === "Windows",
+        FromUri[uri_String] := (URLParse[uri, "Path"] // Rest // FileNameJoin),
+        FromUri[uri_String] := (URLParse[uri, "Path"] // FileNameJoin)
+    ]
+]
 
 
 End[]
