@@ -12,6 +12,7 @@ DeclareType::usage = "DeclareType[typename, <|key_String -> pattern...|>] declar
 typename[key] gets access to the corresponding value. \
 typename[key, default] gets access to the corresponding value. If it is missing, returns the default."
 ConstructType::usage = "ConstructType[params_Association, type] constructs an object of the given type with specified params."
+ToAssociation::usage = "ToAssociation[obj_typename] gives the association form of the object."
 TypeUsage::usage = "TypeUsage[type, usage_String] append usage to current type."
 Keys::usage = Keys::usage <> "\nKeys[typename] gives a list of the keys field_i in type typename."
 KeyPatterns::usage = "KeyPatterns[typename] returns the key-pattern pair of the type."
@@ -40,6 +41,7 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 		If[MissingQ[value], TypeCheck[default, typekey[key]], value]
 	];
     
+    (* Deserializer*)
     ConstructType[parameters_Association, typename] := Module[
         {
         },
@@ -49,18 +51,43 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
             /@ Intersection[Keys[typekey], Keys[parameters]]
         ]]
     ];
-    
+
+    (* Serializer*)
+    ToAssociation[typename[typedict_Association]] := ToAssociation /@ typedict;
+
     (* Keys and Patterns *)
 	Keys[typename] ^= Keys[typekey];
 	KeyPatterns[typename] = typekey;
+    typename /: Key[key_String][typename[typedict_Association]] := typename[typedict][key];
 	
 	(* ReplaceKey *)
-	ReplaceKey[typename[typedict_Association], rule:((Rule|RuleDelayed)[(_String|{_String, ___}), _])] :=
-		typename[ReplaceKey[typedict, rule]];
+	ReplaceKey[typename[typedict_Association], rule:((Rule|RuleDelayed)[(key_String|{key_String}), _])] := (
+		If[MemberQ[Keys[typename], key],
+            typename[ReplaceKey[typedict, rule]],
+            typename[typedict]
+        ]
+    );
+
+	ReplaceKey[typename[typedict_Association], rule:((Rule|RuleDelayed)[{key_String, __}, _])] := (
+		If[MemberQ[Keys[typedict], key],
+            typename[ReplaceKey[typedict, rule]],
+            typename[typedict]
+        ]
+    );
 
     (* ReplaceKeyBy*)
-	ReplaceKeyBy[typename[typedict_Association], rule:((Rule|RuleDelayed)[(_String|{_String, ___}), _])] :=
-		typename[ReplaceKeyBy[typedict, rule]];
+	ReplaceKeyBy[typename[typedict_Association], rule:((Rule|RuleDelayed)[(key_String|{key_String}), _])] := (
+		If[MemberQ[Keys[typename], key],
+            typename[ReplaceKeyBy[typedict, rule]],
+            typename[typedict]
+        ]
+    );
+	ReplaceKeyBy[typename[typedict_Association], rule:((Rule|RuleDelayed)[{key_String, __}, _])] := (
+		If[MemberQ[Keys[typedict], key],
+            typename[ReplaceKeyBy[typedict, rule]],
+            typename[typedict]
+        ]
+    );
 	
 	(* SameQ *)
 	typename /: SameQ[typename[typedict1_Association], typename[typedict2_Association]] := (
@@ -68,12 +95,12 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 	);
 	
 	(* usage *)
-	Evaluate[typename]::usage = StringJoin[{
+	typename::usage = StringJoin[{
 	    ToString[typename, InputForm],
 	    "[<|",
 	    Riffle[KeyValueMap[{#1, " -> ", ToString[#2]}&, typekey], ", "],
 	    "|>]",
-	    Replace[Evaluate[typename]::usage, _MessageName -> "."]
+	    Replace[typename::usage, _MessageName -> "."]
 	}];
 ]
 
@@ -155,21 +182,42 @@ TypeCheckOn[]
 
 
 (* ::Section:: *)
+(*ToAssociation*)
+
+
+ToAssociation[primitive_] := primitive
+ToAssociation[list_List] := ToAssociation /@ list
+ToAssociation[assoc_Association] := ToAssociation /@ assoc
+
+
+(* ::Section:: *)
 (*ReplaceKey*)
 
 
 ReplaceKey[obj_, {} -> _] := obj
 ReplaceKey[rule:(_Rule|_RuleDelayed)][obj_] := ReplaceKey[obj, rule]
 
-ReplaceKey[list_List, key_Integer|{key_Integer} -> value_] :=
-	ReplacePart[list, key -> value]
-ReplaceKey[list_List, {key_Integer, keys__} -> value_] := 
-	ReplacePart[list, key -> ReplaceKey[Extract[key][list], {keys} -> value]]
+ReplaceKey[list_List, key_Integer|{key_Integer} -> value_] := (
+    If[0 < Abs[key] <= Length[list],
+        ReplacePart[list, key -> value],
+        list
+    ]
+)
+
+ReplaceKey[list_List, {key_Integer, keys__} -> value_] := (
+    If[0 < Abs[key] <= Length[list],
+        ReplacePart[list, key -> ReplaceKey[Extract[key][list], {keys} -> value]],
+        list
+    ]
+)
 	
 ReplaceKey[assoc_Association, (rulehd:(Rule|RuleDelayed))[((key:Except[_List])|{key_}), value_]] :=
 	Append[assoc, rulehd[key, value]]
 ReplaceKey[assoc_Association, (rulehd:(Rule|RuleDelayed))[{key_, keys__}, value_]] := 
-	Append[assoc, key -> ReplaceKey[assoc[key], rulehd[{keys}, value]]]
+    If[KeyMemberQ[assoc, key],
+        Append[assoc, key -> ReplaceKey[assoc[key], rulehd[{keys}, value]]],
+        assoc
+    ]
 
 
 (* ::Section:: *)
@@ -179,15 +227,27 @@ ReplaceKey[assoc_Association, (rulehd:(Rule|RuleDelayed))[{key_, keys__}, value_
 ReplaceKeyBy[obj_, {} -> _] := obj
 ReplaceKeyBy[rule:(_Rule|_RuleDelayed)][obj_] := ReplaceKeyBy[obj, rule]
 
-ReplaceKeyBy[list_List, key_Integer|{key_Integer} -> func_] :=
-	ReplacePart[list, key -> func[Part[list, key]]]
-ReplaceKeyBy[list_List, {key_Integer, keys__} -> func_] := 
-	ReplacePart[list, key -> ReplaceKeyBy[Extract[key][list], {keys} -> func]]
+ReplaceKeyBy[list_List, key_Integer|{key_Integer} -> func_] := (
+    If[0 < Abs[key] <= Length[list],
+        ReplacePart[list, key -> func[Part[list, key]]],
+        list
+    ]
+)
+
+ReplaceKeyBy[list_List, {key_Integer, keys__} -> func_] := (
+    If[0 < Abs[key] <= Length[list],
+        ReplacePart[list, key -> ReplaceKeyBy[Extract[key][list], {keys} -> func]],
+        list
+    ]
+)
 	
 ReplaceKeyBy[assoc_Association, (rulehd:(Rule|RuleDelayed))[((key:Except[_List])|{key_}), func_]] :=
 	Append[assoc, rulehd[key, func[assoc[key]]]]
 ReplaceKeyBy[assoc_Association, (rulehd:(Rule|RuleDelayed))[{key_, keys__}, func_]] := 
-	Append[assoc, key -> ReplaceKeyBy[assoc[key], rulehd[{keys}, func]]]
+    If[KeyMemberQ[assoc, key],
+        Append[assoc, key -> ReplaceKeyBy[assoc[key], rulehd[{keys}, func]]],
+        assoc
+    ]
 
 
 (* ::Section:: *)

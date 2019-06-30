@@ -5,9 +5,9 @@ Construct[ClearAll, Context[] <> "*"]
 
 
 Begin["`Private`"]
-
-
 Construct[ClearAll, Context[] <> "*"]
+
+
 TestedContext = "DataType`"
 (*Tests::usage = StringTemplate["Tests for `` context."][TestedContext];*)
 Needs[TestedContext]
@@ -34,6 +34,13 @@ VerificationTest[
 	stu1 /@ {"id","name", "sex"},
 	{1, "John Doe", "Male"},
 	TestID -> "Simple Getters"
+],
+
+VerificationTest[
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male"|>];
+	Through[{Key["id"], Key["name"], Key["sex"]}[stu1]],
+	{1, "John Doe", "Male"},
+	TestID -> "Key Getters"
 ],
 
 VerificationTest[
@@ -176,6 +183,22 @@ VerificationTest[
 
 VerificationTest[
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
+	stu1 = ReplaceKey[stu1, "address" -> "NYC"];
+	stu1,
+	Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>],
+	TestID -> "Replace Unkown Key"
+],
+
+VerificationTest[
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
+	stu1 = ReplaceKeyBy[stu1, "address" -> "NYC"];
+	stu1,
+	Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>],
+	TestID -> "ReplaceBy Unkown Key"
+],
+
+VerificationTest[
+	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
 	stu1 // ReplaceKeyBy[{"courses", 2}->("COMP202"&)] // ReplaceKey["name" -> ("Long"&)],
 	Student[<|"id" -> 1, "name" -> "Long", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>|>],
 	TestID -> "Curried ReplaceKey"
@@ -199,7 +222,7 @@ VerificationTest[
 	DeclareType[Class, <|"id" -> _Integer, "students" -> _Association|>];
 	class1 = Class[<|"id"->1, "students"-> <||>|>];
     ken = Student[<|"id" -> 1, "name" -> "ken", "sex" -> "Male", "courses"-> <|1-> "ECON101", 2->"COMP102", 3->"PHYS201"|>|>];
-	class1 = ReplaceKeyBy[class1, {"students", "ken"} :> (ken&)];
+	class1 = ReplaceKey[class1, {"students", "ken"} :> ken];
 	class1["students"]["ken"]["courses"],
 	<|1 -> "ECON101", 2 -> "COMP102", 3 -> "PHYS201"|>,
 	TestID -> "Delayed Value"
