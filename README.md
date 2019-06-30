@@ -124,9 +124,10 @@ Here is a full list of [LSP features](https://microsoft.github.io/language-serve
 2. We implemented an stateless server in ``WolframLanguageServer`Server` `` that
    will parse and handle the messages.
 
-3. ``WolframLanguageServer`DataType` `` is a simple type system
-   that supports pattern test on every field of a class. The operations on the
-   objects are designed to be immutable.
+3. ``DataType` `` is a simple type system now extracted as a independent
+  package in the [Matypetica](https://github.com/kenkangxgwe/Matypetica)
+  library that supports pattern test on every field of a class. The operations
+  on the objects are designed to be immutable.
    
 4. ``WolframLanguageServer`Test`* `` stores the unit tests for some of
    the packages.

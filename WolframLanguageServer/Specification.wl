@@ -118,7 +118,7 @@ SymbolKind = <|
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
-Needs["WolframLanguageServer`DataType`"]
+Needs["DataType`"]
 
 
 (* ::Section:: *)

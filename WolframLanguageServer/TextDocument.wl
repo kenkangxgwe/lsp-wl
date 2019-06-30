@@ -22,7 +22,7 @@ DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information
 
 Begin["`Private`"]
 Construct[ClearAll, Context[] <> "*"]
-Needs["WolframLanguageServer`DataType`"]
+Needs["DataType`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`Logger`"]
 (* SubmitSession[ *)

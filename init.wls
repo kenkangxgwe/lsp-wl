@@ -32,7 +32,16 @@ WolframLanguageServer`RootDirectory = (
     }]
 );
 
-PrependTo[$Path, WolframLanguageServer`RootDirectory];
+WolframLanguageServer`DependencyDirectories = {
+    FileNameJoin[{WolframLanguageServer`RootDirectory, "external", "Matypetica", "src"}]
+}
+
+
+$Path = Join[
+    WolframLanguageServer`DependencyDirectories,
+    {WolframLanguageServer`RootDirectory},
+    $Path
+]
 
 
 (* ::Subsection:: *)

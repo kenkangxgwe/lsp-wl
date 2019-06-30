@@ -21,7 +21,7 @@ Begin["`Private`"];
 ClearAll[Evaluate[Context[] <> "*"]];
 
 
-Needs["WolframLanguageServer`DataType`"]
+Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
