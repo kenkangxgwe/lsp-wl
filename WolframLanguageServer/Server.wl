@@ -686,7 +686,8 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 				"completionProvider" -> <|
 					"resolveProvider" -> True,
 					"triggerChracters" -> {}
-				|>
+				|>,
+				"documentSymbolProvider" -> True
 			|>
 		|>
 	|>];
@@ -813,6 +814,22 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 	
 	{"Continue", state}
 ];
+
+
+handleRequest["textDocument/documentSymbol", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
+	},
+	
+	(* LogDebug@ToAssociation@ToDocumentSymbol[doc]; *)
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation@ToDocumentSymbol[doc]
+	|>];
+	
+	{"Continue", state}
+]
 
 
 (* ::Subsection:: *)

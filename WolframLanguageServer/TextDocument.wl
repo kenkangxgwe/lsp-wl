@@ -18,6 +18,7 @@ GetLine::usage = "GetLine[doc_TextDocument, line_Integer] returns the specific l
 FromLspPosition::usage = "FromLspPosition[doc_TextDocument, pos_LspPosition] returns the index of the character at given LspPosition."
 ToLspPosition::usage = "ToLspPosition[doc_TextDocument, index_Integer] returns the LspPosition of the character at given index."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
+ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
 
 
 Begin["`Private`"]
@@ -174,7 +175,6 @@ FromLspPosition[doc_TextDocument, pos_LspPosition] := With[
             ]
         )]
     )]
-    // LogDebug
 ]
 
 
@@ -268,24 +268,26 @@ divideCells[doc_TextDocument] := With[
 
     Table[
         GetLine[doc, line]
-        // StringCases["(* ::"~~Shortest[style___]~~":: *)" :> style, 1]
+        // StringCases["(* "~~"::"~~Shortest[style___]~~"::"~~" *)" :> style]
         // Replace[{
-            {style_String} :> (
+            {style_String, ___} :> (
                 GetLine[doc, line + 1]
                 // Replace[
                     (
                         (* if the line contains style definitions, discard it *)
-                        _?(StringContainsQ["(* ::"~~___~~":: *)"])|
+                        _?(StringContainsQ["(* "~~"::"~~___~~"::"~~" *)"]) |
                         (* if the line contains strings outside the comment, discard it *)
-                        _?(Not@*StringMatchQ[WhiteSpace~~"(*"~~___~~"*)"~~WhiteSpace])
+                        _?(Not@*StringMatchQ[WhitespaceCharacter___~~"(*"~~___~~"*)"~~WhitespaceCharacter___])
                     ) -> ""
                 ]
-                // StringCases["(*"~~Longest[name___]~~"*)" :> name, 1]
+                // StringCases["(*"~~Longest[name___]~~"*)" :> name]
                 // Replace[{
-                    {name_String} :> CellNode[<|
+                    {name_String, ___} :> CellNode[<|
                         "level" -> StyleLevel[style],
                         "style" -> style,
-                        "name" -> name,
+                        "name" -> name // Replace[
+                            "" -> "[unnamed]"
+                        ],
                         "range" -> IndexRange[<|
                             "start" -> Part[doc["position"], line]
                         |>],
@@ -305,13 +307,13 @@ divideCells[doc_TextDocument] := With[
                     {} :> CellNode[<|
                         "level" -> StyleLevel[style],
                         "style" -> style,
-                        "name" -> "",
+                        "name" -> "[unnamed]",
                         "range" -> IndexRange[<|
                             "start" -> line
                         |>],
                         "selectionRange" -> IndexRange[
                             ((GetLine[doc, line]
-                            // StringPosition["(* ::"<>style<>":: *)"]
+                            // StringPosition["(* "~~"::"<>style<>"::"~~" *)"]
                             // First) + Part[doc["position"], line + 1] - 1)
                             // Replace[{start_, end_} :> <|
                                 "start" -> start,
@@ -336,7 +338,10 @@ divideCells[doc_TextDocument] := With[
         "children" -> {}
     |>]]
     // Append[CellNode[<|
-        "level" -> 0
+        "level" -> 0,
+        "range" -> IndexRange[<|
+            "start" -> StringLength[doc["text"]] + 1
+        |>]
     |>]]
     // Fold[InsertCell]
     // Key["children"]
@@ -351,7 +356,7 @@ InsertCell[rootCell_CellNode, newCell_CellNode] := (
     // Replace[{
         _?MissingQ|{} :> {
             "children" -> {newCell},
-            {"codeSelection", "end"} -> (newCell["range"]["start"] - 1)
+            {"codeRange", "end"} -> (newCell["range"]["start"] - 1)
         },
         {preCells___, lastCell_CellNode} :> (
             If[lastCell["level"] < newCell["level"],
@@ -378,7 +383,14 @@ InsertCell[rootCell_CellNode, newCell_CellNode] := (
 TerminateCell[cell_CellNode, endIndex_Integer] := (
     cell
     // ReplaceKey[{"range", "end"} -> endIndex]
-    // ReplaceKeyBy[{"children", -1} -> Curry[TerminateCell][endIndex]]
+    // ReplaceKey[{"codeRange", "end"} -> endIndex]
+    // ReplaceKeyBy[{"children"} -> Replace[{
+        _?MissingQ :> {},
+        {children___, lastChild_CellNode} :> {
+            children,
+            TerminateCell[lastChild, endIndex]
+        }
+    }]]
 )
 
 
@@ -386,38 +398,33 @@ TerminateCell[cell_CellNode, endIndex_Integer] := (
 (*documentSymbol*)
 
 
-DeclareType[DocumentSymbol, <|
-    "name" -> _String,
-    "detail" -> _String,
-    "kind" -> _Integer,
-    "deprecated" -> _?BooleanQ,
-    "range" -> _LspRange,
-    "selectionRange" -> _LspRange,
-    "children" -> {___DocumentSymbol}
-|>]
+ToDocumentSymbol[doc_TextDocument] := (
+    doc
+    // divideCells
+    // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
+)
 
 
-ToDocumentSymbol[doc_TextDocument, node_] := With[
+ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
     {
+
     },
 
     node
     // Replace[{
-        _TextDocument :> (
-            node
-            // divideCells
-            // Map[Curry[ToDocumentSymbol, 2][doc]]
-        ),
         _CellNode :> (DocumentSymbol[<|
             "name" -> node["name"],
             "detail" -> node["style"],
             "kind" -> SymbolKind["String"],
             "range" -> ToLspRange[doc, node["range"]],
             "selectionRange" -> ToLspRange[doc, node["selectionRange"]],
-            "children" -> {Curry[ToDocumentSymbol, 2][doc] /@ node["children"]}
+            "children" -> If[!MissingQ[node["children"]],
+                Curry[ToDocumentSymbolImpl, 2][doc] /@ node["children"],
+                {}
+            ]
         |>])
     }]
-    
+
 ]
 
 

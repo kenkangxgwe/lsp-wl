@@ -14,6 +14,7 @@ LspPosition::usage = "is type of Position interface in LSP."
 LspRange::usage = "is type of Range interface in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
  the new text is considered to be the full content of the document."
+DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 
 
 (* ::Section:: *)
@@ -128,6 +129,15 @@ Needs["DataType`"]
 DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>]
 DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>]
 DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>]
+DeclareType[DocumentSymbol, <|
+    "name" -> _String,
+    "detail" -> _String,
+    "kind" -> _Integer,
+    "deprecated" -> _?BooleanQ,
+    "range" -> _LspRange,
+    "selectionRange" -> _LspRange,
+    "children" -> {___DocumentSymbol}
+|>]
 
 
 End[]
