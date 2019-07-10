@@ -404,7 +404,7 @@ ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(
         If[Length[remainingByte] >= remainingLength,
             {{0, Drop[remainingByte, remainingLength]}, {msgs, ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"]}},
             (* Read more *)
-            {{remainingLength, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
+            {{remainingLength, ByteArray[remainingByte ~Join~ BlockingSocketReadMessage[client]]}, {msgs}}
         ],
         (* New header *)
         Replace[SequencePosition[Normal @ remainingByte, RPCPatterns["SequenceSplitPattern"], 1], {
@@ -412,12 +412,13 @@ ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(
 	            {{getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]}, {msgs}}
 	        ),
 	        {} :> ( (* Read more *)
-	            {{0, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
+	            {{0, ByteArray[remainingByte ~Join~ BlockingSocketReadMessage[client]]}, {msgs}}
 		    )
 	    }]
 	]
 ]]
 
+BlockingSocketReadMessage[client_] := (While[!SocketReadyQ[client], Pause[1/2]]; SocketReadMessage[client])
 
 (* ::Subsubsection:: *)
 (*NamedPipe*)
