@@ -45,11 +45,11 @@ The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
-	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
+	"client" -> (_SocketClient | _SocketObject | _File | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientCapabilities" -> _Association,
 	"theme" -> "dark" | "light"
-|>];
-InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
+|>]
+InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>]
 (*Place where the temporary img would be stored, delete after usage.*)
 (* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
 (* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
@@ -152,8 +152,13 @@ WLServerStart[o:OptionsPattern[]] := Module[
 							LogError["Wrong pipe name"];
 						)
 					}]
+				),
+				"Unix"|"MacOSX" :> (
+					Block[{$IterationLimit = Infinity},
+						TcpSocketHandler[ReplaceKey[InitialState, "client" -> File[pipe]]]
+					]
 				)
-			}];
+			}]
 	    ),
 	    "tcp-server" :> (
 	        connection = Check[t`conn = SocketOpen[port, "TCP"(*"ZMQ_Stream"*)], $Failed]
@@ -442,6 +447,20 @@ ReadMessagesImpl[client_NamedPipe, header_List] := ReadMessagesImpl[client, Modu
 		Append[header, pipeStream@ReadByte[]]
 	]
 ]]
+
+
+ReadMessages[client_File] := {ReadMessagesImpl[client, {}]}
+ReadMessagesImpl[client_File, msg_Association] := msg
+ReadMessagesImpl[client_File, header_List] := ReadMessagesImpl[client, (
+    If[MatchQ[header, {RPCPatterns["HeaderByteArray"]}],
+        (* read content *)
+		With[{contentLength = header // ByteArray // getContentLength},
+			ImportByteArray[ReadByteArray[client, contentLength], "RawJSON"]
+		],
+        (* read header *)
+		Append[header, ReadByteArray[client, RPCPatterns["SequenceSplitPattern"]]]
+	]
+)]
 
 
 (* ::Subsubsection:: *)
