@@ -119,7 +119,6 @@ WLServerStart[o:OptionsPattern[]] := Module[
 			]
 	    ),
 	    "pipe" :> (
-	        LogDebug[pipe];
 			Replace[$OperatingSystem, {
 				"Windows" :> (
 					pipe
@@ -204,8 +203,8 @@ WLServerStart[o:OptionsPattern[]] := Module[
 
 
 waitForClient[{client_SocketObject}] := (LogInfo["Client connected"]; client);
-waitForClient[server_SocketObject] := waitForClient[Replace[LogDebug@server["ConnectedClients"],{
-    {} :> (Pause[1]; server),
+waitForClient[server_SocketObject] := waitForClient[Replace[server["ConnectedClients"],{
+    {} :> (Pause[1]; (* LogInfo["Waiting for connection from client"]; *) server),
     {client_SocketObject} :> {client}
 }]]
 
@@ -264,7 +263,6 @@ SocketHandler[packet_Association] := Module[
 		Return[];
 	];
 	
-	LogDebug@client;
 	If[client["contentLengthRemain", 0] == 0,
 	(* content-length *)
 		client = Check[
@@ -450,7 +448,7 @@ ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_
     {
     },
     
-    LogDebug @ {remainingLength, Normal[remainingByte]};
+    (* LogDebug @ {remainingLength, Normal[remainingByte]}; *)
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -478,7 +476,7 @@ ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_
 ReadMessages["stdio"] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
 ReadMessagesImpl["stdio", {{0, {}}, msgs:{__Association}}] := msgs
 ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", (
-    LogDebug @ {remainingLength, Normal[remainingByte]};
+    (* LogDebug @ {remainingLength, Normal[remainingByte]}; *)
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -958,7 +956,7 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
 	(* There are three cases, delete, replace and add. *)
-	contentChanges = LogDebug@ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
+	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
 
 	LogInfo @ ("Change Document " <> uri);
 	newState = state // ReplaceKey[{"openedDocs", uri} -> (
