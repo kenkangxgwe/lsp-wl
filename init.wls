@@ -99,10 +99,6 @@ Options:
 
 "
     ];
-    (* "
-    Deprecated initializationOptions: 
-    \"theme\" = \"dark\"|\"light\"       // Specify the text color in pictures according to client theme (default: dark)
-    " *)
     Quit[];
 ];
 

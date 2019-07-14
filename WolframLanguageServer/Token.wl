@@ -13,7 +13,6 @@ ClearAll[Evaluate[Context[] <> "*"]];
 TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\" | \"image\",
-  \"Theme\" -> \"Dark\" | \"Light\",
   \"TempDir\" -> $TemporaryDirectory
 ";
 
@@ -36,13 +35,12 @@ Options[TokenDocumentation] = {
     "TempDir" -> $TemporaryDirectory
 };
 
-TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
+TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Module[
     {
-        format, (*theme,*) tempdir
+        format, tempdir
     },
     
     {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
-    (* {format, theme, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "Theme", "TempDir"}]; *)
     If[Head[ToExpression[token<>"::usage"]] === MessageName, Return[""]];
     StringJoin[{
         GenHeader[token],
@@ -50,7 +48,6 @@ TokenDocumentation[token_String, o: OptionsPattern[]] := Module[
         GetUri[token],
 	    Replace[format, {
             "plaintext" | "markdown" :> GenMdText[token]
-	        (* "image" :> GenSvgImg[token, 450, "Theme" -> theme, "TempDir" -> tempdir] *)
 	    }]
 	}]
 ];
@@ -108,32 +105,6 @@ GenMdText[token_String] := Module[
 	    "\n"->"\n\n"
 	}] <> "\n\n"
 ];
-
-
-Options[GenSvgImg] := {
-	"Theme" -> "dark",
-	"TempDir" -> $TemporaryDirectory
-};
-
-GenSvgImg[token_String, width_Integer, o:OptionsPattern[]] := Module[
-	{
-		tempImgPath, background, theme, tempDir
-	},
-	
-	{theme, tempImgPath} = OptionValue[GenSvgImg, {o}, {"Theme", "TempDir"}];
-	background = If[theme === "light", Black, White];
-	tempImgPath = FileNameJoin[{tempDir, CreateUUID[] <> ".svg"}];
-	(* Export[tempImgPath, Style[#, background]& @* (#::usage&) @ Symbol[token]]; *)
-	Export[tempImgPath, 
-		Style[
-			Pane[StringReplace[#, StartOfLine -> "\[FilledSmallCircle] "], .85*width, Alignment -> Left], FontSize -> 13, background
-		]& @ ToExpression[token <> "::usage"]
-	];
-	(* "![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n" <> "```" <> StringRepeat[StringJoin[CharacterRange["a", "z"]], 4] <> "```" *)
-	"![" <> "test" <> "](" <> tempImgPath <> ")" <> "\n\n" <> "```typescript" <> StringRepeat[StringRepeat["\t", 50] <> "\n", 20] <> "```" <> "\n\n"
-	(* "![" <> ToString[(#::usage&) @ Symbol[token]] <> "](" <> tempImgPath <> ")" *)
-]; 
-
 
 (* ::Section:: *)
 (*Kind*)
