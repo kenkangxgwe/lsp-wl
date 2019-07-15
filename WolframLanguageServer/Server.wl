@@ -660,7 +660,7 @@ sendResponse[client_, res_Association] := Module[
 
 
 (* ::Subsection:: *)
-(*Initialize*)
+(*initialize*)
 
 
 handleRequest["initialize", msg_, state_WorkState] := Module[
@@ -695,7 +695,7 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 
 
 (* ::Subsection:: *)
-(*Shutdown*)
+(*shutdown*)
 
 
 handleRequest["shutdown", msg_, state_] := Module[
@@ -713,7 +713,7 @@ handleRequest["shutdown", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*hover*)
+(*textDocument/hover*)
 
 
 (*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
@@ -723,17 +723,17 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 		pos, token, hover
 	},
 
-	pos = LspPosition[<|
-		"line" -> msg["params"]["position"]["line"],
-		"character" -> msg["params"]["position"]["character"]
-	|>];
+	pos = LspPosition[msg["params"]["position"]];
 	(* The head of token is String *)
 	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 
 	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
 	LogDebug @ ("Names of token: " <> Names[token]);
 
-	hover = Which[
+	hover = GetHoverAtPosition[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos]
+	// LogDebug;
+
+	(* hover = Which[
 		token === "", Null,
 		Names[token] === {}, Null, (* not defined*)
 		Context[token] === "Global`", Null, (* defined in Global` context*)
@@ -743,11 +743,11 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 				"Format" -> First[state["clientCapabilities"]["textDocument"]["hover"]["contentFormat"]]
 			]|>
 		}])
-	];
-	
+	]; *)
+
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"result" -> hover
+		"result" -> ToAssociation[hover]
 	|>];
 
 	{"Continue", state}
@@ -755,7 +755,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*completion*)
+(*textDocument/completion*)
 
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
@@ -786,7 +786,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*completion resolve*)
+(*completionItem/resolve*)
 
 
 (* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
@@ -805,10 +805,11 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 			"kind" -> TokenKind[token], 
 			"documentation" -> <|
 				"kind" -> "markdown",
-				"value" -> TokenDocumentation[token]
+				"value" -> TokenDocumentation[token, "usage"]
 			|>
 		|>
 	|>];
+	
 	
 	{"Continue", state}
 ];
@@ -855,7 +856,7 @@ handleRequest[_, msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*Initialized*)
+(*initialized*)
 
 
 handleNotification["initialized", msg_, state_] := Module[
@@ -869,7 +870,7 @@ handleNotification["initialized", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*Exit*)
+(*exit*)
 
 
 handleNotification["exit", msg_, state_] := Module[
@@ -895,36 +896,37 @@ handleNotification["$/cancelRequest", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*textSync/DidOpen*)
+(*textSync/didOpen*)
 
 
 (* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
-handleNotification["textDocument/didOpen", msg_, state_] := Module[
+handleNotification["textDocument/didOpen", msg_, state_] := With[
 	{
-		doc = msg["params"]["textDocument"], 
-		uri = msg["params"]["textDocument"]["uri"], 
-		newState = state, docs
+		textDocumentItem = TextDocumentItem[msg["params"]["textDocument"]]
 	},
 
 	(* get the association, modify and reinsert *)
-	docs = newState["openedDocs"];
-	docs~AssociateTo~(
-		uri -> CreateTextDocument[doc["text"], doc["version"]]
-	);
-	newState = ReplaceKey[newState, "openedDocs" -> docs];
-
-	sendResponse[state["client"], <|
+	state
+	// ReplaceKeyBy["openedDocs" ->
+		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
+	]
+	// (newState \[Function] (
+		LogDebug[newState["openedDocs"]];
+		sendResponse[newState["client"], <|
+			"method" -> "textDocument/publishDiagnostics", 
 		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
-	|>];
+			"method" -> "textDocument/publishDiagnostics", 
+			"params" -> newState["openedDocs"][textDocumentItem["uri"]]~diagnoseTextDocument~textDocumentItem["uri"]
+		|>];
 
-	{"Continue", newState}
+		{"Continue", newState}
+	))
 ];
 
 
 
 (* ::Subsection:: *)
-(* textSync/DidClose *)
+(*textSync/didClose*)
 
 
 handleNotification["textDocument/didClose", msg_, state_] := Module[
@@ -942,7 +944,7 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(* textSync/DidChange *)
+(*textSync/didChange*)
 
 
 handleNotification["textDocument/didChange", msg_, state_] := Module[
@@ -984,7 +986,7 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(* textSync/DidSave *)
+(*textSync/didSave*)
 
 
 handleNotification["textDocument/didSave", msg_, state_] := With[
@@ -1110,7 +1112,7 @@ handleNotification[_, msg_, state_] := Module[
 ];
 
 
-(* ::Subsection:: *)
+(* ::Section:: *)
 (*Send Message*)
 
 
@@ -1136,7 +1138,7 @@ showMessasge[message_String, msgType_String, state_WorkState] := (
 )
 
 
-(* ::Subsection:: *)
+(* ::Section:: *)
 (*Handle Error*)
 
 

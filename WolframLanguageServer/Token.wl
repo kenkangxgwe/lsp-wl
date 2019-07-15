@@ -41,23 +41,55 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Module[
     },
     
     {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
-    If[Head[ToExpression[token<>"::usage"]] === MessageName, Return[""]];
+    If[Head[ToExpression[token<>"::"<>tag]] === MessageName, Return[""]];
     StringJoin[{
-        GenHeader[token],
-        "\t",
-        GetUri[token],
+        GenHeader[token, tag],
+        "\n\n---\n\n",
 	    Replace[format, {
-            "plaintext" | "markdown" :> GenMdText[token]
+            "plaintext" | "markdown" :> GenMdText[token, tag]
 	    }]
 	}]
-];
+]
 
 
-GenHeader[token_String] := "**" <> token <> "**";
+GenHeader[token_String, tag_String] := (
+    tag
+    // Replace[{
+        "usage" :> (
+            StringJoin[
+                "**", token, "**",
+                (* "[**", token, "**]", *)
+                (* "(", URLBuild[<|
+                    "Scheme" -> "command", 
+                    "Path" -> "WolframLanguageServer.openRef", 
+                    "Query" -> <|"name" -> token, "tag" -> tag|>
+                |>], ")", *)
+                "\t", GetUri[token, tag]
+            ]
+        ),
+        _ :> (
+            StringJoin[
+                "```mathematica \n",
+                token, "::", tag, "\n",
+                "```\n"
+            ]
+        )
+    }]
+)
 
 
 (* TODO: check valid url *)
-GetUri[token_String] := ("[" <> "*Website Reference*" (*<> "*" <> token <> "*"*) <> "](https://reference.wolfram.com/language/ref/" <> token <> ".html)" <> "\n\n");
+GetUri[token_String, tag_String] := (
+    tag
+    // Replace[{
+        "usage" :> (
+            StringJoin["[*Web*](https://reference.wolfram.com/language/ref/", token, ".html)"]
+        ),
+        _ :> (
+            StringJoin["[*Web*](https://reference.wolfram.com/language/ref/message/", token, "/", tag,".html)"]
+        )
+    }]
+)
 
 
 ToMarkdown[input_] := Replace[input, {
@@ -83,13 +115,13 @@ ToMarkdown[input_] := Replace[input, {
 }]
 
 
-GenMdText[token_String] := Module[
+GenMdText[token_String, tag_String] := Module[
 	{
 	    ForceStringJoin, usageString
 	},
 	
 	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
-	usageString = ToMarkdown[ToExpression[token <> "::usage"]](* //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]}*);
+	usageString = ToMarkdown[ToExpression[token <> "::" <> tag]](* //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]}*);
 	StringReplace[usageString, {
         "\[Rule]" -> "\[RightArrow]",
         "\[TwoWayRule]" -> "\[LeftRightArrow]",

@@ -12,8 +12,11 @@ Construct[ClearAll, Context[] <> "*"]
 
 LspPosition::usage = "is type of Position interface in LSP."
 LspRange::usage = "is type of Range interface in LSP."
+TextDocumentItem::usage = "is type of TextDocumentItem in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
  the new text is considered to be the full content of the document."
+MarkupContent::usage = "is the type of MarkupContent interface in LSP."
+Hover::usage = "is the type of Hover interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 
 
@@ -117,6 +120,16 @@ SymbolKind = <|
 |>
 
 
+(* ::Section:: *)
+(*MarkupKind*)
+
+
+MarkupKind = <|
+    "PlainText" -> "plaintext",
+    "Markdown" -> "markdown"
+|>
+
+
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 Needs["DataType`"]
@@ -128,7 +141,21 @@ Needs["DataType`"]
 
 DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>]
 DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>]
+DeclareType[TextDocumentItem, <|
+    "uri" -> _String,
+    "languageId" -> _String,
+    "version" -> _Integer,
+    "text" -> _String
+|>]
 DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>]
+DeclareType[MarkupContent, <|
+    "kind" -> _String,
+    "value" -> _String
+|>]
+DeclareType[Hover, <|
+    "contents" -> _MarkupContent,
+    "range" -> _LspRange
+|>]
 DeclareType[DocumentSymbol, <|
     "name" -> _String,
     "detail" -> _String,
