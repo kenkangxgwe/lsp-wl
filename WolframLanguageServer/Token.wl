@@ -12,8 +12,7 @@ ClearAll[Evaluate[Context[] <> "*"]];
 
 TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
   The possible options are
-  \"Format\" -> \"plaintext\" | \"markdown\" | \"image\",
-  \"TempDir\" -> $TemporaryDirectory
+  \"Format\" -> \"plaintext\" | \"markdown\"
 ";
 
 TokenKind::usage = "TokenKind[token_String] returns the symbol kind of input token. See WolframLanguageServer`Specification`CompletionItemKind.";
@@ -23,6 +22,7 @@ TokenCompletionList::usage = "TokenCompletionList[token_String] returns a list o
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
+Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 
 
@@ -31,25 +31,96 @@ Needs["WolframLanguageServer`Specification`"]
 
 
 Options[TokenDocumentation] = {
-    "Format" -> "plaintext",
-    "TempDir" -> $TemporaryDirectory
-};
+    "Format" -> "Markdown" (* | "Plaintext" *)
+}
 
-TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Module[
-    {
-        format, tempdir
-    },
-    
-    {format, tempdir} = OptionValue[TokenDocumentation, {o}, {"Format", "TempDir"}];
-    If[Head[ToExpression[token<>"::"<>tag]] === MessageName, Return[""]];
-    StringJoin[{
-        GenHeader[token, tag],
-        "\n\n---\n\n",
-	    Replace[format, {
-            "plaintext" | "markdown" :> GenMdText[token, tag]
-	    }]
-	}]
-]
+TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
+
+    ToExpression[token<>"::"<>tag]
+    // Replace[{
+        _MessageName -> "",
+        boxText_String :> (
+            tag // Replace[{
+                "usage" :> (
+                    {
+                        GenHeader[token, tag],
+                        boxText
+                        // If[OptionValue["Format"] == "Markdown",
+                            splitUsage
+                            /* MapAt[GenMarkdownCodeBlock, {All, 1}]
+                            /* MapAt[GenMarkdownText, {All, 2}]
+                            /* Flatten /* DeleteCases[""],
+                            GenPlainText
+                        ]
+                    } // Flatten
+                    // Curry[StringRiffle]["\n\n"]
+                ),
+                _(* other messages *) :> (
+                    { 
+                        GenHeader[token, tag],
+                        boxText
+                        // If[OptionValue["Format"] == "Markdown",
+                            GenMarkdownText,
+                            GenPlainText
+                        ]
+                    } // Flatten
+                    // Curry[StringRiffle]["\n"]
+                )
+            }]
+        )
+    }]
+)
+
+
+splitUsage[usageText_String] := (
+    StringSplit[usageText, "\n"]
+    (* concate unbalanced parts *)
+    // MapAt[List, 1]
+    // Fold[({res, next} \[Function] (
+        If[StringCount[Last[res], "\("] == StringCount[Last[res], "\)"],
+            Append[res, next],
+            ReplacePart[res, -1 -> StringJoin[Last[res], "\n", next]]
+        ]
+    ))]
+    (* split header and content *)
+    // Map[{
+        StringCases[StartOfString ~~ (header:Shortest["\!\(\*"~~box__~~"\)"]) ~~ content__ ~~ EndOfString :> {header, content}],
+        Identity
+    } /* Through
+    /* Replace[{
+        {{{header_, content_}}, _} :> (
+            {header, content} 
+        ),
+        {{(* no matches *)}, origin_} :> (
+            (* use fallback method *)
+            origin
+            // StringPosition[" "]
+            // (Part[#, All, 1]&)
+            // SelectFirst[groupBalanceQ[StringTake[origin, #]]&]
+            // Replace[{ 
+                splitPos_Integer :> {
+                    StringTake[origin, splitPos],
+                    StringDrop[origin, splitPos]
+                },
+                _?MissingQ (* still no matches, which is almost impossible *) :> (
+                    {(* empty header *) "", origin}
+                )
+            }]
+        )
+    }]
+    ]
+)
+
+
+groupBalanceQ[text_String] := And[
+    StringCount[text, "("] == StringCount[text, ")"],
+    StringCount[text, "["] == StringCount[text, "]"],
+    StringCount[text, "{"] == StringCount[text, "}"],
+    StringCount[text, "<|"] == StringCount[text, "|>"],
+    StringCount[text, "\[LeftAssociation]"] == StringCount[text, "\[RightAssociation]"],
+    StringCount[text, "\("] == StringCount[text, "\)"]
+] // TrueQ
+
 
 
 GenHeader[token_String, tag_String] := (
@@ -64,14 +135,14 @@ GenHeader[token_String, tag_String] := (
                     "Path" -> "WolframLanguageServer.openRef", 
                     "Query" -> <|"name" -> token, "tag" -> tag|>
                 |>], ")", *)
-                "\t", GetUri[token, tag]
+                "\t", GetUri[token, tag], "\n"
             ]
         ),
         _ :> (
             StringJoin[
-                "```mathematica \n",
+                "```mathematica\n",
                 token, "::", tag, "\n",
-                "```\n"
+                "```"
             ]
         )
     }]
@@ -83,60 +154,105 @@ GetUri[token_String, tag_String] := (
     tag
     // Replace[{
         "usage" :> (
-            StringJoin["[*Web*](https://reference.wolfram.com/language/ref/", token, ".html)"]
+            StringJoin["[*reference*](https://reference.wolfram.com/language/ref/", token, ".html)"]
         ),
         _ :> (
-            StringJoin["[*Web*](https://reference.wolfram.com/language/ref/message/", token, "/", tag,".html)"]
+            StringJoin["[*reference*](https://reference.wolfram.com/language/ref/message/", token, "/", tag,".html)"]
         )
     }]
 )
 
 
-ToMarkdown[input_] := Replace[input, {
-    RowBox[boxlist_List] :> StringJoin[ToMarkdown /@ boxlist],
-    StyleBox[x_, "TI"] :> ("*" <> ToMarkdown[x] <> "*"),
-    StyleBox[x_, Except["TI"]] :> ToMarkdown[x], 
-    StyleBox[x_] :> ToMarkdown[x],
-    (* StyleBox[x_, OptionsPattern[]] :> ToMarkdown[x], *)
-    (Subscript|SubscriptBox)[x_, y_] :> (ToMarkdown[x] <> "\\_"<>ToMarkdown[y]),
-    (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> ToMarkdown[y]),
-    (Superscript|SuperscriptBox)[x_, y_] :> (ToMarkdown[x] <> "^" <> ToMarkdown[y]),
-    (Subsuperscript|SubsuperscriptBox)[x_, y_, z_] :> (ToMarkdown[x] <> "\\_" <> ToMarkdown[y] <> "^" <> ToMarkdown[z]),
-    (Underscript|UnderscriptBox)[x_, y_] :> "Underscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
-    (Overscript|OverscriptBox)[x_, y_] :> "Overscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> "]",
-    (Underoverscript|UnderoverscriptBox)[x_,y_,z_] :> "Underoverscript[" <> ToMarkdown[x] <> ", " <> ToMarkdown[y] <> ", " <> ToMarkdown[z] <> "]",
-    FractionBox[x_, y_] :> (ToMarkdown[x] <> "/" <> ToMarkdown[y]),
-    (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> ToMarkdown[x] <> "]"),
-    RadicalBox[x_, y_] :> (ToMarkdown[x] <> "^{1/" <> ToMarkdown[y] <> "}"),
-    _String :> StringReplace[input, {
-        Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[ToMarkdown[ToExpression[box, StandardForm]], InputForm] <> "\)"]
-    }],
-    _ :> ToString[input]
-}]
+GenPlainText[boxText_String] := (
+    boxText
+    // (BoxToText[#, "Format" -> "PlainText"]&)
+    // StringReplace[PUACharactersReplaceRule]
+)
 
 
-GenMdText[token_String, tag_String] := Module[
-	{
-	    ForceStringJoin, usageString
-	},
-	
-	ForceStringJoin = StringJoin @* Map[ReplaceAll[x:Except[_String] :> ToString[x]]];
-	usageString = ToMarkdown[ToExpression[token <> "::" <> tag]](* //.{StringJoin[x_List] :> ForceStringJoin[x], StringJoin[x__] :> ForceStringJoin[{x}]}*);
-	StringReplace[usageString, {
-        "\[Rule]" -> "\[RightArrow]",
-        "\[TwoWayRule]" -> "\[LeftRightArrow]",
-        "\[LongEqual]" -> "==",
-        "\[Equal]" -> "==",
-        "\[LeftAssociation]" -> "<|",
-        "\[RightAssociation]" -> "|>",
-        "\[InvisibleSpace]" -> " ",
-        "\[Null]" -> "",
+GenMarkdownCodeBlock[boxText_String] := (
+    boxText
+    // GenPlainText
+    // Replace[
+        text:Except["", _String] :> StringJoin[
+            "```mathematica\n", text, "\n```"
+        ]
+    ]
+)
+
+
+GenMarkdownText[boxText_String] := (
+    boxText
+    // StringReplace[{
         "~" -> "\\~",
         "`" -> "\\`",
-        StartOfLine -> "---\n\n",
-	    "\n"->"\n\n"
-	}] <> "\n\n"
-];
+        "*" -> "\\*"
+    }]
+    // (BoxToText[#, "Format" -> "Markdown"]&)
+	// StringReplace[PUACharactersReplaceRule]
+)
+
+
+Options[BoxToText] = {
+    "Format" -> "Markdown"
+}
+
+BoxToText[input_, o:OptionsPattern[]] := With[
+    {
+        recursiveCall = (nextInput \[Function] BoxToText[nextInput, o])
+    },
+
+    Replace[input, {
+        RowBox[boxlist_List] :> StringJoin[recursiveCall /@ boxlist],
+        StyleBox[x_, "TI"] :> (
+            If[OptionValue["Format"] == "Markdown",
+                "*" <> recursiveCall[x] <> "*",
+                recursiveCall[x]
+            ]
+        ),
+        StyleBox[x_, Except["TI"]] :> recursiveCall[x], 
+        StyleBox[x_] :> recursiveCall[x],
+        (* StyleBox[x_, OptionsPattern[]] :> recursiveCall[x], *)
+        (Subscript|SubscriptBox)[x_, y_] :> (
+            If[OptionValue["Format"] == "Markdown",
+                recursiveCall[x] <> "\\_"<>recursiveCall[y],
+                recursiveCall[x] <> "_"<>recursiveCall[y]
+            ]
+        ),
+        (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> recursiveCall[y]),
+        (Superscript|SuperscriptBox)[x_, y_] :> (recursiveCall[x] <> "^" <> recursiveCall[y]),
+        (Subsuperscript|SubsuperscriptBox)[x_, y_, z_] :> (
+            If[OptionValue["Format"] == "Markdown",
+                recursiveCall[x] <> "\\_" <> recursiveCall[y] <> "^" <> recursiveCall[z],
+                recursiveCall[x] <> "_" <> recursiveCall[y] <> "^" <> recursiveCall[z]
+            ]
+        ),
+        (Underscript|UnderscriptBox)[x_, y_] :> "Underscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]",
+        (Overscript|OverscriptBox)[x_, y_] :> "Overscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]",
+        (Underoverscript|UnderoverscriptBox)[x_,y_,z_] :> "Underoverscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> ", " <> recursiveCall[z] <> "]",
+        FractionBox[x_, y_] :> (recursiveCall[x] <> "/" <> recursiveCall[y]),
+        (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> recursiveCall[x] <> "]"),
+        RadicalBox[x_, y_] :> (recursiveCall[x] <> "^{1/" <> recursiveCall[y] <> "}"),
+        _String :> StringReplace[input, {
+            Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
+        }],
+        _ :> ToString[input]
+    }]
+]
+
+
+PUACharactersReplaceRule = {
+    "\[Rule]" -> "->",
+    "\[TwoWayRule]" -> "\[LeftRightArrow]",
+    "\[UndirectedEdge]" -> "\[LeftRightArrow]",
+    "\[LongEqual]" -> "==",
+    "\[Equal]" -> "==",
+    "\[LeftAssociation]" -> "<|",
+    "\[RightAssociation]" -> "|>",
+    "\[InvisibleSpace]" -> " ",
+    "\[Null]" -> ""
+}
+
 
 (* ::Section:: *)
 (*Kind*)

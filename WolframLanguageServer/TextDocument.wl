@@ -117,6 +117,7 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
             {
                 (* get the AST *)
                 StringTake[doc["text"], {indexRange["start"], indexRange["end"]}]
+                // Replace[err:Except[_String] :> ""]
                 // Curry[AST`ConcreteParseString][First]
                 // Map[AST`Abstract`Abstract],
                 (* get the cursorLine and cursorCol *)
@@ -125,7 +126,7 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
                 // {Length, (- Subtract@@(Part[#, {-2, -1}, 2])&)} // Through
             }
             (* find the index of the node in the AST *)
-            // {First, Apply[({ast, position} \[Function] FirstPosition[ast, _[_,_,_]?(AstContainsPosition[position])])]} // Through
+            // {First, Apply[({ast, position} \[Function] FirstPosition[ast, _[_,_,_Association]?(AstContainsPosition[position])])]} // Through
             // {
                 Apply[getHoverText],
                 Apply[getHoverRange]
@@ -218,7 +219,7 @@ findAstIndexChainImpl[{position_List, index_Integer, {node_, restNode___}, res_}
 ]
 
 
-AstContainsPosition[{line_Integer, col_Integer}][ast_] = AstContainsPosition[ast, {line, col}]
+AstContainsPosition[{line_Integer, col_Integer}][ast_] := AstContainsPosition[ast, {line, col}]
 AstContainsPosition[ast_, {line_Integer, col_Integer}] := With[
     {
         source = ast // Last // Key[AST`Source]
@@ -278,10 +279,9 @@ printHoverText[hoverText_List, range_LspRange:Automatic] := (
 
     hoverText
     // Map[printHoverTextImpl]
-    // Curry[Riffle]["\n\n---\n\n"]
-    // StringJoin
+    // Curry[StringRiffle]["\n\n---\n\n"]
     // Replace[{
-        "" -> null,
+        "" -> Null,
         text_String :> (
             Hover[<|
                 "contents" -> MarkupContent[<|
@@ -297,7 +297,7 @@ printHoverText[hoverText_List, range_LspRange:Automatic] := (
     }]
 )
 
-printHoverTextImpl[hoverText_HoverText] := With[{},
+printHoverTextImpl[hoverText_HoverText] := (
     hoverText
     // Replace[{
         HoverText["Message", {symbolName_String, tag_String}] :> (
@@ -315,7 +315,7 @@ printHoverTextImpl[hoverText_HoverText] := With[{},
             }]
         )
     }]
-]
+)
 
 
 (* ::Subsection:: *)

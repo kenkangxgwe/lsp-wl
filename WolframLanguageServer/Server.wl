@@ -764,10 +764,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	},
 	p = msg["params"]["position"];
 	(*The position is tricky here, we have to read one character ahead.*)
-	pos = LspPosition[<|
-		"line" -> p["line"],
-		"character" -> Replace[p["character"], c_?Positive :> c - 1]
-	|>];
+	pos = LspPosition[msg["params"]["position"]];
 	(*Token is a patten here.*)
 	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
 	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
@@ -1051,6 +1048,7 @@ diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
     |> &)
 ]
 
+
 clearDiagnostics[uri_String] := (
 	<|
 		"uri" -> uri,
@@ -1141,8 +1139,6 @@ showMessasge[message_String, msgType_String, state_WorkState] := (
 (* ::Section:: *)
 (*Handle Error*)
 
-
-(* Error Message *)
 
 ServerError[errorType_String, msg_String] := Module[
     {
