@@ -47,9 +47,15 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> <|(_String -> _TextDocument)...|>,
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
-	"clientCapabilities" -> _Association
+	"clientCapabilities" -> _Association,
+	"scheduledTasks" -> {___ServerTask}
 |>];
-InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
+InitialState = WorkState[<|
+	"initialized" -> False,
+	"openedDocs" -> <||>,
+	"client" -> Null,
+	"scheduledTasks" -> {}
+|>];
 (*Place where the temporary img would be stored, delete after usage.*)
 (* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
 (* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
@@ -269,7 +275,7 @@ SocketHandler[packet_Association] := Module[
 			headerEndPosition = SequencePosition[Normal @ bytearray, RPCPatterns["SequenceSplitPattern"], 1];
 			headertext = ByteArrayToString[bytearray, "ASCII"];
 			contentlength = ToExpression[First @ StringCases[headertext, RPCPatterns["ContentLengthRule"]]];
-			LogDebug["Content Length: " <> ToString[contentlength]];
+			(* LogDebug["Content Length: " <> ToString[contentlength]]; *)
 			Fold[ReplaceKey, client, {
 				"contentLengthRemain" -> contentlength,
 				"lastMessage" -> ""
@@ -320,14 +326,17 @@ TcpSocketHandler[state_WorkState] := Module[
 		client = state["client"]
 	},
 
-    handleMessageList[ReadMessages[client], state]
-	// Replace[{
-	    {"Continue", newstate_} :> newstate,
-	    {stop_, newstate_} :> (
-			{stop, newstate}
-		),
-	    {} :> state (* No message *)
-	}]
+	If[SocketReadyQ[client],
+		handleMessageList[ReadMessages[client], state]
+		// Replace[{
+			{"Continue", newstate_} :> newstate,
+			{stop_, newstate_} :> (
+				{stop, newstate}
+			),
+			{} :> state (* No message *)
+		}],
+		doNextScheduledTask[state]
+	]
 ] // TcpSocketHandler (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
@@ -642,17 +651,12 @@ handleMessage[msg_Association, state_WorkState] := Module[
 
 
 (* Both response and notification will call this function *)
-sendResponse[client_, res_Association] := Module[
-	{
-
-	},
-
+sendResponse[client_, res_Association] := (
 	Prepend[res, <|"jsonrpc" -> "2.0"|>]
 	// LogInfo
 	// constructRPCBytes
 	// WriteMessage[client]
-
-]
+)
 
 
 (* ::Section:: *)
@@ -779,7 +783,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	|>];
 	
 	{"Continue", state}
-];
+]
 
 
 (* ::Subsection:: *)
@@ -788,11 +792,10 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 
 (* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
 provided her. *)
-handleRequest["completionItem/resolve", msg_, state_] := Module[
+handleRequest["completionItem/resolve", msg_, state_] := With[
 	{
-		token 
+		token = msg["params"]["label"]
 	},
-	token = msg["params"]["label"];
 	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
 	
 	sendResponse[state["client"], <|
@@ -807,9 +810,15 @@ handleRequest["completionItem/resolve", msg_, state_] := Module[
 		|>
 	|>];
 	
-	
-	{"Continue", state}
-];
+	{
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "JustContinue",
+			"scheduledTime" -> Now
+		|>]]
+	}
+]
 
 
 handleRequest["textDocument/documentSymbol", msg_, state_] := With[
@@ -908,18 +917,10 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
 	]
 	// (newState \[Function] (
-		LogDebug[newState["openedDocs"]];
-		sendResponse[newState["client"], <|
-			"method" -> "textDocument/publishDiagnostics", 
-		"method" -> "textDocument/publishDiagnostics", 
-			"method" -> "textDocument/publishDiagnostics", 
-			"params" -> newState["openedDocs"][textDocumentItem["uri"]]~diagnoseTextDocument~textDocumentItem["uri"]
-		|>];
-
+		publishDiagnostics[newstate, textDocumentItem["uri"]];
 		{"Continue", newState}
 	))
-];
-
+]
 
 
 (* ::Subsection:: *)
@@ -937,34 +938,51 @@ handleNotification["textDocument/didClose", msg_, state_] := Module[
 	newState = ReplaceKey[newState, "openedDocs" -> docs];
 	LogInfo @ ("Close Document " <> uri);
 	{"Continue", newState}
-];
+]
 
 
 (* ::Subsection:: *)
 (*textSync/didChange*)
 
 
-handleNotification["textDocument/didChange", msg_, state_] := Module[
+handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
-        doc = msg["params"]["textDocument"], uri = msg["params"]["textDocument"]["uri"], 
-		newState, contentChanges 
+        doc = msg["params"]["textDocument"],
+		uri = msg["params"]["textDocument"]["uri"],
+		diagDelay = 1
 	},
+
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
 	(* TODO: Use ShowMessage instead of Assert *)
 	Assert[state["openedDocs"][uri]["version"] == doc["version"] - 1];
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
-	(* There are three cases, delete, replace and add. *)
-	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
-
-	LogInfo @ ("Change Document " <> uri);
-	newState = state // ReplaceKey[{"openedDocs", uri} -> (
+	LogDebug @ ("Change Document " <> uri);
+	state
+	// ReplaceKey[{"openedDocs", uri} -> (
 		(* Apply all the content changes. *)
-		Fold[ChangeTextDocument, state["openedDocs"][uri], contentChanges]
-		// Replace[newDoc_ :> (
-			ReplaceKey[newDoc, "version" -> newDoc["version"]]
-		)]
-	)];
+		Fold[
+			ChangeTextDocument,
+			state["openedDocs"][uri],
+			ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}]
+		]
+		// ReplaceKey["version" -> doc["version"]]
+	)]
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "JustContinue",
+		"scheduledTime" -> Now
+	|>]]
+	(* Give diagnostics in at least diagDelay seconds *)
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "PublishDiagnostics",
+		"params" -> uri,
+		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}]
+	|>]]
+	(* Clean the diagnostics given last time *)
+	// (newState \[Function] (
+		clearDiagnostics[newState, uri];
+		{"Continue", newState}
+	))
 
 	(* Give diagnostics in real-time *)
 	(* sendResponse[state["client"], <|
@@ -972,13 +990,6 @@ handleNotification["textDocument/didChange", msg_, state_] := Module[
 		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
 	|>]; *)
 
-	(* Clean the diagnostics given last time *)
-	sendResponse[state["client"], <|
-		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> clearDiagnostics[uri]
-	|>];
-
-	{"Continue", newState}
 ]
 
 
@@ -992,18 +1003,15 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 	},
 
 	(* Give diagnostics after save *)
-	sendResponse[state["client"], <|
-		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> state["openedDocs"][uri]~diagnoseTextDocument~uri
-	|>];
+	publishDiagnostics[state["client"], uri];
 
 	{"Continue", state}
 ]
 
 
-diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
+diagnoseTextDocument[doc_TextDocument] := Module[
 	{
-		txt = doc["text"], start, end
+		(* txt = doc["text"], start, end *)
 	},
 	
 	
@@ -1041,19 +1049,33 @@ diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
 	        |>
 	    )
 	] *)
-	DiagnoseDoc[uri, doc]
+	DiagnoseDoc[doc["uri"], doc]
 	// (<|
-		"uri" -> uri,
+		"uri" -> doc["uri"],
 		"diagnostics"  -> #1
     |> &)
 ]
 
 
-clearDiagnostics[uri_String] := (
-	<|
-		"uri" -> uri,
-		"diagnostics"  -> {}
-    |> 
+publishDiagnostics[state_WorkState, uri_String] := (
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> <|
+			"uri" -> uri,
+			"diagnostics"  -> DiagnoseDoc[state["openedDocs"][uri]]
+		|>
+	|>]
+)
+
+
+clearDiagnostics[state_WorkState, uri_String] := (
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> <|
+			"uri" -> uri,
+			"diagnostics"  -> {}
+		|>
+	|>]
 )
 
 
@@ -1156,6 +1178,66 @@ ServerError[errorType_String, msg_String] := Module[
 		"message" -> msg
 	|>
 ];
+
+
+(* ::Section:: *)
+(*ScheduledTask*)
+
+
+DeclareType[ServerTask, <|
+	"type" -> _String,
+	"params" -> _,
+	"scheduledTime" -> _DateObject
+|>]
+
+
+addScheduledTask[state_WorkState, task_ServerTask] := (
+	state["scheduledTasks"]
+	// Map[Key["scheduledTime"]]
+	// FirstPosition[_DateObject?(GreaterThan[task["scheduledTime"]])]
+	// Replace[{
+		_?MissingQ :> (
+			state
+			// ReplaceKeyBy["scheduledTasks" -> Append[task]]
+		),
+		{pos_Integer} :> (
+			state
+			// ReplaceKeyBy["scheduledTasks" -> Insert[task, pos]]
+		)
+	}] 
+)
+
+
+doNextScheduledTask[state_WorkState] := (
+	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
+	// Replace[{
+		_?MissingQ :> (
+			Pause[0.5];
+			state
+		),
+		task_ServerTask :> (
+			task["type"]
+			// Replace[{
+				"PublishDiagnostics" :> (
+					publishDiagnostics[state, task["params"]];
+					state
+					// ReplaceKeyBy["scheduledTasks" -> DeleteCases[_?(t \[Function] (
+						t["type"] == "PublishDiagnostics" &&
+						t["scheduledTime"] < Now
+					))]]
+				),
+				"JustContinue" :> (
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),
+				unknownTask_ :> (
+					Pause[0.5];
+					state
+				)
+			}]
+		)
+	}]
+)
 
 
 

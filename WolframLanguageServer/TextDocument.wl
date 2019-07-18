@@ -78,12 +78,13 @@ CreateTextDocument[textDocumentItem_TextDocumentItem] := With[
 (*ChangeTextDocument*)
 
 
+(* There are three cases, delete, replace and add. *)
 ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := With[
     {
         range = contextChange["range"],
         newtext = StringReplace[contextChange["text"], "\r\n" -> "\n"]
     },
-    
+
     Replace[range, {
         _Missing :> newtext,
         _LspRange :> StringReplacePart[doc@"text", newtext, {
@@ -123,16 +124,29 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
                 (* get the cursorLine and cursorCol *)
                 StringTake[doc["text"], {indexRange["start"], indexPosition}]
                 // StringPosition["\n" | EndOfString]
-                // {Length, (- Subtract@@(Part[#, {-2, -1}, 2])&)} // Through
-            }
+                // {
+                    Length,
+                    Curry[Take][-2] /* Map[First]
+                    /* Apply[Subtract] /* Minus
+                } // Through
+                    Curry[Part, 3][{-2, -1}, 1] /* Map[First]
             (* find the index of the node in the AST *)
-            // {First, Apply[({ast, position} \[Function] FirstPosition[ast, _[_,_,_Association]?(AstContainsPosition[position])])]} // Through
+            // {
+                First,
+                Apply[{ast, position} \[Function] (
+                    FirstPosition[ast, _[_,_,_Association]?(AstContainsPosition[position])]
+                )]
+            } // Through
             // {
                 Apply[getHoverText],
                 Apply[getHoverRange]
-                /* Prepend[ToLspPosition[doc, indexRange["start"]]]
-                /* Replace[
-                    {position_, {startLine_, startCol_}, {endLine_, endCol_}} :> (
+                /* Replace[{
+                    {} :> Nothing,
+                    {{startLine_, startCol_}, {endLine_, endCol_}} :> With[
+                        {
+                            position = ToLspPosition[doc, indexRange["start"]]
+                        },
+
                         LspRange[<|
                             "start" -> LspPosition[<|
                                 "line" -> position["line"] + startLine - 1,
@@ -149,8 +163,8 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
                                 ])
                             |>]
                         |>]
-                    )
-                ]
+                    ]
+                }]
             } // Through
         ),
         _?MissingQ :> {{(* empty hover text: *)} (*, no range *)}
@@ -237,6 +251,7 @@ AstContainsPosition[ast_, {line_Integer, col_Integer}] := With[
 (*getHoverText*)
 
 
+getHoverText[_, _?MissingQ] := {}
 getHoverText[ast_List, indices_List] := getHoverTextImpl[{ast, indices, {}}] // DeleteDuplicates
 getHoverTextImpl[{ast_, {}, res_List}] := res
 getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextImpl[
@@ -271,6 +286,7 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
 ]
 
 
+getHoverRange[_, _?MissingQ] := {}
 getHoverRange[ast_List, indices_List] := 
     Extract[ast, indices] // Last // Key[AST`Source]
 
@@ -437,10 +453,10 @@ ToLspPosition[doc_TextDocument, index_Integer, _:"Before"] := With[
 (*Parse*)
 
 
-DiagnoseDoc[uri_String, doc_TextDocument] := (
-    uri
-    // FromUri
-    // Lint`LintFile
+DiagnoseDoc[doc_TextDocument] := (
+    doc["text"]
+    // Curry[AST`ConcreteParseString][First]
+    // Lint`LintCST
     // Replace[_?FailureQ -> {}]
     // ReplaceAll[Lint`Lint[tag_, description_, severity_, data_] :> <|
         "range" -> (
