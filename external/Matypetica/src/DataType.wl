@@ -18,10 +18,13 @@ Keys::usage = Keys::usage <> "\nKeys[typename] gives a list of the keys field_i 
 KeyPatterns::usage = "KeyPatterns[typename] returns the key-pattern pair of the type."
 ReplaceKey::usage = "ReplaceKey[object, key -> value] assigns the value to key in given object.
 ReplaceKey[object, {key1, key2} -> value] assigns the value to object[key1][key2].
-Replacekey[replaceRule_Rule] is an operator that can be applied to an object."
+ReplaceKey[replaceRule_Rule] is an operator that can be applied to an object."
 ReplaceKeyBy::usage = "ReplaceKeyBy[object, key -> func] replaces the value at object[key] by applying a function on it.
 ReplaceKeyBy[object, {key1, key2} -> func] replaces the value at object[key1][key2].
-ReplacekeyBy[replaceRule_Rule] is an operator that can be applied to an object."
+ReplaceKeyBy[replaceRule_Rule] is an operator that can be applied to an object."
+DeleteKey::usage = "DeleteKey[object, key] deletes the key-value pair from object[key].
+DeleteKey[object, {key1, key2}] deletes the key-value pair at object[key1][key2].
+DeleteKey[keys] is an operator that can be applied to an object."
 TypeCheckOn::usage = "TypeCheckOn[] turns on type checking."
 TypeCheckOff::usage = "TypeCheckOff[] turns off type checking."
 
@@ -88,6 +91,19 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
             typename[typedict]
         ]
     );
+
+    (* DeleteKey *)
+	DeleteKey[typename[typedict_Association], key_String|{key_String}] := (
+        typename[DeleteKey[typedict, key]]
+    );
+
+	DeleteKey[typename[typedict_Association], keys:{key_String, __}] := (
+		If[MemberQ[Keys[typedict], key],
+            typename[DeleteKey[typedict, keys]],
+            typename[typedict]
+        ]
+    );
+
 	
 	(* SameQ *)
 	typename /: SameQ[typename[typedict1_Association], typename[typedict2_Association]] := (
@@ -246,6 +262,34 @@ ReplaceKeyBy[assoc_Association, (rulehd:(Rule|RuleDelayed))[((key:Except[_List])
 ReplaceKeyBy[assoc_Association, (rulehd:(Rule|RuleDelayed))[{key_, keys__}, func_]] := 
     If[KeyMemberQ[assoc, key],
         Append[assoc, key -> ReplaceKeyBy[assoc[key], rulehd[{keys}, func]]],
+        assoc
+    ]
+
+
+(* DeleteKey *)
+
+DeleteKey[obj_, {}] := obj
+DeleteKey[keys_][obj_] := DeleteKey[obj, keys]
+
+DeleteKey[list_List, key_Integer|{key_Integer}] := (
+    If[0 < Abs[key] <= Length[list],
+        Delete[list, key],
+        list
+    ]
+)
+
+DeleteKey[list_List, {key_Integer, keys__}] := (
+    If[0 < Abs[key] <= Length[list],
+        ReplacePart[list, key -> DeleteKey[Extract[key][list], {keys}]],
+        list
+    ]
+)
+	
+DeleteKey[assoc_Association, (key:Except[_List])|{key_}] :=
+	KeyDrop[assoc, key]
+DeleteKey[assoc_Association, {key_, keys__}] := 
+    If[KeyMemberQ[assoc, key],
+        Append[assoc, key -> DeleteKey[assoc[key], {keys}]],
         assoc
     ]
 
