@@ -121,7 +121,9 @@ WLServerStart[o:OptionsPattern[]] := Module[
 			stdout = LogDebug@Check[t`stdout = OutputStream["stdout", 1], Nothing];
 			LogInfo["Server listening from pid " <> ToString[clientPid] <> "..."];
 			Block[{$IterationLimit = Infinity},
-			    StdioHandler[ReplaceKey[InitialState, "client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]]
+				InitialState
+			    // ReplaceKey["client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]
+				// StdioHandler
 			]
 	    ),
 	    "pipe" :> (
@@ -147,9 +149,11 @@ WLServerStart[o:OptionsPattern[]] := Module[
 							(*LogInfo[WLServerListen[connection, InitialState]];*)
 				
 							Block[{$IterationLimit = Infinity},
-								TcpSocketHandler[ReplaceKey[InitialState, "client" -> NamedPipe[<|
+								InitialState
+								// ReplaceKey["client" -> NamedPipe[<|
 									"pipeName" -> pipename, "pipeStream" -> connection
-								|>]]]
+								|>]]
+								// TcpSocketHandler
 							]
 						),
 						{} :> (
@@ -168,7 +172,9 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
             Block[{$IterationLimit = Infinity},
-        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> waitForClient[connection]]]
+				InitialState
+				// ReplaceKey["client" -> waitForClient[connection]]
+				// TcpSocketHandler
         	]
 	    ),
 		"socket" :> (
@@ -179,7 +185,9 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
             Block[{$IterationLimit = Infinity},
-        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> connection]]
+				InitialState
+				// ReplaceKey["client" -> connection]
+				// TcpSocketHandler
         	]
         ),
         _ :> (
@@ -720,34 +728,13 @@ handleRequest["shutdown", msg_, state_] := Module[
 (*textDocument/hover*)
 
 
-(*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
-(*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
-handleRequest["textDocument/hover", msg_, state_] := Module[
+handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		pos, token, hover
+		hover = GetHoverAtPosition[
+			state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+			LspPosition[msg["params"]["position"]]
+		]
 	},
-
-	pos = LspPosition[msg["params"]["position"]];
-	(* The head of token is String *)
-	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
-
-	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
-	LogDebug @ ("Names of token: " <> Names[token]);
-
-	hover = GetHoverAtPosition[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos]
-	// LogDebug;
-
-	(* hover = Which[
-		token === "", Null,
-		Names[token] === {}, Null, (* not defined*)
-		Context[token] === "Global`", Null, (* defined in Global` context*)
-		True, (Replace[ToExpression[token <> "::usage"], {
-			_MessageName :> Null, (* no usage *)
-			_ :> <|"contents" -> TokenDocumentation[token,
-				"Format" -> First[state["clientCapabilities"]["textDocument"]["hover"]["contentFormat"]]
-			]|>
-		}])
-	]; *)
 
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
@@ -755,7 +742,7 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 	|>];
 
 	{"Continue", state}
-];
+]
 
 
 (* ::Subsection:: *)
@@ -876,20 +863,18 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 (*Invalid Request*)
 
 
-handleRequest[_, msg_, state_] := Module[
-	{
-		responseMsg
-	},
-	
-	responseMsg = "The requested method " <> msg["method"] <> " is invalid or not implemented";
-	LogError[responseMsg];
-	LogDebug @ msg;
+handleRequest[_, msg_, state_] := (
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"error" -> ServerError["MethodNotFound", responseMsg]
+		"error" -> ServerError["MethodNotFound",
+			msg
+			// ErrorMessageTemplates["MethodNotFound"]
+			// LogError
+		]
 	|>];
+
 	{"Continue", state}
-];
+)
 
 
 (* ::Section:: *)
@@ -914,26 +899,18 @@ handleNotification["initialized", msg_, state_] := Module[
 (*exit*)
 
 
-handleNotification["exit", msg_, state_] := Module[
-	{
-
-	},
-	
+handleNotification["exit", msg_, state_] := (
 	{"Stop", state}
-];
+)
 
 
 (* ::Subsection:: *)
 (*$/cancelRequest*)
 
 
-handleNotification["$/cancelRequest", msg_, state_] := Module[
-	{
-		newState = state
-	},
-	
-	{"Continue", newState}
-];
+handleNotification["$/cancelRequest", msg_, state_] := (
+	{"Continue", state}
+)
 
 
 (* ::Subsection:: *)
@@ -962,17 +939,13 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 (*textSync/didClose*)
 
 
-handleNotification["textDocument/didClose", msg_, state_] := Module[
+handleNotification["textDocument/didClose", msg_, state_] := With[
 	{
-		uri = msg["params"]["textDocument"]["uri"], 
-		newState = state, docs
+		uri = msg["params"]["textDocument"]["uri"]
 	},
-	(* get the association, modify and reinsert *)
-	docs = newState["openedDocs"];
-	docs~KeyDropFrom~uri;
-	newState = ReplaceKey[newState, "openedDocs" -> docs];
+	
 	LogInfo @ ("Close Document " <> uri);
-	{"Continue", newState}
+	{"Continue", ReplaceKeyBy[state, {"openedDocs"} -> KeyDrop[uri]]}
 ]
 
 
@@ -993,6 +966,7 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
 	LogDebug @ ("Change Document " <> uri);
+
 	state
 	// ReplaceKey[{"openedDocs", uri} -> (
 		(* Apply all the content changes. *)
@@ -1019,12 +993,6 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 		{"Continue", newState}
 	))
 
-	(* Give diagnostics in real-time *)
-	(* sendResponse[state["client"], <|
-		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
-	|>]; *)
-
 ]
 
 
@@ -1044,52 +1012,12 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 ]
 
 
-diagnoseTextDocument[doc_TextDocument] := Module[
-	{
-		(* txt = doc["text"], start, end *)
-	},
-	
-	
-	(* 
-	txt
-	// ToCharacterCode
-	// FromCharacterCode
-	// StringToStream
-	// Block[
-	    {
-	        OpenRead = (#1&) (* read from streams instead of files *)
-	    },
-
-	    GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors[#] (* find first error using internel funciton*)
-	]&
-    // Cases[
-        (GeneralUtilities`FileLine[_InputStream, line_Integer] -> error_String) :> ( (* if found an error *)
-            LogDebug @ "Found Syntax Error";
-            start = ToLspPosition[doc, Part[doc@"position", line]];
-            end = ToLspPosition[doc,
-                If[line == Length[doc@"position"],
-                    StringLength[txt], (* last char *)
-                    Part[doc@"position", line + 1] - 1 (* end of the line *)
-                ]
-            ];
-    		LogDebug @ "Error line: " <> GetLine[doc, line];
-        	<|
-				"range" -> <|
-	    		    "start" -> First @ start,
-	    		    "end" -> First @ end
-	    	    |>,
-	        	"severity" -> ToSeverity[error],
-	        	"source" -> "Wolfram",
-	        	"message" -> ErrorMessage[error]
-	        |>
-	    )
-	] *)
-	DiagnoseDoc[doc["uri"], doc]
-	// (<|
+diagnoseTextDocument[doc_TextDocument] := (
+	<|
 		"uri" -> doc["uri"],
-		"diagnostics"  -> #1
-    |> &)
-]
+		"diagnostics" -> ToAssociation/@DiagnoseDoc[doc["uri"], doc]
+    |>
+)
 
 
 publishDiagnostics[state_WorkState, uri_String] := (
@@ -1097,9 +1025,10 @@ publishDiagnostics[state_WorkState, uri_String] := (
 		"method" -> "textDocument/publishDiagnostics", 
 		"params" -> <|
 			"uri" -> uri,
-			"diagnostics"  -> DiagnoseDoc[state["openedDocs"][uri]]
+			"diagnostics" -> ToAssociation[DiagnoseDoc[state["openedDocs"][uri]]]
 		|>
 	|>]
+	(* Null *)
 )
 
 
@@ -1114,57 +1043,17 @@ clearDiagnostics[state_WorkState, uri_String] := (
 )
 
 
-ToSeverity[error_String] := (
-    Replace[error, {
-        (* error *)
-        "SyntaxError" -> "Error",
-        "Mismatched*" -> "Error",
-        "UnknownError" -> "Error",
-        (* warning *)
-        "ImplicitNull" -> "Warning",
-        "ImplicitTimes" -> "Warning",
-        "MissingDefinition" -> "Warning",
-        (* information *)
-        "MultilineAssociationSyntax" -> "Information",
-        "PackageDirectiveEndsInSemicolon" -> "Information",
-        _ -> "Information"
-    }] // DiagnosticSeverity
-);
-
-
-ErrorMessage[error_String] := (
-    Replace[error, {
-        "SyntaxError" -> "The expression is incomplete.",
-        "MismatchedParenthesis" -> "The parenthesis \"()\" do not match",
-        "MismatchedBracket" -> "The bracket \"[]\" do not match",
-        "MismatchedBrace" -> "The brace \"{}\" do not match",
-        "UnknownError" -> "An unknown error is found.",
-        (* warning *)
-        "ImplicitNull" -> "Comma encountered with no adjacent expression. The expression will be treated as Null.",
-        "ImplicitTimes" -> "An implicit Times[] is found. Maybe you missed a semi-colon (\";\")?",
-        "MissingDefinition" -> "Cannoot not find the definition.",
-        (* information *)
-        "MultilineAssociationSyntax" -> "Multiline association syntax",
-        "PackageDirectiveEndsInSemicolon" -> "Package directive ends in semicolon.",
-        _ :> error
-    }]
-);
-
-
 (* ::Subsection:: *)
 (*Invalid Notification*)
 
 
-handleNotification[_, msg_, state_] := Module[
-	{
-		responseMsg
-	},
-	
-	responseMsg = "The notification " <> msg["method"] <> " is invalid or not implemented";
-	LogError[responseMsg];
-	(*Echo @ msg;*)
+handleNotification[_, msg_, state_] := (
+	msg
+	// ErrorMessageTemplates["MethodNotFound"]
+	// LogError;
+
 	{"Continue", state}
-];
+)
 
 
 (* ::Section:: *)
@@ -1197,22 +1086,24 @@ showMessasge[message_String, msgType_String, state_WorkState] := (
 (*Handle Error*)
 
 
-ServerError[errorType_String, msg_String] := Module[
-    {
-        errorCode
-    },
-    
-    errorCode = ErrorCodes[errorType];
-    If[MissingQ[errorCode],
-        LogError["Invalid error type: " <> errorType];
-        errorCode = ErrorCodes["UnknownErrorCode"]
-    ];
-    
+ServerError[errorType_String, msg_String] := (
 	<|
-		"code" -> errorCode, 
+		"code" -> (
+			errorType
+			// ErrorCodes
+			// Replace[_?MissingQ :> (
+				LogError["Invalid error type: " <> errorType];
+				ErrorCodes["UnknownErrorCode"]
+			)]
+		), 
 		"message" -> msg
 	|>
-];
+)
+
+
+ErrorMessageTemplates = <|
+	"MethodNotFound" -> StringTemplate["The requested method `method` is invalid or not implemented"]
+|>
 
 
 (* ::Section:: *)
