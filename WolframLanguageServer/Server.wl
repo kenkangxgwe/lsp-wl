@@ -764,23 +764,47 @@ handleRequest["textDocument/hover", msg_, state_] := Module[
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		p, pos, token, genAssc
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[LogDebug@msg["params"]["position"]]
 	},
-	p = msg["params"]["position"];
-	(*The position is tricky here, we have to read one character ahead.*)
-	pos = LspPosition[msg["params"]["position"]];
-	(*Token is a patten here.*)
-	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
-	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
-	genAssc[t_] := <|"label" -> t, "kind" -> TokenKind[t]|>;
-	
-	sendResponse[state["client"], <|
-		"id" -> msg["id"],
-		"result" -> <|
-			"isIncomplete" -> False, 
-			"items" -> genAssc /@ TokenCompletionList[token] 
-		|>
-	|>];
+
+	msg["params"]["context"]["triggerKind"]
+	// Replace[{
+		CompletionTriggerKind["Invoked"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> False, 
+					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
+				|>
+			|>]
+		),
+		CompletionTriggerKind["TriggerCharacter"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> True, 
+					"items" -> (
+						GetTriggerKeyCompletion[]
+						// ToAssociation
+					)
+				|>
+			|>]
+		),
+		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> False,
+					"items" -> (
+						GetIncompleteCompletionAtPosition[doc, pos]
+						// ToAssociation
+					) 
+				|>
+			|>];
+		)
+	}];
+
 	
 	{"Continue", state}
 ]
@@ -790,25 +814,36 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 (*completionItem/resolve*)
 
 
-(* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
-provided her. *)
 handleRequest["completionItem/resolve", msg_, state_] := With[
 	{
-		token = msg["params"]["label"]
+		token = msg["params"]["label"],
+		type = msg["params"]["data"]["type"]
 	},
-	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
+
+	(* LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]); *)
 	
-	sendResponse[state["client"], <|
-		"id" -> msg["id"],
-		"result" -> <|
-			"label" -> token, 
-			"kind" -> TokenKind[token], 
-			"documentation" -> <|
-				"kind" -> "markdown",
-				"value" -> TokenDocumentation[token, "usage"]
-			|>
-		|>
-	|>];
+	type
+	// Replace[{
+		"Alias" | "LongName" :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> msg["params"]
+			|>]
+		),
+		"Token" :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"label" -> token, 
+					"kind" -> TokenKind[token], 
+					"documentation" -> <|
+						"kind" -> "markdown",
+						"value" -> TokenDocumentation[token, "usage"]
+					|>
+				|>
+			|>]
+		)
+	}];
 	
 	{
 		"Continue",

@@ -13,17 +13,21 @@ ClearAll[Evaluate[Context[] <> "*"]];
 TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\"
-";
-
-TokenKind::usage = "TokenKind[token_String] returns the symbol kind of input token. See WolframLanguageServer`Specification`CompletionItemKind.";
-
-TokenCompletionList::usage = "TokenCompletionList[token_String] returns a list of predicted completions for the input token.";
+"
+TokenKind::usage = "TokenKind[token_String] returns the symbol kind of input token. See WolframLanguageServer`Specification`CompletionItemKind."
+TokenCompletionList::usage = "TokenCompletionList[token_String] returns a list of predicted completions for the input token."
+GetTokenCompletion::usage = "GetTokenCompletion[token_String] returns a list of CompletionItems to complete a given token."
+GetTriggerKeys::usage = "GetTriggerKeys[] returns a list of characters that trigger a completion request when input."
+GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
+GetAliasCompletion::usage = "GetAliasCompletion[prefix_String] returns a list of CompletionItems for unicode alias prefix."
+GetLongNameCompletion::usage = "GetLongNameCompletion[prefix_String] returns a list of CompletionItems for unicode long name prefix."
 
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
+Needs["WolframLanguageServer`UnicodeTable`"]
 
 
 (* ::Section:: *)
@@ -210,8 +214,7 @@ BoxToText[input_, o:OptionsPattern[]] := With[
                 recursiveCall[x]
             ]
         ),
-        StyleBox[x_, Except["TI"]] :> recursiveCall[x], 
-        StyleBox[x_] :> recursiveCall[x],
+        StyleBox[x_, ___] :> recursiveCall[x],
         (* StyleBox[x_, OptionsPattern[]] :> recursiveCall[x], *)
         (Subscript|SubscriptBox)[x_, y_] :> (
             If[OptionValue["Format"] == "Markdown",
@@ -286,6 +289,104 @@ TokenCompletionList[token_String] := Module[
    
     allNames = Names["System`" <> token <> "*"]
 ];
+
+GetTokenCompletion[token_String] := (
+    CompletionItem[<|
+        "label" -> token,
+        "kind" -> TokenKind[token],
+        "data" -> <|
+            "type" -> "Token"
+        |>
+    |>]
+)
+
+
+GetTriggerKeys[] := UnicodeLeaders
+
+
+GetTriggerKeyCompletion[] := (
+    AliasToLongName
+    // KeySelect[StringStartsQ[UnicodeLeaders]]
+    // KeyValueMap[{alias, longName} \[Function] With[
+        {
+            unicode = LongNameToUnicode[longName]
+        },
+
+        CompletionItem[<|
+            "label" -> StringJoin[
+                If[unicode < 16^^E000,
+                    FromCharacterCode[unicode],
+                    ""
+                ], "\t",
+                alias , "\t\t",
+                "\\[", longName, "]"
+            ],
+            "kind" -> CompletionItemKind["Text"],
+            "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+            "filterText" -> alias,
+            "sortText" -> alias,
+            "insertText" -> "[" <> longName <> "]",
+            "data" -> <|
+                "type" -> "Alias"
+            |>
+        |>]
+    ]]
+)
+
+
+GetAliasCompletion[prefix_String] := (
+    AliasToLongName
+    // KeySelect[StringStartsQ[prefix]]
+    // KeyValueMap[{alias, longName} \[Function] With[
+        {
+            unicode = LongNameToUnicode[longName]
+        },
+        
+        CompletionItem[<|
+            "label" -> StringJoin[
+                If[unicode < 16^^E000,
+                    FromCharacterCode[unicode],
+                    ""
+                ], "\t",
+                alias , "\t\t",
+                "\\[", longName, "]"
+            ],
+            "kind" -> CompletionItemKind["Text"],
+            "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+            "sortText" -> StringDrop[alias, StringLength[prefix] - 1],
+            "filterText" -> StringDrop[alias, StringLength[prefix] - 1],
+            "insertText" -> StringJoin["[", longName, "]"],
+            "insertTextFormat" -> InsertTextFormat["PlainText"],
+            "data" -> <|"type" -> "Alias"|>
+        |>]
+    ]]
+)
+
+
+GetLongNameCompletion[prefix_String] := (
+
+    LongNameToUnicode
+    // KeySelect[StringStartsQ[prefix]]
+    // KeyValueMap[{longName, unicode} \[Function] (
+        CompletionItem[<|
+            "label" -> StringJoin[
+                If[unicode < 16^^E000,
+                    FromCharacterCode[unicode],
+                    ""
+                ], "\t",
+                "\\[", longName, "]"
+            ],
+            "kind" -> CompletionItemKind["Text"],
+            "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+            "sortText" -> longName,
+            "filterText" -> longName,
+            "insertText" -> longName,
+            "insertTextFormat" -> InsertTextFormat["PlainText"],
+            "data" -> <|"type" -> "LongName"|>
+        |>]
+    )]
+
+)
 
 
 End[];

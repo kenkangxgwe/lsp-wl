@@ -14,6 +14,8 @@ TextDocument::usage = "is the type of the text document.";
 CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentItem] returns a TextDocument object"
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
+GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
+GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
 
@@ -518,7 +520,93 @@ printHoverTextImpl[hoverText_HoverText] := (
 )
 
 
+(* ::Section:: *)
+(*GetTokenCompletionAtPostion*)
+
+
+GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1
+    },
+
+    FirstCase[
+        doc // divideCells,
+        cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
+        {}, {0, Infinity}
     ]
+    // SelectFirst[Curry[Between, 2][line]]
+    // Replace[{
+        lineRange:{rangeStartLine_Integer, _Integer} :> (
+            (* get token list *)
+            Take[doc["text"], lineRange]
+            // Curry[StringRiffle]["\n"]
+            // AST`TokenizeString
+            // SelectFirst[NodeContainsPosition[{
+                line - rangeStartLine + 1,
+                pos["character"]
+            }]]
+            // LogDebug
+            // Replace[{
+                TokenNode[_, token_String, assoc_] :> (
+                    StringTake[token, pos["character"] - Part[assoc[AST`Source], 1, 2] + 1]
+                    // (tokenHead \[Function] (
+                        Join[
+                            Names[tokenHead<>"*"]
+                            // Select[Context /* EqualTo["System`"]]
+                            // Map[GetTokenCompletion]
+                            (* tokenHead *)
+                            (* // GetLongNameCompletion,
+                            tokenHead
+                            // GetAliasCompletion *)
+                        ]
+                    ))
+                ),
+                (* this happens when character == 0 *)
+                _?MissingQ -> {}
+            }]
+        ),
+        _?MissingQ :> {}
+    }]
+]
+
+
+GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
+    
+    StringTake[Part[doc["text"], pos["line"] + 1], pos["character"]]
+    // StringReverse
+    // StringCases[StartOfString ~~ Shortest[prefix__] ~~ "\\" :> prefix]
+    // First
+    // StringReverse
+    // Replace[{
+        (* for long name characters *)
+        prefix_?(StringStartsQ["["]) :> (
+            StringDrop[prefix, 1]
+            // GetLongNameCompletion
+        ),
+        (* other aliases *)
+        prefix_ :> (
+            prefix
+            // GetAliasCompletion
+            // Map[item \[Function] (
+                item
+                // ReplaceKey["textEdit" -> TextEdit[<|
+                    "range" -> LspRange[<|
+                        "start" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"] - StringLength[prefix]
+                        |>],
+                        "end" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"]
+                        |>]
+                    |>],
+                    "newText" -> item["insertText"]
+                |>]]
+            )]
+        )
+    }]
+
+)
 
 
 (* ::Section:: *)
