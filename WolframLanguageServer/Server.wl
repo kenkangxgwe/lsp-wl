@@ -41,21 +41,38 @@ FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take
 (*Start Server*)
 
 
-(* openedFile represents all the opened files in a list of associations.
-The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
-	"openedDocs" -> <|(_String -> _TextDocument)...|>,
+	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientCapabilities" -> _Association,
+	"config" -> _Association,
 	"scheduledTasks" -> {___ServerTask}
 |>];
+
 InitialState = WorkState[<|
 	"initialized" -> False,
 	"openedDocs" -> <||>,
 	"client" -> Null,
+	"config" -> loadConfig[],
 	"scheduledTasks" -> {}
 |>];
+
+ServerCapabilities = <|
+	"textDocumentSync" -> 2,
+	"hoverProvider" -> True,
+	"completionProvider" -> <|
+		"resolveProvider" -> True,
+		"triggerCharacters" -> "\\"
+	|>,
+	"documentSymbolProvider" -> True,
+	(* "executeCommandProvider" -> <|
+		"commands" -> {
+			"openRef"
+		}
+	|>, *)
+	Nothing
+|>
 (*Place where the temporary img would be stored, delete after usage.*)
 (* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
 (* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
@@ -690,15 +707,7 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
 		"result" -> <|
-			"capabilities" -> <|
-				"textDocumentSync" -> 2,
-				"hoverProvider" -> True,
-				"completionProvider" -> <|
-					"resolveProvider" -> True,
-					"triggerChracters" -> {}
-				|>,
-				"documentSymbolProvider" -> True
-			|>
+			"capabilities" -> ServerCapabilities
 		|>
 	|>];
 	
@@ -885,14 +894,17 @@ handleRequest[_, msg_, state_] := (
 (*initialized*)
 
 
-handleNotification["initialized", msg_, state_] := Module[
+handleNotification["initialized", msg_, state_] := (
 	{
-		newState = state
-	},
-	
-	newState = ReplaceKey[newState, "initialized" -> True];
-	{"Continue", newState}
-];
+		"Continue",
+		state
+		// ReplaceKey["initialized" -> True]
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "checkUpgrades",
+			"scheduledTime" -> Now
+		|>]]
+	}
+)
 
 
 (* ::Subsection:: *)
@@ -962,7 +974,25 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
 	(* TODO: Use ShowMessage instead of Assert *)
-	Assert[state["openedDocs"][uri]["version"] == doc["version"] - 1];
+	With[
+		{
+			expectedVersion = state["openedDocs"][uri]["version"] + 1
+		},
+
+		If[expectedVersion != doc["version"],
+			showMessage[
+				StringJoin[
+					"The version number is not correct.\n",
+					"Expect version: ", ToString[expectedVersion], ", ",
+					"Actual version: ", ToString[doc["version"]], ".",
+					"Please restart the server."
+				],
+				"Error",
+				state
+			];
+			Return[{"Stop", state}]
+		]
+	];
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
 	LogDebug @ ("Change Document " <> uri);
@@ -1068,9 +1098,11 @@ MessageType = <|
 	"Debug" -> 4
 |>
 
-showMessasge[message_String, msgType_String, state_WorkState] := (
+showMessage[message_String, msgType_String, state_WorkState] := (
 	MessageType[msgType]
-	// Replace[type:Except[_?MissingQ] :> 
+	// Replace[_?MissingQ :> MessageType["Error"]]
+	// LogDebug
+	// (type \[Function] 
 		sendResponse[state["client"], <|
 			"method" -> "window/showMessage", 
 			"params" -> <|
@@ -1078,7 +1110,22 @@ showMessasge[message_String, msgType_String, state_WorkState] := (
 				"message" -> message
 			|>
 		|>]
-	]
+	)
+)
+
+logMessage[message_String, msgType_String, state_WorkState] := (
+	MessageType[msgType]
+	// Replace[_?MissingQ :> MessageType["Error"]]
+	// LogDebug
+	// (type \[Function] 
+		sendResponse[state["client"], <|
+			"method" -> "window/logMessage", 
+			"params" -> <|
+				"type" -> type,
+				"message" -> message
+			|>
+		|>]
+	)
 )
 
 
@@ -1156,6 +1203,12 @@ doNextScheduledTask[state_WorkState] := (
 					state
 					// ReplaceKeyBy["scheduledTasks" -> Rest]
 				),
+				"checkUpgrades" :> (
+					state
+					// checkUpgrades;
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),
 				unknownTask_ :> (
 					Pause[0.5];
 					state
@@ -1169,6 +1222,140 @@ doNextScheduledTask[state_WorkState] := (
 
 (* ::Section:: *)
 (*Misc*)
+
+
+(* ::Subsection:: *)
+(*load config*)
+
+
+loadConfig[] := With[
+	{
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+	},
+
+	If[FileExistsQ[configPath],
+		Import[configPath, "RawJSON"],
+		Export[configPath, defaultConfig, "RawJSON"];
+		defaultConfig
+	]
+]
+
+
+saveConfig[newConfig_Association] := With[
+	{
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+	},
+
+	Export[configPath, newConfig, "RawJSON"];
+
+]
+
+
+defaultConfig = <|
+	"lastCheckForUpgrade" -> DateString[Today],
+	"dependencies" -> {
+		{"AST", "0.11"},
+		{"Lint", "0.11"}
+	}
+|>
+
+
+(* ::Subsection:: *)
+(*check upgrades*)
+
+
+checkUpgrades[state_WorkState] := With[
+	{
+		checkInterval = Quantity[2, "Days"]
+	},
+
+	If[DateDifference[DateObject[state["config"]["lastCheckForUpgrade"]], Today] < checkInterval,
+		logMessage[
+			"Upgrade not checked, only a few days after the last check.",
+			"Log",
+			state
+		];
+		Return[]
+	];
+
+	(* check for upgrade if not checked for more than checkInterval days *)
+	checkGitRepo[state];
+	checkDependencies[state];
+
+	(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
+	// saveConfig *)
+
+]
+
+checkGitRepo[state_WorkState] := (
+	Check[Needs["GitLink`"],
+		showMessage[
+			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
+		showMessage[
+			"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
+		If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
+			logMessage[
+				"Upgrade not checked, the current branch is not 'master'.",
+				"Log",
+				state
+			],
+			GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
+			// Replace[
+				{_, _?Positive} :> (
+					showMessage[
+						"A new version detected, please close the server and use 'git pull' to upgrade.",
+						"Info",
+						state
+					]
+				)
+			]
+		]
+	];
+)
+
+
+checkDependencies[state_WorkState] := (
+	Check[Needs["PacletManager`"],
+		showMessage[
+			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	Table[
+		PacletManager`PacletInformation[depinfo]
+		// Replace[{
+			{} :> (depinfo),
+			_ :> (Nothing)
+		}],
+		{depinfo, state["config"]["dependencies"]}
+	] // Replace[{depInstalls__} :> (
+		showMessage[
+			StringJoin["These dependencies need to be installed or upgraded:\n",
+				StringRiffle[depInstall, ", "], ",\n",
+				"otherwise the server may malfunction. See Readme for details."
+			],
+			"Warning",
+			state
+		]
+	)];
+)
 
 
 WLServerVersion[] := WolframLanguageServer`Version;
