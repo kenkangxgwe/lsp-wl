@@ -1390,15 +1390,16 @@ checkDependencies[state_WorkState] := (
 	Table[
 		PacletManager`PacletInformation[depinfo]
 		// Replace[{
-			{} :> (depinfo),
+			{} :> (StringRiffle[depinfo, "-"]),
 			_ :> (Nothing)
 		}],
 		{depinfo, state["config"]["dependencies"]}
 	] // Replace[{depInstalls__} :> (
 		showMessage[
-			StringJoin["These dependencies need to be installed or upgraded:\n",
-				StringRiffle[depInstall, ", "], ",\n",
-				"otherwise the server may malfunction. See Readme for details."
+			StringJoin["These dependencies with correct versions need to be installed or upgraded: ",
+				StringRiffle[{depInstalls}, ", "], ", ",
+				"otherwise the server may malfunction. ",
+				"Please see the [Installation section](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) for details."
 			],
 			"Warning",
 			state
