@@ -21,9 +21,10 @@ Begin["`Private`"];
 ClearAll[Evaluate[Context[] <> "*"]];
 
 
-Needs["WolframLanguageServer`DataType`"]
+Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
+Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
 Needs["GeneralUtilities`"]
 
@@ -40,16 +41,38 @@ FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take
 (*Start Server*)
 
 
-(* openedFile represents all the opened files in a list of associations.
-The Association is like <|"uri" \[Rule] "...", "text" \[Rule] "..."|>. *)
 DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
-	"openedDocs" -> <|(_String -> _TextDocument)...|>,
+	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientCapabilities" -> _Association,
-	"theme" -> "dark" | "light"
+	"config" -> _Association,
+	"scheduledTasks" -> {___ServerTask}
 |>];
-InitialState = WorkState[<|"initialized" -> False, "openedDocs" -> <||>, "client" -> Null|>];
+
+InitialState = WorkState[<|
+	"initialized" -> False,
+	"openedDocs" -> <||>,
+	"client" -> Null,
+	"config" -> loadConfig[],
+	"scheduledTasks" -> {}
+|>];
+
+ServerCapabilities = <|
+	"textDocumentSync" -> 2,
+	"hoverProvider" -> True,
+	"completionProvider" -> <|
+		"resolveProvider" -> True,
+		"triggerCharacters" -> "\\"
+	|>,
+	"documentSymbolProvider" -> True,
+	(* "executeCommandProvider" -> <|
+		"commands" -> {
+			"openRef"
+		}
+	|>, *)
+	Nothing
+|>
 (*Place where the temporary img would be stored, delete after usage.*)
 (* tempImgPath = $TemporaryDirectory <> $PathnameSeparator <> "temp.svg"; *)
 (* tempDirPath = WolframLanguageServer`Directory <> $PathnameSeparator <> "Cache"; *)
@@ -115,11 +138,12 @@ WLServerStart[o:OptionsPattern[]] := Module[
 			stdout = LogDebug@Check[t`stdout = OutputStream["stdout", 1], Nothing];
 			LogInfo["Server listening from pid " <> ToString[clientPid] <> "..."];
 			Block[{$IterationLimit = Infinity},
-			    StdioHandler[ReplaceKey[InitialState, "client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]]
+				InitialState
+			    // ReplaceKey["client" -> "stdio" (*StdioClient[<|"process" -> connection, "stdin" -> stdin, "stdout" -> stdout|>]*)]
+				// StdioHandler
 			]
 	    ),
 	    "pipe" :> (
-	        LogDebug[pipe];
 			Replace[$OperatingSystem, {
 				"Windows" :> (
 					pipe
@@ -142,9 +166,11 @@ WLServerStart[o:OptionsPattern[]] := Module[
 							(*LogInfo[WLServerListen[connection, InitialState]];*)
 				
 							Block[{$IterationLimit = Infinity},
-								TcpSocketHandler[ReplaceKey[InitialState, "client" -> NamedPipe[<|
+								InitialState
+								// ReplaceKey["client" -> NamedPipe[<|
 									"pipeName" -> pipename, "pipeStream" -> connection
-								|>]]]
+								|>]]
+								// TcpSocketHandler
 							]
 						),
 						{} :> (
@@ -163,7 +189,9 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
             Block[{$IterationLimit = Infinity},
-        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> waitForClient[connection]]]
+				InitialState
+				// ReplaceKey["client" -> waitForClient[connection]]
+				// TcpSocketHandler
         	]
 	    ),
 		"socket" :> (
@@ -174,7 +202,9 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	        (*LogInfo[WLServerListen[connection, InitialState]];*)
     
             Block[{$IterationLimit = Infinity},
-        	    TcpSocketHandler[ReplaceKey[InitialState, "client" -> connection]]
+				InitialState
+				// ReplaceKey["client" -> connection]
+				// TcpSocketHandler
         	]
         ),
         _ :> (
@@ -204,8 +234,8 @@ WLServerStart[o:OptionsPattern[]] := Module[
 
 
 waitForClient[{client_SocketObject}] := (LogInfo["Client connected"]; client);
-waitForClient[server_SocketObject] := waitForClient[Replace[LogDebug@server["ConnectedClients"],{
-    {} :> (Pause[1]; server),
+waitForClient[server_SocketObject] := waitForClient[Replace[server["ConnectedClients"],{
+    {} :> (Pause[1]; (* LogInfo["Waiting for connection from client"]; *) server),
     {client_SocketObject} :> {client}
 }]]
 
@@ -264,14 +294,13 @@ SocketHandler[packet_Association] := Module[
 		Return[];
 	];
 	
-	LogDebug@client;
 	If[client["contentLengthRemain", 0] == 0,
 	(* content-length *)
 		client = Check[
 			headerEndPosition = SequencePosition[Normal @ bytearray, RPCPatterns["SequenceSplitPattern"], 1];
 			headertext = ByteArrayToString[bytearray, "ASCII"];
 			contentlength = ToExpression[First @ StringCases[headertext, RPCPatterns["ContentLengthRule"]]];
-			LogDebug["Content Length: " <> ToString[contentlength]];
+			(* LogDebug["Content Length: " <> ToString[contentlength]]; *)
 			Fold[ReplaceKey, client, {
 				"contentLengthRemain" -> contentlength,
 				"lastMessage" -> ""
@@ -322,14 +351,17 @@ TcpSocketHandler[state_WorkState] := Module[
 		client = state["client"]
 	},
 
-    handleMessageList[ReadMessages[client], state]
-	// Replace[{
-	    {"Continue", newstate_} :> newstate,
-	    {stop_, newstate_} :> (
-			{stop, newstate}
-		),
-	    {} :> state (* No message *)
-	}]
+	If[SocketReadyQ[client],
+		handleMessageList[ReadMessages[client], state]
+		// Replace[{
+			{"Continue", newstate_} :> newstate,
+			{stop_, newstate_} :> (
+				{stop, newstate}
+			),
+			{} :> state (* No message *)
+		}],
+		doNextScheduledTask[state]
+	]
 ] // TcpSocketHandler (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
@@ -394,11 +426,7 @@ SelectClient["stdio"] := "stdio";
 
 ReadMessages[client_SocketObject] := ReadMessagesImpl[client, {{0, {}}, {}}]
 ReadMessagesImpl[client_SocketObject, {{0, {}}, msgs:{__Association}}] := msgs
-ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
-    {
-        newstate, curMsg
-    },
-
+ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, (
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -416,7 +444,7 @@ ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(
 		    )
 	    }]
 	]
-]]
+)]
 
 
 (* ::Subsubsection:: *)
@@ -428,7 +456,7 @@ ReadMessagesImpl[client_NamedPipe, msg_Association] := msg
 ReadMessagesImpl[client_NamedPipe, header_List] := ReadMessagesImpl[client, Module[
     {
 		pipeStream = client["pipeStream"],
-        newByteArray, newMsg
+        newByteArray
     },
 
     If[MatchQ[header, {RPCPatterns["HeaderByteArray"]}],
@@ -452,10 +480,9 @@ ReadMessages[client_StdioClient] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
 ReadMessagesImpl[client_StdioClient, {{0, {}}, msgs:{__Association}}] := msgs
 ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, Module[
     {
-        newstate, curMsg
     },
     
-    LogDebug @ {remainingLength, Normal[remainingByte]};
+    (* LogDebug @ {remainingLength, Normal[remainingByte]}; *)
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -482,12 +509,8 @@ ReadMessagesImpl[client_StdioClient, {{remainingLength_Integer, remainingByte:(_
 
 ReadMessages["stdio"] := ReadMessagesImpl["stdio", {{0, {}}, {}}]
 ReadMessagesImpl["stdio", {{0, {}}, msgs:{__Association}}] := msgs
-ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", Module[
-    {
-        newstate, curMsg
-    },
-    
-    LogDebug @ {remainingLength, Normal[remainingByte]};
+ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl["stdio", (
+    (* LogDebug @ {remainingLength, Normal[remainingByte]}; *)
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
@@ -505,7 +528,7 @@ ReadMessagesImpl["stdio", {{remainingLength_Integer, remainingByte:(_ByteArray|{
 		    )
 	    }]
 	]
-]]
+)]
 
 
 InputBinary[] := (LogDebug["waiting for input"];a=Import["!D:\\Programs\\msys64\\usr\\bin\\cat.exe", "Byte"];LogDebug["input done"];a)(*(LogDebug["waiting for input"]; ByteArray[StringToByteArray[InputString[]] ~Join~ {13, 10}])*)
@@ -579,11 +602,14 @@ constructRPCBytes[msg_Association] := Module[
 
 
 getContentLength[header_ByteArray] := getContentLength[ByteArrayToString[header, "ASCII"]];
-getContentLength[header_String] := (header // StringCases[RPCPatterns["ContentLengthRule"]] 
-// Replace[{
-    {len_String} :> LogDebug@ToExpression[len],
-    _ :> (LogError["Unknown header: " <> header]; Quit[1])
-}])
+getContentLength[header_String] := (
+	header
+	// StringCases[RPCPatterns["ContentLengthRule"]]
+	// Replace[{
+		{len_String} :> ToExpression[len],
+		_ :> (LogError["Unknown header: " <> header]; Quit[1])
+	}]
+)
 
 
 (* :: Section:: *)
@@ -613,15 +639,15 @@ handleMessageList[msgs:{___Association}, state_WorkState] := (
 
 handleMessage[msg_Association, state_WorkState] := Module[
 	{
-		method, response, newState = state, serverStatus
+		method, newState = state
 	},
 	
 	method = msg["method"];
 	Replace[method, {
 	    "textDocument/didOpen" | "textDocument/didChange" :> (
-	        LogInfo @ Iconize[method]
+	        LogDebug @ Iconize[method]
 	    ),
-	    _ :> LogInfo @ Iconize[msg, method]
+	    _ :> LogDebug @ Iconize[msg, method]
 	}];
 	
 	Which[
@@ -653,17 +679,12 @@ handleMessage[msg_Association, state_WorkState] := Module[
 
 
 (* Both response and notification will call this function *)
-sendResponse[client_, res_Association] := Module[
-	{
-
-	},
-
+sendResponse[client_, res_Association] := (
 	Prepend[res, <|"jsonrpc" -> "2.0"|>]
-	// LogInfo
+	// LogDebug
 	// constructRPCBytes
 	// WriteMessage[client]
-
-]
+)
 
 
 (* ::Section:: *)
@@ -671,16 +692,17 @@ sendResponse[client_, res_Association] := Module[
 
 
 (* ::Subsection:: *)
-(*Initialize*)
+(*initialize*)
 
 
 handleRequest["initialize", msg_, state_WorkState] := Module[
 	{
-		newState = state, theme
+		newState = state
 	},
+
+	LogDebug["handle/initialize"];
 	
 	(* Check Client Capabilities *)
-	theme = msg["params"]["initializationOptions"]["theme"] // Replace[_Missing -> "dark"];
 	newState = ReplaceKey[state,
 		"clientCapabilities" -> msg["params"]["capabilities"]
 	];
@@ -688,14 +710,7 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
 		"result" -> <|
-			"capabilities" -> <|
-				"textDocumentSync" -> 2,
-				"hoverProvider" -> True,
-				"completionProvider" -> <|
-					"resolveProvider" -> True,
-					"triggerChracters" -> {}
-				|>
-			|>
+			"capabilities" -> ServerCapabilities
 		|>
 	|>];
 	
@@ -704,7 +719,7 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 
 
 (* ::Subsection:: *)
-(*Shutdown*)
+(*shutdown*)
 
 
 handleRequest["shutdown", msg_, state_] := Module[
@@ -722,125 +737,165 @@ handleRequest["shutdown", msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*hover*)
+(*textDocument/hover*)
 
 
-(*ToDo: We only consider the wolfram symbols, website link and usage are given. However, self-defined symbols should be supported.*)
-(*ToDo: Latex formula and image are supported in VS code, something is wrong with the formula.*)
-handleRequest["textDocument/hover", msg_, state_] := Module[
+handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		pos, token, hover
+		hover = GetHoverAtPosition[
+			state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+			LspPosition[msg["params"]["position"]]
+		]
 	},
 
-	pos = LspPosition[<|
-		"line" -> msg["params"]["position"]["line"],
-		"character" -> msg["params"]["position"]["character"]
-	|>];
-	(* The head of token is String *)
-	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
-
-	LogDebug @ ("Hover over token: " <> ToString[token, InputForm]);
-	LogDebug @ ("Names of token: " <> Names[token]);
-
-	hover = Which[
-		token === "", Null,
-		Names[token] === {}, Null, (* not defined*)
-		Context[token] === "Global`", Null, (* defined in Global` context*)
-		True, (Replace[ToExpression[token <> "::usage"], {
-			_MessageName :> Null, (* no usage *)
-			_ :> <|"contents" -> TokenDocumentation[token,
-				"Format" -> First[state["clientCapabilities"]["textDocument"]["hover"]["contentFormat"]]
-			]|>
-		}])
-	];
-	
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"result" -> hover
+		"result" -> ToAssociation[hover]
 	|>];
 
 	{"Continue", state}
-];
+]
 
 
 (* ::Subsection:: *)
-(*completion*)
+(*textDocument/completion*)
 
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		p, pos, token, genAssc
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[LogDebug@msg["params"]["position"]]
 	},
-	p = msg["params"]["position"];
-	(*The position is tricky here, we have to read one character ahead.*)
-	pos = LspPosition[<|
-		"line" -> p["line"],
-		"character" -> Replace[p["character"], c_?Positive :> c - 1]
-	|>];
-	(*Token is a patten here.*)
-	token = GetToken[state["openedDocs"][msg["params"]["textDocument"]["uri"]], pos];
-	LogDebug @ ("Completion over token: " <> ToString[token, InputForm]);
-	genAssc[t_] := <|"label" -> t, "kind" -> TokenKind[t]|>;
-	
-	sendResponse[state["client"], <|
-		"id" -> msg["id"],
-		"result" -> <|
-			"isIncomplete" -> False, 
-			"items" -> genAssc /@ TokenCompletionList[token] 
-		|>
-	|>];
+
+	msg["params"]["context"]["triggerKind"]
+	// Replace[{
+		CompletionTriggerKind["Invoked"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> False, 
+					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
+				|>
+			|>]
+		),
+		CompletionTriggerKind["TriggerCharacter"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> True, 
+					"items" -> (
+						GetTriggerKeyCompletion[]
+						// ToAssociation
+					)
+				|>
+			|>]
+		),
+		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"isIncomplete" -> False,
+					"items" -> (
+						GetIncompleteCompletionAtPosition[doc, pos]
+						// ToAssociation
+					) 
+				|>
+			|>];
+		)
+	}];
+
 	
 	{"Continue", state}
-];
+]
 
 
 (* ::Subsection:: *)
-(*completion resolve*)
+(*completionItem/resolve*)
 
 
-(* TODO: There is little problem with the resolve floating window, so the picture is not complete. Only the reference is 
-provided her. *)
-handleRequest["completionItem/resolve", msg_, state_] := Module[
+handleRequest["completionItem/resolve", msg_, state_] := With[
 	{
-		token 
+		token = msg["params"]["label"],
+		type = msg["params"]["data"]["type"]
 	},
-	token = msg["params"]["label"];
-	LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]);
+
+	(* LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]); *)
 	
+	type
+	// Replace[{
+		"Alias" | "LongName" :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> msg["params"]
+			|>]
+		),
+		"Token" :> (
+			sendResponse[state["client"], <|
+				"id" -> msg["id"],
+				"result" -> <|
+					"label" -> token, 
+					"kind" -> TokenKind[token], 
+					"documentation" -> <|
+						"kind" -> "markdown",
+						"value" -> TokenDocumentation[token, "usage"]
+					|>
+				|>
+			|>]
+		)
+	}];
+	
+	{
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "JustContinue",
+			"scheduledTime" -> Now
+		|>]]
+	}
+]
+
+
+handleRequest["textDocument/documentSymbol", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
+		(* diagDelay = 3 *)
+	},
+	
+	(* LogDebug@ToAssociation@ToDocumentSymbol[doc]; *)
+
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"result" -> <|
-			"label" -> token, 
-			"kind" -> TokenKind[token], 
-			"documentation" -> <|
-				"kind" -> "markdown",
-				"value" -> TokenDocumentation[token]
-			|>
-		|>
+		"result" -> ToAssociation@ToDocumentSymbol[doc]
 	|>];
 	
-	{"Continue", state}
-];
+	{
+		"Continue",
+		state
+		(* // Curry[addScheduledTask][ServerTask[<|
+			"type" -> "RespondRequest",
+			"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
+			"params" -> msg
+		|>]] *)
+	}
+]
 
 
 (* ::Subsection:: *)
 (*Invalid Request*)
 
 
-handleRequest[_, msg_, state_] := Module[
-	{
-		responseMsg
-	},
-	
-	responseMsg = "The requested method " <> msg["method"] <> " is invalid or not implemented";
-	LogError[responseMsg];
-	LogDebug @ msg;
+handleRequest[_, msg_, state_] := (
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"error" -> ServerError["MethodNotFound", responseMsg]
+		"error" -> ServerError["MethodNotFound",
+			msg
+			// ErrorMessageTemplates["MethodNotFound"]
+			// LogError
+		]
 	|>];
+
 	{"Continue", state}
-];
+)
 
 
 (* ::Section:: *)
@@ -848,247 +903,210 @@ handleRequest[_, msg_, state_] := Module[
 
 
 (* ::Subsection:: *)
-(*Initialized*)
+(*initialized*)
 
 
-handleNotification["initialized", msg_, state_] := Module[
+handleNotification["initialized", msg_, state_] := (
 	{
-		newState = state
-	},
-	
-	newState = ReplaceKey[newState, "initialized" -> True];
-	{"Continue", newState}
-];
+		"Continue",
+		state
+		// ReplaceKey["initialized" -> True]
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "CheckUpgrades",
+			"scheduledTime" -> Now
+		|>]]
+	}
+)
 
 
 (* ::Subsection:: *)
-(*Exit*)
+(*exit*)
 
 
-handleNotification["exit", msg_, state_] := Module[
-	{
-
-	},
-	
+handleNotification["exit", msg_, state_] := (
 	{"Stop", state}
-];
+)
 
 
 (* ::Subsection:: *)
 (*$/cancelRequest*)
 
 
-handleNotification["$/cancelRequest", msg_, state_] := Module[
+handleNotification["$/cancelRequest", msg_, state_] := (
 	{
-		newState = state
-	},
-	
-	{"Continue", newState}
-];
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "CancelRequest",
+			"scheduledTime" -> Now,
+			"params" -> msg["params"]
+		|>]]
+	}
+)
 
 
 (* ::Subsection:: *)
-(*textSync/DidOpen*)
+(*textSync/didOpen*)
 
 
 (* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
-handleNotification["textDocument/didOpen", msg_, state_] := Module[
+handleNotification["textDocument/didOpen", msg_, state_] := With[
 	{
-		doc = msg["params"]["textDocument"], 
-		uri = msg["params"]["textDocument"]["uri"], 
-		newState = state, docs
+		textDocumentItem = TextDocumentItem[msg["params"]["textDocument"]]
 	},
 
-	LogDebug @ "Begin Handle DidOpen.";
 	(* get the association, modify and reinsert *)
-	docs = newState["openedDocs"];
-	docs~AssociateTo~(
-		uri -> CreateTextDocument[doc["text"], doc["version"]]
-	);
-	newState = ReplaceKey[newState, "openedDocs" -> docs];
-
-	sendResponse[state["client"], <|
-		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
-	|>];
-
-	{"Continue", newState}
-];
-
-
-
-(* ::Subsection:: *)
-(* textSync/DidClose *)
-
-
-handleNotification["textDocument/didClose", msg_, state_] := Module[
-	{
-		uri = msg["params"]["textDocument"]["uri"], 
-		newState = state, docs
-	},
-	(* get the association, modify and reinsert *)
-	docs = newState["openedDocs"];
-	docs~KeyDropFrom~uri;
-	newState = ReplaceKey[newState, "openedDocs" -> docs];
-	LogInfo @ ("Close Document " <> uri);
-	{"Continue", newState}
-];
-
-
-(* ::Subsection:: *)
-(* textSync/DidChange *)
-
-
-handleNotification["textDocument/didChange", msg_, state_] := Module[
-	{
-        doc = msg["params"]["textDocument"], uri=msg["params"]["textDocument"]["uri"], 
-		newState = state, contentChanges 
-	},
-	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	Assert[newState["openedDocs"][uri]["version"] == doc["version"] - 1];
-	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
-	newState = newState~ReplaceKey~({"openedDocs", uri, "version"} -> doc["version"]);
-	(* There are three cases, delete, replace and add. *)
-	contentChanges = ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}];
-	(* Apply all the content changes. *)
-	newState = ReplaceKey[newState, {"openedDocs", uri} -> Fold[ChangeTextDocument, newState["openedDocs"][uri], contentChanges]];
-	LogInfo @ ("Change Document " <> uri);
-	(* Give diagnostics in real-time *)
-	sendResponse[state["client"], <|
-		"method" -> "textDocument/publishDiagnostics", 
-		"params" -> newState["openedDocs"][uri]~diagnoseTextDocument~uri
-	|>];
-
-	{"Continue", newState}
-];
-
-
-handleContentChange[state_, contentChange_, uri_String] := Module[
-	{
-		newState = state, getPos, s, e
-	},
-	LogDebug @ "Begin handle content change.";
-	s = contentChange["range"] @ "start";
-	e = contentChange ["range"] @ "end";
-	(*helper function to get the absolute position*)
-	getPos[r_] :=  newState["openedDocs"][uri]["position"]~Part~(r["line"] + 1) + r["character"];
-	(* if new elements are added, the length is 0. *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", uri, "text"} -> (
-			(* Surprisingly, when the end is smaller than the start, the StringReplacePart would function as StringInsert. *)
-			StringReplacePart[newState["openedDocs"][uri]["text"], StringReplace[contentChange["text"], "\r\n" -> "\n"], {getPos[s], getPos[e] - 1}]
-		)
-	);
-	(* Update the position *)
-	newState = newState~ReplaceKey~(
-		{"openedDocs", uri, "position"} -> (
-	    	Prepend[(1 + #)& /@ First /@ StringPosition[newState["openedDocs"][uri]["text"], "\n"], 1]
-		)
-    );
-	newState
-];
-
-
-diagnoseTextDocument[doc_TextDocument, uri_String] := Module[
-	{
-		txt = doc["text"], start, end
-	},
-	
-	
-	txt
-	// ToCharacterCode
-	// FromCharacterCode
-	// StringToStream
-	// Block[
-	    {
-	        OpenRead = (#1&) (* read from streams instead of files *)
-	    },
-
-	    GeneralUtilities`Packages`PackagePrivate`findFileSyntaxErrors[#] (* find first error using internel funciton*)
-	]&
-    // Cases[
-        (GeneralUtilities`FileLine[_InputStream, line_Integer] -> error_String) :> ( (* if found an error *)
-            LogDebug @ "Found Syntax Error";
-            start = ToLspPosition[doc, Part[doc@"position", line]];
-            end = ToLspPosition[doc,
-                If[line == Length[doc@"position"],
-                    StringLength[txt], (* last char *)
-                    Part[doc@"position", line + 1] - 1 (* end of the line *)
-                ]
-            ];
-    		LogDebug @ "Error line: " <> GetLine[doc, line];
-        	<|
-				"range" -> <|
-	    		    "start" -> First @ start,
-	    		    "end" -> First @ end
-	    	    |>,
-	        	"severity" -> ToSeverity[error],
-	        	"source" -> "Wolfram",
-	        	"message" -> ErrorMessage[error]
-	        |>
-	    )
+	state
+	// ReplaceKeyBy["openedDocs" ->
+		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
 	]
-	// (<|
-		"uri" -> uri,
-		"diagnostics"  -> #1
-    |> &)
-];
+	// (newState \[Function] (
+		publishDiagnostics[newstate, textDocumentItem["uri"]];
+		{"Continue", newState}
+	))
+]
 
 
-ToSeverity[error_String] := (
-    Replace[error, {
-        (* error *)
-        "SyntaxError" -> "Error",
-        "Mismatched*" -> "Error",
-        "UnknownError" -> "Error",
-        (* warning *)
-        "ImplicitNull" -> "Warning",
-        "ImplicitTimes" -> "Warning",
-        "MissingDefinition" -> "Warning",
-        (* information *)
-        "MultilineAssociationSyntax" -> "Information",
-        "PackageDirectiveEndsInSemicolon" -> "Information",
-        _ -> "Information"
-    }] // DiagnosticSeverity
-);
+(* ::Subsection:: *)
+(*textSync/didClose*)
 
 
-ErrorMessage[error_String] := (
-    Replace[error, {
-        "SyntaxError" -> "The expression is incomplete.",
-        "MismatchedParenthesis" -> "The parenthesis \"()\" do not match",
-        "MismatchedBracket" -> "The bracket \"[]\" do not match",
-        "MismatchedBrace" -> "The brace \"{}\" do not match",
-        "UnknownError" -> "An unknown error is found.",
-        (* warning *)
-        "ImplicitNull" -> "Comma encountered with no adjacent expression. The expression will be treated as Null.",
-        "ImplicitTimes" -> "An implicit Times[] is found. Maybe you missed a semi-colon (\";\")?",
-        "MissingDefinition" -> "Cannoot not find the definition.",
-        (* information *)
-        "MultilineAssociationSyntax" -> "Multiline association syntax",
-        "PackageDirectiveEndsInSemicolon" -> "Package directive ends in semicolon.",
-        _ :> error
-    }]
-);
+handleNotification["textDocument/didClose", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+	
+	LogInfo @ ("Close Document " <> uri);
+	{"Continue", ReplaceKeyBy[state, {"openedDocs"} -> KeyDrop[uri]]}
+]
+
+
+(* ::Subsection:: *)
+(*textSync/didChange*)
+
+
+handleNotification["textDocument/didChange", msg_, state_] := With[
+	{
+        doc = msg["params"]["textDocument"],
+		uri = msg["params"]["textDocument"]["uri"],
+		diagDelay = 3
+	},
+
+	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
+	(* TODO: Use ShowMessage instead of Assert *)
+	With[
+		{
+			expectedVersion = state["openedDocs"][uri]["version"] + 1
+		},
+
+		If[expectedVersion != doc["version"],
+			showMessage[
+				StringJoin[
+					"The version number is not correct.\n",
+					"Expect version: ", ToString[expectedVersion], ", ",
+					"Actual version: ", ToString[doc["version"]], ".",
+					"Please restart the server."
+				],
+				"Error",
+				state
+			];
+			Return[{"Stop", state}]
+		]
+	];
+	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
+
+	LogDebug @ ("Change Document " <> uri);
+
+	state
+	// ReplaceKey[{"openedDocs", uri} -> (
+		(* Apply all the content changes. *)
+		Fold[
+			ChangeTextDocument,
+			state["openedDocs"][uri],
+			ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}]
+		]
+		// ReplaceKey["version" -> doc["version"]]
+	)]
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "JustContinue",
+		"scheduledTime" -> Now
+	|>]]
+	(* Give diagnostics in at least diagDelay seconds *)
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "PublishDiagnostics",
+		"params" -> uri,
+		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}]
+	|>]]
+	(* Clean the diagnostics given last time *)
+	// (newState \[Function] (
+		clearDiagnostics[newState, uri];
+		{"Continue", newState}
+	))
+
+]
+
+
+(* ::Subsection:: *)
+(*textSync/didSave*)
+
+
+handleNotification["textDocument/didSave", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	(* Give diagnostics after save *)
+	publishDiagnostics[state["client"], uri];
+
+	{"Continue", state}
+]
+
+
+diagnoseTextDocument[doc_TextDocument] := (
+	<|
+		"uri" -> doc["uri"],
+		"diagnostics" -> ToAssociation/@DiagnoseDoc[doc["uri"], doc]
+    |>
+)
+
+
+publishDiagnostics[state_WorkState, uri_String] := (
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> <|
+			"uri" -> uri,
+			"diagnostics" -> ToAssociation[DiagnoseDoc[state["openedDocs"][uri]]]
+		|>
+	|>]
+	(* Null *)
+)
+
+
+clearDiagnostics[state_WorkState, uri_String] := (
+	sendResponse[state["client"], <|
+		"method" -> "textDocument/publishDiagnostics", 
+		"params" -> <|
+			"uri" -> uri,
+			"diagnostics"  -> {}
+		|>
+	|>]
+)
 
 
 (* ::Subsection:: *)
 (*Invalid Notification*)
 
 
-handleNotification[_, msg_, state_] := Module[
-	{
-		responseMsg
-	},
-	
-	responseMsg = "The notification " <> msg["method"] <> " is invalid or not implemented";
-	LogError[responseMsg];
-	(*Echo @ msg;*)
+handleNotification[_, msg_, state_] := (
+	msg
+	// ErrorMessageTemplates["MethodNotFound"]
+	// LogError;
+
 	{"Continue", state}
-];
+)
 
 
-(* ::Subsection:: *)
+(* ::Section:: *)
 (*Send Message*)
 
 
@@ -1100,9 +1118,11 @@ MessageType = <|
 	"Debug" -> 4
 |>
 
-showMessasge[message_String, msgType_String, state_WorkState] := (
+showMessage[message_String, msgType_String, state_WorkState] := (
 	MessageType[msgType]
-	// Replace[type:Except[_?MissingQ] :> 
+	// Replace[_?MissingQ :> MessageType["Error"]]
+	// LogDebug
+	// (type \[Function] 
 		sendResponse[state["client"], <|
 			"method" -> "window/showMessage", 
 			"params" -> <|
@@ -1110,37 +1130,282 @@ showMessasge[message_String, msgType_String, state_WorkState] := (
 				"message" -> message
 			|>
 		|>]
-	]
+	)
+)
+
+logMessage[message_String, msgType_String, state_WorkState] := (
+	MessageType[msgType]
+	// Replace[_?MissingQ :> MessageType["Error"]]
+	// LogDebug
+	// (type \[Function] 
+		sendResponse[state["client"], <|
+			"method" -> "window/logMessage", 
+			"params" -> <|
+				"type" -> type,
+				"message" -> message
+			|>
+		|>]
+	)
 )
 
 
-(* ::Subsection:: *)
+(* ::Section:: *)
 (*Handle Error*)
 
 
-(* Error Message *)
-
-ServerError[errorType_String, msg_String] := Module[
-    {
-        errorCode
-    },
-    
-    errorCode = ErrorCodes[errorCode];
-    If[MissingQ[errorCode],
-        LogError["Invalid error type: " <> errorType];
-        errorCode = ErrorCodes["UnknownErrorCode"]
-    ];
-    
+ServerError[errorType_String, msg_String] := (
 	<|
-		"code" -> errorCode, 
+		"code" -> (
+			errorType
+			// ErrorCodes
+			// Replace[_?MissingQ :> (
+				LogError["Invalid error type: " <> errorType];
+				ErrorCodes["UnknownErrorCode"]
+			)]
+		), 
 		"message" -> msg
 	|>
-];
+)
+
+
+ErrorMessageTemplates = <|
+	"MethodNotFound" -> StringTemplate["The requested method `method` is invalid or not implemented"]
+|>
+
+
+(* ::Section:: *)
+(*ScheduledTask*)
+
+
+DeclareType[ServerTask, <|
+	"type" -> _String,
+	"params" -> _,
+	"scheduledTime" -> _DateObject
+|>]
+
+
+addScheduledTask[state_WorkState, task_ServerTask] := (
+	state["scheduledTasks"]
+	// Map[Key["scheduledTime"]]
+	// FirstPosition[_DateObject?(GreaterThan[task["scheduledTime"]])]
+	// Replace[{
+		_?MissingQ :> (
+			state
+			// ReplaceKeyBy["scheduledTasks" -> Append[task]]
+		),
+		{pos_Integer} :> (
+			state
+			// ReplaceKeyBy["scheduledTasks" -> Insert[task, pos]]
+		)
+	}] 
+)
+
+
+doNextScheduledTask[state_WorkState] := (
+	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
+	// Replace[{
+		_?MissingQ :> (
+			Pause[0.5];
+			state
+		),
+		task_ServerTask :> (
+			task["type"]
+			// LogDebug
+			// Replace[{
+				"PublishDiagnostics" :> (
+					publishDiagnostics[state, task["params"]];
+					state
+					// ReplaceKeyBy["scheduledTasks" -> DeleteCases[_?(t \[Function] (
+						t["type"] == "PublishDiagnostics" &&
+						t["scheduledTime"] < Now
+					))]]
+				),
+				"JustContinue" :> (
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),
+				"RespondRequest" :> (
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),  
+				"CancelRequest" :> (
+					state["scheduledTasks"]
+					// FirstPosition[_ServerTask?(t \[Function] (
+						t["type"] == "RespondRequest" &&
+						t["params"]["id"] == task["params"]["id"]
+					))]
+					// Replace[{ 
+						{pos_} :> (
+							sendResponse[state["client"], <|
+								"id" -> LogDebug@task["params"]["id"],
+								"error" -> ServerError[
+									"RequestCancelled",
+									"The request is cancelled."
+								]
+							|>];
+							state
+							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos] /* Rest)]
+						),
+						_?MissingQ :> (
+							state
+							// ReplaceKeyBy["scheduledTasks" -> Rest]
+						)
+					}]
+				),
+				"CheckUpgrades" :> (
+					state
+					// checkUpgrades;
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),
+				unknownTask_ :> (
+					Pause[0.5];
+					state
+				)
+			}]
+		)
+	}]
+)
 
 
 
 (* ::Section:: *)
 (*Misc*)
+
+
+(* ::Subsection:: *)
+(*load config*)
+
+
+loadConfig[] := With[
+	{
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+	},
+
+	If[FileExistsQ[configPath],
+		Import[configPath, "RawJSON"],
+		Export[configPath, defaultConfig, "RawJSON"];
+		defaultConfig
+	]
+]
+
+
+saveConfig[newConfig_Association] := With[
+	{
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+	},
+
+	Export[configPath, newConfig, "RawJSON"];
+
+]
+
+
+defaultConfig = <|
+	"lastCheckForUpgrade" -> DateString[Today],
+	"dependencies" -> {
+		{"AST", "0.11"},
+		{"Lint", "0.11"}
+	}
+|>
+
+
+(* ::Subsection:: *)
+(*check upgrades*)
+
+
+checkUpgrades[state_WorkState] := With[
+	{
+		checkInterval = Quantity[2, "Days"]
+	},
+
+	If[DateDifference[DateObject[state["config"]["lastCheckForUpgrade"]], Today] < checkInterval,
+		logMessage[
+			"Upgrade not checked, only a few days after the last check.",
+			"Log",
+			state
+		];
+		Return[]
+	];
+
+	(* check for upgrade if not checked for more than checkInterval days *)
+	checkGitRepo[state];
+	checkDependencies[state];
+
+	(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
+	// saveConfig *)
+
+]
+
+checkGitRepo[state_WorkState] := (
+	Check[Needs["GitLink`"],
+		showMessage[
+			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
+		showMessage[
+			"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
+		If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
+			logMessage[
+				"Upgrade not checked, the current branch is not 'master'.",
+				"Log",
+				state
+			],
+			GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
+			// Replace[
+				{_, _?Positive} :> (
+					showMessage[
+						"A new version detected, please close the server and use 'git pull' to upgrade.",
+						"Info",
+						state
+					]
+				)
+			]
+		]
+	];
+)
+
+
+checkDependencies[state_WorkState] := (
+	Check[Needs["PacletManager`"],
+		showMessage[
+			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
+			"Info",
+			state
+		];
+		Return[]
+	];
+
+	Table[
+		PacletManager`PacletInformation[depinfo]
+		// Replace[{
+			{} :> (StringRiffle[depinfo, "-"]),
+			_ :> (Nothing)
+		}],
+		{depinfo, state["config"]["dependencies"]}
+	] // Replace[{depInstalls__} :> (
+		showMessage[
+			StringJoin["These dependencies with correct versions need to be installed or upgraded: ",
+				StringRiffle[{depInstalls}, ", "], ", ",
+				"otherwise the server may malfunction. ",
+				"Please see the [Installation section](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) for details."
+			],
+			"Warning",
+			state
+		]
+	)];
+)
 
 
 WLServerVersion[] := WolframLanguageServer`Version;

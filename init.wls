@@ -32,7 +32,16 @@ WolframLanguageServer`RootDirectory = (
     }]
 );
 
-PrependTo[$Path, WolframLanguageServer`RootDirectory];
+WolframLanguageServer`DependencyDirectories = {
+    FileNameJoin[{WolframLanguageServer`RootDirectory, "external", "Matypetica", "src"}]
+}
+
+
+$Path = Join[
+    WolframLanguageServer`DependencyDirectories,
+    {WolframLanguageServer`RootDirectory},
+    $Path
+]
 
 
 (* ::Subsection:: *)
@@ -90,10 +99,6 @@ Options:
 
 "
     ];
-    (* "
-    Deprecated initializationOptions: 
-    \"theme\" = \"dark\"|\"light\"       // Specify the text color in pictures according to client theme (default: dark)
-    " *)
     Quit[];
 ];
 
@@ -134,7 +139,7 @@ Needs["WolframLanguageServer`Logger`"];
 
 Module[
     {
-        stream, logArgPos, loglevel, logstreams, clientPid, port, pipe,
+        stream, loglevel, logstreams, clientPid, port, pipe,
         ContextPattern, ExportedFunctions
     },
 
@@ -167,7 +172,7 @@ Module[
     }];
 
     loglevel = ArgumentValue["--log"|"-l", Alternatives @@ LoggingLevels]
-        // Replace[_Missing -> "debug"];
+        // Replace[_Missing -> "info"];
 
     (*stream = ArgumentValue["--stream"|"-s", "stdio"|"socket"]
         // Replace[_Missing, "stdio"];*)

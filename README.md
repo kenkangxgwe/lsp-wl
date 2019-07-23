@@ -33,7 +33,7 @@ with addition power from the editor.
 We have provided the client-side code for VS Code [here](https://github.com/kenkangxgwe/vscode-lsp-wl), which is based on some slight
 modifications of [Microsoft's LSP
 example](https://github.com/Microsoft/vscode-extension-samples/tree/master/lsp-sample).
-If you are using other tools supporting LSP, some slight modifications to the
+If you are using other editors supporting LSP, some adaptation to the
 client would certainly work too.
 
 ## Installation
@@ -42,13 +42,19 @@ client would certainly work too.
     name="ref1"></a>[<sup>1</sup>](#footnote1)) or [Wolfram
     Engine](https://www.wolfram.com/engine/) (12.0 or higher).
 
-1. Use git to clone this repository.
+1. Use git to clone this repository.  
+    ``` sh
+    git clone https://github.com/kenkangxgwe/lsp-wl.git
+    ```
 
-  ``` sh
-  git clone https://github.com/kenkangxgwe/lsp-wl.git
-  ```
+2. Install the dependent paclets with the correct versions from the Wolfram kernel / Mathematica.
+(_This will cost some time for the first time_) :  
+    ``` mathematica
+    PacletInstall[{"AST", "0.11"}, "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
+    PacletInstall[{"Lint", "0.11"}, "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
+    ```
 
-2. Install the client. Currently, we provide the VS Code extension on [Visual
+3. Install the client. Currently, we provide the VS Code extension on [Visual
 Studio Marketplace: Wolfram Language Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
 
 ## Run the Server
@@ -88,28 +94,52 @@ This is a good way to see the results from the unit tests.
 
 ## Features
 
-- *Hover:* Provide definitions for Wolfram functions and system variables, such
-  as `String` and `$Path`.
-
-![hover](images/hover.png)
-
-- *Completion:* The completion is triggered by the client automatically.
-  Currently, Wolfram functions and system variables would be displayed.
-
-- *Completion Resolve:* Further information would be provided for the items in
-  the list.
-
-![completion](images/completion.png)
-
-- *Diagnostics:* Syntax error would be underlined. However, the specific syntax
-  error is not supported at the moment.
-
-![diagnostics](images/diagnostics.png)
+- **DocumentSymbol:** You may typeset your package in the same way that
+  Mathematica FrontEnd handles it: a cell begins with two lines of comments,
+  where the first line specifies the style of the cell and the second line names it.
+  So you may get the outline structure of the file.
   
-This is an early release, so more features are on the way. Syntax highlight is
-NOT supported according to the design of LSP, but there are already some good
-enough extensions like [Wolfram
-Language](https://marketplace.visualstudio.com/items?itemName=flipphillips.wolfram-language).
+  ``` mathematica
+  (* ::Title:: *)
+  (*Title of the file*)
+
+  (* ::Section:: *)
+  (*Section 1*)
+  ```
+  
+  ![documentSymbol](images/documentSymbol.png)
+
+- **Hover:** Provide documentations for functions and variables from the
+  ``System` `` context, such as `String` and `$Path`, the `MessageName` and
+  the special numerical literals with `^^` or `*^`.
+
+  ![hover](images/hover.png)
+
+- **Completion:** The completion is shown by the client automatically.
+  Functions and system variables from the ``System` `` context that matches the
+  input would be displayed. To enter an unicode character, you may use the
+  leader key <kbd>\\</kbd> followed by the alias just like <kbd>esc</kbd> in
+  Wolfram FrondEnd. E.g., `<esc>a` in the FrontEnd is input as `\a` in the
+  editor and the server will show you the available completions.
+
+  ![completion-unicode](images/completion_alias.png)
+
+- **Completion Resolve:** Further information (such as documentation) would be
+  provided for the items in the list.
+
+  ![completion](images/completion.png)
+
+- **Diagnostics:** Syntax error would be underlined. This feature is powered by
+  Brenton's `AST` and `Lint` paclets, thank you
+  [@bostick](https://github.com/bostick).
+
+  ![diagnostics](images/diagnostics.png)
+
+
+This is an early release, so more features are on the way. Notice that,
+syntax highlight will not be provided as long as it is excluded in the LSP,
+but I believe there are plenty of good Mathematica highlighter available for
+your editor.
 
 Here is a full list of [LSP features](https://microsoft.github.io/language-server-protocol/specification).
 
@@ -124,12 +154,13 @@ Here is a full list of [LSP features](https://microsoft.github.io/language-serve
 2. We implemented an stateless server in ``WolframLanguageServer`Server` `` that
    will parse and handle the messages.
 
-3. ``WolframLanguageServer`DataType` `` is a simple type system
-   that supports pattern test on every field of a class. The operations on the
-   objects are designed to be immutable.
+3. ``DataType` `` is a simple type system now extracted as a independent
+  package in the [Matypetica](https://github.com/kenkangxgwe/Matypetica)
+  library that supports pattern test on every field of a class. The operations
+  on the objects are designed to be immutable.
    
 4. ``WolframLanguageServer`Test`* `` stores the unit tests for some of
-   the packages.
+   the functions.
    
 ### Todo list
 
@@ -139,16 +170,19 @@ It will be nice if you want to make a contribution to the following topic.
   tried to use ZMQ_Stream protocol and `SocketListen[]` to enable concurrency,
   but it fails to send responses back to the client.
   
-* It will be helpful to implement a stdio channel, so that the Mathematica
-  earlier than 11.2 will also be supported.
+* It will be helpful to implement a stdio channel, ~so that the Mathematica
+  earlier than 11.2 will also be supported,~ but it is really hard to expose
+  the `stdin` channel. Hope this will be dicussed in future release of Wolfram
+  kernel.
 
 * More editor clients are needed. You can feel free to open a repository and
-  create a pull request to add the clients in README.md once your client is released.
-  
-* A scanner/parser might be needed to extract tokens for future usage. We have
-  investigated serveral implementations in other languages, but we are still
-  prefer a wolfram language scanner/parser written in wolfram language and can
-  be easily integrated into this project.
+  create a pull request to add the clients in README.md once your client is
+  released.
+
+* Thanks to Brenton's `AST` and `Lint` paclets, we are able to parse the code
+  and extract useful information. If you have an idea about how to use these
+  fantastic syntax tools to help the language server add more features, please
+  send us issues or pull requests.
 
 If you want to help us with this project, feel free to fork and create a pull
 request. Do not forget to add unit tests if possible.
@@ -167,5 +201,4 @@ thanks in advance :smile:.
 ## Footnotes
 
 <a name="footnote1"> </a> **[1]** `SocketListen[]` is used for server-client
-communication, which is introduced since 11.2. We plan to support stdio for
-better compatibility. [^](#ref1)
+communication, which is introduced since 11.2. [^](#ref1)
