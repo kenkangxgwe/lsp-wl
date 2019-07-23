@@ -602,11 +602,14 @@ constructRPCBytes[msg_Association] := Module[
 
 
 getContentLength[header_ByteArray] := getContentLength[ByteArrayToString[header, "ASCII"]];
-getContentLength[header_String] := (header // StringCases[RPCPatterns["ContentLengthRule"]] 
-// Replace[{
-    {len_String} :> LogDebug@ToExpression[len],
-    _ :> (LogError["Unknown header: " <> header]; Quit[1])
-}])
+getContentLength[header_String] := (
+	header
+	// StringCases[RPCPatterns["ContentLengthRule"]]
+	// Replace[{
+		{len_String} :> ToExpression[len],
+		_ :> (LogError["Unknown header: " <> header]; Quit[1])
+	}]
+)
 
 
 (* :: Section:: *)
@@ -642,9 +645,9 @@ handleMessage[msg_Association, state_WorkState] := Module[
 	method = msg["method"];
 	Replace[method, {
 	    "textDocument/didOpen" | "textDocument/didChange" :> (
-	        LogInfo @ Iconize[method]
+	        LogDebug @ Iconize[method]
 	    ),
-	    _ :> LogInfo @ Iconize[msg, method]
+	    _ :> LogDebug @ Iconize[msg, method]
 	}];
 	
 	Which[
@@ -678,7 +681,7 @@ handleMessage[msg_Association, state_WorkState] := Module[
 (* Both response and notification will call this function *)
 sendResponse[client_, res_Association] := (
 	Prepend[res, <|"jsonrpc" -> "2.0"|>]
-	// LogInfo
+	// LogDebug
 	// constructRPCBytes
 	// WriteMessage[client]
 )
