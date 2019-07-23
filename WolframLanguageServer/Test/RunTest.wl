@@ -5,7 +5,7 @@ Construct[ClearAll, Context[] <> "*"];
 
 
 TestContexts = {
-	"WolframLanguageServer`Test`DataTypeTest`",
+	(* "WolframLanguageServer`Test`DataTypeTest`", *)
 	"WolframLanguageServer`Test`TextDocumentTest`"
 };
 TestRunContext::usage = "Run tests for given context.";
