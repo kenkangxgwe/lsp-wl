@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Document structure is provided in DocumentSymbol. (Thanks to Brenton's `AST` package)
+- Hovering for `MessageName` and numeral literals.
 - Completion for both aliases and long names of the unicode characters (with leader key <kbd>\\</kbd>).
 - Auto check for upgrades and dependencies.
 

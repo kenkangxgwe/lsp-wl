@@ -110,7 +110,8 @@ This is a good way to see the results from the unit tests.
   ![documentSymbol](images/documentSymbol.png)
 
 - **Hover:** Provide documentations for functions and variables from the
-  ``System` `` context, such as `String` and `$Path`.
+  ``System` `` context, such as `String` and `$Path`, the `MessageName` and
+  the special numerical literals with `^^` or `*^`.
 
   ![hover](images/hover.png)
 
