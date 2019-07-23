@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2019-07-23 🏖️
+
+### Added
+
+- Document structure is provided in DocumentSymbol. (Thanks to Brenton's `AST` package)
+- Completion for both aliases and long names of the unicode characters (with leader key <kbd>\\</kbd>).
+- Auto check for upgrades and dependencies.
+
+### Changed
+
+- Using Brenton's `Lint` package to diagnose the document.
+- Documentations now have a better format with code block (in hovers and completions).
+- Diagnostics are published schedulely.
+
+### Fixed
+
+- High CPU usage when reading message via sockets under Linux. (Thanks to @meatron0000)
+
+### Known Issues
+
+- Some of the documentations was not transcribed correctly into Markdown format, see issues. 
+
 ## [0.1.2] - 2019-05-15
 
 ### Added
