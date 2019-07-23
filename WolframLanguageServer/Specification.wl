@@ -152,13 +152,25 @@ Needs["DataType`"]
 (* ::Section:: *)
 (*Server Communication Related Type*)
 
-DeclareType[LspPosition, <|"line" -> _Integer, "character" -> _Integer|>]
+DeclareType[LspPosition, <|
+    "line" -> _Integer,
+    "character" -> _Integer
+|>]
 
-DeclareType[LspRange, <|"start" -> _LspPosition, "end" -> _LspPosition|>]
+DeclareType[LspRange, <|
+    "start" -> _LspPosition,
+    "end" -> _LspPosition
+|>]
 
-DeclareType[LspLocation, <|"uri" -> _DocumentUri, "range" -> _LspRange|>]
+DeclareType[LspLocation, <|
+    "uri" -> _DocumentUri,
+    "range" -> _LspRange
+|>]
 
-DeclareType[TextEdit, <|"range" -> LspRange, "newText" -> _String|>]
+DeclareType[TextEdit, <|
+    "range" -> _LspRange,
+    "newText" -> _String
+|>]
 
 DeclareType[TextDocumentItem, <|
     "uri" -> _DocumentUri,
@@ -167,7 +179,11 @@ DeclareType[TextDocumentItem, <|
     "text" -> _String
 |>]
 
-DeclareType[TextDocumentContentChangeEvent, <|"range" -> _LspRange, "rangeLength" -> _Integer, "text" -> _String|>]
+DeclareType[TextDocumentContentChangeEvent, <|
+    "range" -> _LspRange,
+    "rangeLength" -> _Integer,
+    "text" -> _String
+|>]
 
 DeclareType[MarkupContent, <|
     "kind" -> _String,
