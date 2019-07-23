@@ -855,6 +855,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 	{
 		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
+		(* diagDelay = 3 *)
 	},
 	
 	(* LogDebug@ToAssociation@ToDocumentSymbol[doc]; *)
@@ -864,7 +865,15 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 		"result" -> ToAssociation@ToDocumentSymbol[doc]
 	|>];
 	
-	{"Continue", state}
+	{
+		"Continue",
+		state
+		(* // Curry[addScheduledTask][ServerTask[<|
+			"type" -> "RespondRequest",
+			"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
+			"params" -> msg
+		|>]] *)
+	}
 ]
 
 
@@ -900,7 +909,7 @@ handleNotification["initialized", msg_, state_] := (
 		state
 		// ReplaceKey["initialized" -> True]
 		// Curry[addScheduledTask][ServerTask[<|
-			"type" -> "checkUpgrades",
+			"type" -> "CheckUpgrades",
 			"scheduledTime" -> Now
 		|>]]
 	}
@@ -921,7 +930,15 @@ handleNotification["exit", msg_, state_] := (
 
 
 handleNotification["$/cancelRequest", msg_, state_] := (
-	{"Continue", state}
+	{
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "CancelRequest",
+			"scheduledTime" -> Now,
+			"params" -> msg["params"]
+		|>]]
+	}
 )
 
 
@@ -969,7 +986,7 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
         doc = msg["params"]["textDocument"],
 		uri = msg["params"]["textDocument"]["uri"],
-		diagDelay = 1
+		diagDelay = 3
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
@@ -1190,6 +1207,7 @@ doNextScheduledTask[state_WorkState] := (
 		),
 		task_ServerTask :> (
 			task["type"]
+			// LogDebug
 			// Replace[{
 				"PublishDiagnostics" :> (
 					publishDiagnostics[state, task["params"]];
@@ -1203,7 +1221,35 @@ doNextScheduledTask[state_WorkState] := (
 					state
 					// ReplaceKeyBy["scheduledTasks" -> Rest]
 				),
-				"checkUpgrades" :> (
+				"RespondRequest" :> (
+					state
+					// ReplaceKeyBy["scheduledTasks" -> Rest]
+				),  
+				"CancelRequest" :> (
+					state["scheduledTasks"]
+					// FirstPosition[_ServerTask?(t \[Function] (
+						t["type"] == "RespondRequest" &&
+						t["params"]["id"] == task["params"]["id"]
+					))]
+					// Replace[{ 
+						{pos_} :> (
+							sendResponse[state["client"], <|
+								"id" -> LogDebug@task["params"]["id"],
+								"error" -> ServerError[
+									"RequestCancelled",
+									"The request is cancelled."
+								]
+							|>];
+							state
+							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos] /* Rest)]
+						),
+						_?MissingQ :> (
+							state
+							// ReplaceKeyBy["scheduledTasks" -> Rest]
+						)
+					}]
+				),
+				"CheckUpgrades" :> (
 					state
 					// checkUpgrades;
 					state
