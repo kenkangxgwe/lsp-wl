@@ -47,7 +47,7 @@ client would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct version from the Wolfram kernel / Mathematica.
+2. Install the dependent paclets with the correct versions from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
     PacletInstall[{"AST", "0.11"}, "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
@@ -94,7 +94,7 @@ This is a good way to see the results from the unit tests.
 
 ## Features
 
-- *DocumentSymbol* You may typeset your package in the same way that
+- **DocumentSymbol:** You may typeset your package in the same way that
   Mathematica FrontEnd handles it: a cell begins with two lines of comments,
   where the first line specifies the style of the cell and the second line names it.
   So you may get the outline structure of the file.
@@ -109,25 +109,26 @@ This is a good way to see the results from the unit tests.
   
   ![documentSymbol](images/documentSymbol.png)
 
-- *Hover:* Provide documentations for functions and variables from the
+- **Hover:** Provide documentations for functions and variables from the
   ``System` `` context, such as `String` and `$Path`.
 
   ![hover](images/hover.png)
 
-- *Completion:* The completion is triggered by the client automatically.
+- **Completion:** The completion is shown by the client automatically.
   Functions and system variables from the ``System` `` context that matches the
-  input would be displayed. Also, the aliasas and the long names for unicode
-  characters are also supported, which you would like to use <kbd>\\</kbd> as
-  the leader key.
+  input would be displayed. To enter an unicode character, you may use the
+  leader key <kbd>\\</kbd> followed by the alias just like <kbd>esc</kbd> in
+  Wolfram FrondEnd. E.g., `<esc>a` in the FrontEnd is input as `\a` in the
+  editor and the server will show you the available completions.
 
   ![completion-unicode](images/completion_alias.png)
 
-- *Completion Resolve:* Further information (such as documentation) would be
+- **Completion Resolve:** Further information (such as documentation) would be
   provided for the items in the list.
 
   ![completion](images/completion.png)
 
-- *Diagnostics:* Syntax error would be underlined. This feature is powered by
+- **Diagnostics:** Syntax error would be underlined. This feature is powered by
   Brenton's `AST` and `Lint` paclets, thank you
   [@bostick](https://github.com/bostick).
 
@@ -199,5 +200,4 @@ thanks in advance :smile:.
 ## Footnotes
 
 <a name="footnote1"> </a> **[1]** `SocketListen[]` is used for server-client
-communication, which is introduced since 11.2. We plan to support stdio for
-better compatibility. [^](#ref1)
+communication, which is introduced since 11.2. [^](#ref1)

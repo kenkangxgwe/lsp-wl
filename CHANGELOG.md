@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- High CPU usage when reading message via sockets under Linux. (Thanks to @meatron0000)
+- High CPU usage when reading message via sockets under Linux.  
+  (Reported by [@kc9jud](https://github.com/kc9jud) and solution suggested by
+  [@megatron0000](https://github.com/megatron0000))
 
 ### Known Issues
 
