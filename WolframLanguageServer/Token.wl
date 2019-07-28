@@ -55,7 +55,8 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             /* MapAt[GenMarkdownText, {All, 2}]
                             /* Flatten /* DeleteCases[""],
                             GenPlainText
-                        ]
+                        ],
+                        GenFooter[token]
                     } // Flatten
                     // Curry[StringRiffle]["\n\n"]
                 ),
@@ -131,16 +132,13 @@ GenHeader[token_String, tag_String] := (
     tag
     // Replace[{
         "usage" :> (
-            StringJoin[
-                "**", token, "**",
-                (* "[**", token, "**]", *)
-                (* "(", URLBuild[<|
-                    "Scheme" -> "command", 
-                    "Path" -> "WolframLanguageServer.openRef", 
-                    "Query" -> <|"name" -> token, "tag" -> tag|>
-                |>], ")", *)
-                "\t", GetUri[token, tag], "\n"
-            ]
+            token
+            // {
+                Identity,
+                Curry[GetUri][tag],
+                GenAttributes
+            } // Through
+            // Apply[StringTemplate["**`1`**&nbsp;`2`&emsp;(_`3`_)\n"]]
         ),
         _ :> (
             StringJoin[
@@ -165,6 +163,29 @@ GetUri[token_String, tag_String] := (
         )
     }]
 )
+
+
+GenAttributes[token_String] := (
+    Attributes[token]
+    // Replace[_Attributes -> {}]
+    // Curry[StringRiffle][", "]
+)
+
+GenFooter[token_String] := ({
+    token
+    // StringTemplate["Options[``]"]
+    // ToExpression
+    // Replace[_Options -> {}]
+    // Map[Curry[ToString][InputForm]]
+    // Replace[{options__} :> (
+        {
+            "__Options:__",
+            "``` mathematica",
+            options,
+            "```"
+        } // Curry[StringRiffle]["\n"]
+    )]
+})
 
 
 GenPlainText[boxText_String] := (
