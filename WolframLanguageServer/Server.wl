@@ -538,7 +538,7 @@ InputBinary[] := (LogDebug["waiting for input"];a=Import["!D:\\Programs\\msys64\
 (*WriteMessage*)
 
 
-WriteMessage[client_SocketClient][msglist:{_ByteArray..}] := Module[
+WriteMessage[client_SocketClient][msglist:{__ByteArray}] := Module[
 	{
 		targetsocket
 	},
@@ -563,13 +563,13 @@ WriteMessage[client_NamedPipe][msglist:{header_ByteArray, content_ByteArray}] :=
 ]
 
 
-WriteMessage[client_SocketObject][msglist:{_ByteArray..}] := (
+WriteMessage[client_SocketObject][msglist:{__ByteArray}] := (
     BinaryWrite[client, First@msglist];
     BinaryWrite[client, Last@msglist];
 );
 
 
-WriteMessage["stdio"][msglist:{_ByteArray..}] := (
+WriteMessage["stdio"][msglist:{__ByteArray}] := (
     BinaryWrite[OutputStream["stdout",1], First@msglist];
     BinaryWrite[OutputStream["stdout",1], Last@msglist];
 );
@@ -590,15 +590,30 @@ RPCPatterns = <|
 |>;
 
 
-constructRPCBytes[msg_Association] := Module[
-	{
-		headerBytes, jsonBytes
-	},
-	
-	jsonBytes = ExportByteArray[msg, "RawJSON"];
-	headerBytes = StringToByteArray["Content-Length: " <> ToString[Length[jsonBytes]] <> "\r\n\r\n"];
-	{headerBytes, jsonBytes}
-];
+constructRPCBytes[msg_Association] := (
+	Check[
+		ExportByteArray[msg, "RawJSON"],
+		(*
+			if the result is not able to convert to JSON,
+			returns an error respond
+		*)
+		ExportByteArray[
+			msg
+			// KeyDrop["result"]
+			// Append["error" -> ServerError[
+				"InternalError",
+				"The request is not handled correctly."
+			]],
+		"RawJSON"]
+	] // {
+		(* header *)
+		Length
+		/* StringTemplate["Content-Length: `1`\r\n\r\n"]
+		/* StringToByteArray,
+		(* content *)
+		Identity
+	} // Through
+)
 
 
 getContentLength[header_ByteArray] := getContentLength[ByteArrayToString[header, "ASCII"]];
