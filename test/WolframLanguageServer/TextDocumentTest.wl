@@ -1,23 +1,18 @@
 (* ::Package:: *)
 
-BeginPackage["WolframLanguageServer`Test`TextDocumentTest`"];
-Construct[ClearAll, Context[] <> "*"];
+BeginPackage["WolframLanguageServer`TextDocumentTest`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
-
-Begin["`Private`"];
-
-
-TestedContext = "WolframLanguageServer`TextDocument`";
-Tests::usage = StringTemplate["Tests for `` context."][TestedContext];
-Needs[TestedContext];
+TestingContext = "WolframLanguageServer`TextDocument`"
+CurrentContext = "WolframLanguageServer`TextDocumentTest`"
+Needs[TestingContext]
 Needs["DataType`"]
 Needs["WolframLanguageServer`Specification`"]
-
-
-Construct[ClearAll, Context[] <> "*"];
 
 
 sampleCode = "\
@@ -109,13 +104,13 @@ VerificationTest[
 	TestID -> "ChangeTextDocument2"
 ]
 
-
-};
-
-Sow[#, "WolframLanguageServer`Test`TextDocumentTest`"]& /@ Tests;
+}
 
 
-End[];
+Sow[#, CurrentContext]& /@ Tests
 
 
-EndPackage[];
+End[]
+
+
+EndPackage[]

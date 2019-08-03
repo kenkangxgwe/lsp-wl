@@ -1,12 +1,12 @@
 (* ::Package:: *)
 
-BeginPackage["WolframLanguageServer`Test`RunTest`"];
+BeginPackage["RunTest`"];
 Construct[ClearAll, Context[] <> "*"];
 
 
 TestContexts = {
-	(* "WolframLanguageServer`Test`DataTypeTest`", *)
-	"WolframLanguageServer`Test`TextDocumentTest`"
+	"DataTypeTest",
+	"WolframLanguageServer`TextDocumentTest`"
 };
 TestRunContext::usage = "Run tests for given context.";
 TestRunAll::usage = "Run tests for all the contexts below:\n\t" <> StringRiffle[TestContexts, "\n\t"];
@@ -21,7 +21,7 @@ TestRunAll[] := Column[TestRunContext /@ (TestContexts)];
 
 TestRunContext[context_String] := Module[
 	{
-		report
+
 	},
 	Reap[Get[context], context, Rule]
 	// Replace[{_, {ctx_ -> tests_}} :> ShowTestReport[TestReport[tests], ctx]]

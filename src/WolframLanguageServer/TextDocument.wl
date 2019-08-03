@@ -117,7 +117,7 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
 
 
 (* ::Section:: *)
-(*DivideCells*)
+(*CodeCells*)
 
 
 (* ::Subsection:: *)
@@ -309,6 +309,39 @@ HeadingLevel = <|
 ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // EqualTo["wls"]
 
 
+CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
+    Take[doc["text"], {startLine, endLine}]
+    // Curry[StringRiffle]["\n"]
+    // ((StringRepeat["\n", startLine - 1] <> #)&)
+    // Curry[AST`ConcreteParseString][First]
+    // Map[AST`Abstract`Abstract]
+)
+
+
+(* ::Section:: *)
+(*AST utils*)
+
+
+SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
+    LspRange[<|
+        "start" -> LspPosition[<|
+            "line" -> (startLine - 1),
+            "character" -> (startCol - 1)
+        |>],
+        "end" -> LspPosition[<|
+            "line" -> (endLine - 1),
+            "character" -> endCol
+        |>]
+    |>]
+)
+
+
+lhsQ[node_] := (
+    FreeQ[node, _AST`AbstractSyntaxErrorNode] &&
+    MatchQ[FirstPosition[node, _AST`SymbolNode], {(1)...}]
+)
+
+
 (* ::Section:: *)
 (*documentSymbol*)
 
@@ -337,11 +370,57 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             ],
             "range" -> ToLspRange[doc, node["range"]],
             "selectionRange" -> node["selectionRange"],
-            "children" -> If[!MissingQ[node["children"]],
-                Curry[ToDocumentSymbolImpl, 2][doc] /@ node["children"],
-                {}
+            "children" -> Join[
+                If[!MissingQ[node["codeRange"]],
+                    node["codeRange"]
+                    // Map[Curry[CellToAST, 2][doc]]
+                    // Flatten
+                    // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                    {}
+                ],
+                If[!MissingQ[node["children"]],
+                    node["children"]
+                    // Map[child \[Function] (
+                        ToDocumentSymbolImpl[doc, child]
+                    )],
+                    {}
+                ]
             ]
-        |>])
+        |>]),
+        AST`CallNode[
+            AST`SymbolNode[Symbol, op:("SetDelayed"|"Set"), _],
+            {head_?lhsQ, rest__},
+            data_Association
+        ] :> (
+            (* LogDebug[node]; *)
+            DocumentSymbol[<|
+                "name" -> (
+                    FirstCase[head, AST`SymbolNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                ),
+                "detail" -> (op),
+                "kind" -> If[op == "Set",
+                    SymbolKind["Variable"],
+                    SymbolKind["Function"]
+                ],
+                "range" -> (
+                    data
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "selectionRange" -> (
+                    head
+                    // Last
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "children" -> (
+                    lhsNode[head]
+                    // Curry[ToDocumentSymbolImpl, 2][doc]
+                )
+            |>]
+        ),
+        lhsNode[caller_, {callees__}, _] :> (Null),
+        _ :> (LogDebug[node];Nothing)
     }]
 
 ]
@@ -387,6 +466,7 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
     // SelectFirst[Curry[Between, 2][line]]
     // Replace[{
         lineRange:{rangeStartLine_Integer, _Integer} :> (
+            (* TODO: use CellToAST *)
             {
                 (* get the AST *)
                 Take[doc["text"], lineRange]
@@ -408,9 +488,12 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
             } // Through
             // {
                 Apply[getHoverText],
-                Apply[getHoverRange]
+                Apply[Extract]
+                /* Last
+                /* Key[AST`Source]
                 /* Replace[{
-                    {} :> Nothing,
+                    {} -> Nothing,
+                    (* TODO: use SourceToRange *)
                     {{startLine_, startCol_}, {endLine_, endCol_}} :> (
                         LspRange[<|
                             "start" -> LspPosition[<|
@@ -470,11 +553,6 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
         }]]
     })
 ]
-
-
-(* getHoverRange[_, _?MissingQ] := {} *)
-getHoverRange[ast_List, indices_List] := 
-    Extract[ast, indices] // Last // Key[AST`Source]
 
 
 printHoverText[hoverText_List, range_LspRange:Automatic] := (
