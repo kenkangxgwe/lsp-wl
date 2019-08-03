@@ -143,6 +143,12 @@ Running tests for all.
 
 Needs["WolframLanguageServer`Logger`"];
 
+If[$VersionNumber < 11.3,
+    (* load myCurry *)
+    Needs["MyCurry`"];
+    System`Curry = MyCurry`MyCurry
+]
+
 Module[
     {
         stream, loglevel, logstreams, clientPid, port, pipe,
