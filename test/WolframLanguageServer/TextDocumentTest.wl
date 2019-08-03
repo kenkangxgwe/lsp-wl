@@ -34,7 +34,7 @@ sampleTextDoc = TextDocument[<|
 |>]
 
 
-Tests := {
+{
 
 VerificationTest[
 	sampletextdoc = CreateTextDocument[
@@ -104,10 +104,7 @@ VerificationTest[
 	TestID -> "ChangeTextDocument2"
 ]
 
-}
-
-
-Sow[#, CurrentContext]& /@ Tests
+} // Map@Curry[Sow]@CurrentContext
 
 
 End[]

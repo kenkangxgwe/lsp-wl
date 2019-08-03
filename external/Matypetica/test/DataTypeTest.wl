@@ -1,19 +1,19 @@
 (* ::Package:: *)
 
 BeginPackage["DataTypeTest`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
 Begin["`Private`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TestedContext = "DataType`"
-(*Tests::usage = StringTemplate["Tests for `` context."][TestedContext];*)
-Needs[TestedContext]
+TestingContext = "DataType`"
+CurrentContext = "DataTypeTest`"
+Needs[TestingContext]
 
 
-Tests = {
+{
 
 VerificationTest[
 	AssociationSameQ @@@ {
@@ -250,9 +250,7 @@ VerificationTest[
     TestID -> "Type usage 2"
 ]
 
-}
-
-Sow[#, "WolframLanguageServer`Test`DataTypeTest`"]& /@ Tests
+} // Map@Curry[Sow]@CurrentContext
 
 
 End[]
