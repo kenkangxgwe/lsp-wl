@@ -26,7 +26,6 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
-Needs["GeneralUtilities`"]
 
 
 (* ::Section:: *)
@@ -1004,11 +1003,10 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
         doc = msg["params"]["textDocument"],
 		uri = msg["params"]["textDocument"]["uri"],
-		diagDelay = 3
+		diagDelay = 1
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	(* TODO: Use ShowMessage instead of Assert *)
 	With[
 		{
 			expectedVersion = state["openedDocs"][uri]["version"] + 1
@@ -1075,6 +1073,10 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 
 	{"Continue", state}
 ]
+
+
+(* ::Subsection:: *)
+(*textDocument/publishDiagnostics*)
 
 
 diagnoseTextDocument[doc_TextDocument] := (
@@ -1228,12 +1230,25 @@ doNextScheduledTask[state_WorkState] := (
 			// LogDebug
 			// Replace[{
 				"PublishDiagnostics" :> (
-					publishDiagnostics[state, task["params"]];
 					state
+					(* delete all same tasks out of date *)
 					// ReplaceKeyBy["scheduledTasks" -> DeleteCases[_?(t \[Function] (
 						t["type"] == "PublishDiagnostics" &&
-						t["scheduledTime"] < Now
+						t["scheduledTime"] < Now &&
+						t["params"] == task["params"]
 					))]]
+					// (newState \[Function] (
+						newState["scheduledTasks"]
+						// Count[_?(t \[Function] (
+							t["type"] == "PublishDiagnostics" &&
+							t["params"] == task["params"]
+						))]
+						// Replace[{
+							(* if there will not be a same task in the future, do it now *)
+							0 :> (publishDiagnostics[state, task["params"]])
+						}];
+						newState
+					))
 				),
 				"JustContinue" :> (
 					state
