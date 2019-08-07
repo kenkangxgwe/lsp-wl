@@ -10,7 +10,7 @@ BeginPackage["WolframLanguageServer`TextDocument`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TextDocument::usage = "is the type of the text document.";
+TextDocument::usage = "is the type of the text document."
 CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentItem] returns a TextDocument object"
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
@@ -217,7 +217,7 @@ divideCells[doc_TextDocument] := (
         "style" -> AdditionalStyle["File"],
         "name" -> "",
         "range" -> {1, Infinity},
-        "codeRange" -> {{1, Infinity}},
+        "codeRange" -> {{If[doc@"text" // First // StringStartsQ["#!"], 2, 1], Infinity}},
         "children" -> {}
     |>]]
     // Fold[InsertCell]
@@ -293,6 +293,7 @@ NodeContainsPosition[node_, {line_Integer, col_Integer}] := With[
 ]
 
 
+HeadingCellQ[cellNode_CellNode] := HeadingQ[cellNode["style"]]
 HeadingQ[style:(_String|_AdditionalStyle)] := KeyMemberQ[HeadingLevel, style]
 HeadingLevel = <|
     "Title" -> 1,
@@ -342,6 +343,24 @@ lhsQ[node_] := (
 )
 
 
+ASTPattern = <|
+    "BinarySet" -> ("Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"),
+    "TenarySet" -> ("TagSet" | "TagSetDelayed"),
+    "Definable" -> (
+        "Options" |
+        "Attributes" |
+        "MessageName" |
+        "Messages" |
+        "OwnValues" |
+        "DownValues" |
+        "UpValues" |
+        "SubValues" |
+        "SyntaxInformation" |
+        "Format"
+    )
+|>
+
+
 (* ::Section:: *)
 (*documentSymbol*)
 
@@ -349,8 +368,8 @@ lhsQ[node_] := (
 ToDocumentSymbol[doc_TextDocument] := (
     doc
     // divideCells
-    // Key["children"]
-    // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
+    // Curry[ToDocumentSymbolImpl, 2][doc]
+    // Flatten
 )
 
 
@@ -361,7 +380,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
 
     node
     // Replace[{
-        _CellNode :> (DocumentSymbol[<|
+        _CellNode?HeadingCellQ :> (DocumentSymbol[<|
             "name" -> node["name"],
             "detail" -> node["style"],
             "kind" -> If[node["style"] == "Package",
@@ -370,7 +389,25 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             ],
             "range" -> ToLspRange[doc, node["range"]],
             "selectionRange" -> node["selectionRange"],
-            "children" -> Join[
+            "children" -> (
+                Join[
+                    If[!MissingQ[node["codeRange"]],
+                        node["codeRange"]
+                        // Map[Curry[CellToAST, 2][doc]]
+                        // Flatten
+                        // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                        {}
+                    ],
+                    If[!MissingQ[node["children"]],
+                        node["children"]
+                        // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                        {}
+                    ]
+                ] // Flatten
+            )
+        |>]),
+        _CellNode :> (
+            Join[
                 If[!MissingQ[node["codeRange"]],
                     node["codeRange"]
                     // Map[Curry[CellToAST, 2][doc]]
@@ -380,15 +417,52 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 ],
                 If[!MissingQ[node["children"]],
                     node["children"]
-                    // Map[child \[Function] (
-                        ToDocumentSymbolImpl[doc, child]
-                    )],
+                    // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
                     {}
                 ]
-            ]
-        |>]),
+            ] // Flatten
+        ),
         AST`CallNode[
-            AST`SymbolNode[Symbol, op:("SetDelayed"|"Set"), _],
+            AST`SymbolNode[Symbol, op:(ASTPattern["BinarySet"]), _],
+            {
+                head:AST`CallNode[AST`SymbolNode[Symbol, func:ASTPattern["Definable"], _], {
+                    AST`SymbolNode[Symbol, (key_), _],
+                    ___
+                }, _],
+                rest__
+            },
+            data_Association
+        ] :> (
+            (* LogDebug[node]; *)
+            DocumentSymbol[<|
+                "name" -> (
+                    key
+                ),
+                "detail" -> func,
+                "kind" -> (
+                    func
+                    // Replace[{
+                        "MessageName" -> SymbolKind["String"],
+                        "Attributes" -> SymbolKind["Array"],
+                        _ -> SymbolKind["Struct"]
+                    }]
+                ),
+                "range" -> (
+                    data
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "selectionRange" -> (
+                    head
+                    // Last
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "children" -> ({})
+            |>]
+        ),
+        AST`CallNode[
+            AST`SymbolNode[Symbol, op:ASTPattern["BinarySet"], _],
             {head_?lhsQ, rest__},
             data_Association
         ] :> (
@@ -397,10 +471,40 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "name" -> (
                     FirstCase[head, AST`SymbolNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
                 ),
-                "detail" -> (op),
-                "kind" -> If[op == "Set",
-                    SymbolKind["Variable"],
-                    SymbolKind["Function"]
+                (* "detail" -> (op), *)
+                "kind" -> Replace[op, {
+                    "Set"-> SymbolKind["Variable"],
+                    "UpSetDelayed" | "UpSet" -> SymbolKind["Interface"],
+                    _ -> SymbolKind["Function"]
+                }],
+                "range" -> (
+                    data
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "selectionRange" -> (
+                    head
+                    // Last
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "children" -> ({})
+            |>]
+        ),
+        AST`CallNode[
+            AST`SymbolNode[Symbol, op:ASTPattern["TenarySet"], _],
+            {AST`SymbolNode[Symbol, tag_String, _], head_?lhsQ, rest__},
+            data_Association
+        ] :> (
+            (* LogDebug[node]; *)
+            DocumentSymbol[<|
+                "name" -> (
+                    FirstCase[head, AST`SymbolNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                ),
+                "detail" -> (tag),
+                "kind" -> If[op == "TagSetDelayed",
+                    SymbolKind["Interface"],
+                    SymbolKind["Interface"]
                 ],
                 "range" -> (
                     data
@@ -413,14 +517,21 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                     // Key[AST`Source]
                     // SourceToRange
                 ),
-                "children" -> (
-                    lhsNode[head]
-                    // Curry[ToDocumentSymbolImpl, 2][doc]
-                )
+                "children" -> ({})
             |>]
         ),
-        lhsNode[caller_, {callees__}, _] :> (Null),
-        _ :> (LogDebug[node];Nothing)
+        AST`CallNode[
+            AST`SymbolNode[Symbol, op:("CompoundExpression"), _],
+            exprs_List,
+            data_Association
+        ] :> (
+            (* LogDebug[node]; *)
+            exprs
+            // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
+        ),
+        (* lhsNode[AST`CallNode[caller_, {callees__}, _]] :> ({}),
+        lhsNode[AST`SymbolNode[Symbol, symbolName_String, _]] :> ({}), *)
+        _ -> (Nothing)
     }]
 
 ]
@@ -453,7 +564,7 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
 GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
     {
         newdoc = ReplaceKeyBy[doc, "cell" -> Replace[{
-            _ :> (doc // divideCells)
+            _?MissingQ :> (doc // divideCells)
         }]],
         line = pos["line"] + 1, character = pos["character"] + 1
     },
@@ -465,47 +576,22 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
     ]
     // SelectFirst[Curry[Between, 2][line]]
     // Replace[{
-        lineRange:{rangeStartLine_Integer, _Integer} :> (
-            (* TODO: use CellToAST *)
-            {
-                (* get the AST *)
-                Take[doc["text"], lineRange]
-                // Curry[StringRiffle]["\n"]
-                (* // Replace[err:Except[_String] :> (LogDebug[StringLength[doc["text"]]];"")] *)
-                // Curry[AST`ConcreteParseString][First]
-                // Map[AST`Abstract`Abstract],
-                (* get the cursorLine and cursorCol *)
-                {line - rangeStartLine + 1, Max[1, character]}
-            }
-            (* find the index of the node in the AST *)
+        lineRange:{_Integer, _Integer} :> (
+            CellToAST[doc, lineRange]
             // {
-                First,
-                Apply[{ast, position} \[Function] (
-                    (* LogDebug[ast]; *)
-                    (* LogDebug[position]; *)
-                    FirstPosition[ast, _[_,_,_Association]?(NodeContainsPosition[position])]
-                )]
+                Identity,
+                FirstPosition[_[_,_,_Association]?(NodeContainsPosition[{line, character}])]
             } // Through
+            (* get {cst, indices} *)
             // {
                 Apply[getHoverText],
+                (* get range *)
                 Apply[Extract]
                 /* Last
                 /* Key[AST`Source]
                 /* Replace[{
                     {} -> Nothing,
-                    (* TODO: use SourceToRange *)
-                    {{startLine_, startCol_}, {endLine_, endCol_}} :> (
-                        LspRange[<|
-                            "start" -> LspPosition[<|
-                                "line" -> (rangeStartLine + startLine - 2),
-                                "character" -> (startCol - 1)
-                            |>],
-                            "end" -> LspPosition[<|
-                                "line" -> (rangeStartLine + endLine - 2),
-                                "character" -> endCol
-                            |>]
-                        |>]
-                    )
+                    source_ :> SourceToRange[source]
                 }]
             } // Through
         ),
@@ -533,11 +619,14 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
                 HoverText["Message", {symbolName, "usage"}]
             ),
             integerNode_AST`IntegerNode :> (
-                HoverText["Number", {Part[integerNode, 2], FromNode[integerNode]}]
+                HoverText["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
                 
             ),
             realNode_AST`RealNode :> (
-                HoverText["Number", {Part[realNode, 2], FromNode[realNode]}]
+                HoverText["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
+            ),
+            AST`CallNode[AST`SymbolNode[Symbol, symbolName_, _], _List, _] /; Length[{restIndices}] == 0 :> (
+                HoverText["Operator", {symbolName}]
             ),
             AST`CallNode[
                 AST`SymbolNode[Symbol, "MessageName", _],
@@ -580,6 +669,9 @@ printHoverText[hoverText_List, range_LspRange:Automatic] := (
 printHoverTextImpl[hoverText_HoverText] := (
     hoverText
     // Replace[{
+        HoverText["Operator", {symbolName_String}] :> (
+            TokenDocumentation[symbolName, "usage"]
+        ),
         HoverText["Message", {symbolName_String, tag_String}] :> (
             TokenDocumentation[symbolName, tag]
         ),

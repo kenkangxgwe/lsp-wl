@@ -267,6 +267,7 @@ BoxToText[input_, o:OptionsPattern[]] := With[
 
 PUACharactersReplaceRule = {
     "\[Rule]" -> "->",
+    "\[RuleDelayed]" -> ":>",
     "\[TwoWayRule]" -> "\[LeftRightArrow]",
     "\[UndirectedEdge]" -> "\[LeftRightArrow]",
     "\[LongEqual]" -> "==",
