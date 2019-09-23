@@ -787,7 +787,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"isIncomplete" -> False, 
+					"isIncomplete" -> False,
 					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
 				|>
 			|>]
@@ -796,7 +796,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"isIncomplete" -> True, 
+					"isIncomplete" -> True,
 					"items" -> (
 						GetTriggerKeyCompletion[]
 						// ToAssociation
@@ -1331,11 +1331,7 @@ saveConfig[newConfig_Association] := With[
 
 
 defaultConfig = <|
-	"lastCheckForUpgrade" -> DateString[Today],
-	"dependencies" -> {
-		{"AST", "0.11"},
-		{"Lint", "0.11"}
-	}
+	"lastCheckForUpgrade" -> DateString[Today]
 |>
 
 
@@ -1406,8 +1402,14 @@ checkGitRepo[state_WorkState] := (
 	];
 )
 
+checkDependencies[state_WorkState] := With[
+	{
+		dependencies = {
+			{"AST", "0.12"},
+			{"Lint", "0.12"}
+		}
+	},
 
-checkDependencies[state_WorkState] := (
 	Check[Needs["PacletManager`"],
 		showMessage[
 			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
@@ -1423,7 +1425,7 @@ checkDependencies[state_WorkState] := (
 			{} :> (StringRiffle[depinfo, "-"]),
 			_ :> (Nothing)
 		}],
-		{depinfo, state["config"]["dependencies"]}
+		{depinfo, dependencies}
 	] // Replace[{depInstalls__} :> (
 		showMessage[
 			StringJoin["These dependencies with correct versions need to be installed or upgraded: ",
@@ -1435,7 +1437,7 @@ checkDependencies[state_WorkState] := (
 			state
 		]
 	)];
-)
+]
 
 
 WLServerVersion[] := WolframLanguageServer`Version;

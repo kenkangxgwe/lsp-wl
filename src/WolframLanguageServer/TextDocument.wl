@@ -314,8 +314,14 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
     Take[doc["text"], {startLine, endLine}]
     // Curry[StringRiffle]["\n"]
     // ((StringRepeat["\n", startLine - 1] <> #)&)
-    // Curry[AST`ConcreteParseString][First]
-    // Map[AST`Abstract`Abstract]
+    // Curry[AST`ConcreteParseString][
+        First
+        /* DeleteCases[AST`LeafNode[
+            Token`Comment |
+            Token`WhiteSpace |
+            Token`Newline,
+        _, _]]
+    ] // Map[AST`Abstract`Aggregate /* AST`Abstract`Abstract]
 )
 
 
@@ -339,7 +345,7 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
 
 lhsQ[node_] := (
     FreeQ[node, _AST`AbstractSyntaxErrorNode] &&
-    MatchQ[FirstPosition[node, _AST`SymbolNode], {(1)...}]
+    MatchQ[FirstPosition[node, _AST`LeafNode], {(1)...}]
 )
 
 
@@ -423,10 +429,10 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             ] // Flatten
         ),
         AST`CallNode[
-            AST`SymbolNode[Symbol, op:(ASTPattern["BinarySet"]), _],
+            AST`LeafNode[Symbol, op:(ASTPattern["BinarySet"]), _],
             {
-                head:AST`CallNode[AST`SymbolNode[Symbol, func:ASTPattern["Definable"], _], {
-                    AST`SymbolNode[Symbol, (key_), _],
+                head:AST`CallNode[AST`LeafNode[Symbol, func:ASTPattern["Definable"], _], {
+                    AST`LeafNode[Symbol, (key_), _],
                     ___
                 }, _],
                 rest__
@@ -462,14 +468,14 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             |>]
         ),
         AST`CallNode[
-            AST`SymbolNode[Symbol, op:ASTPattern["BinarySet"], _],
+            AST`LeafNode[Symbol, op:ASTPattern["BinarySet"], _],
             {head_?lhsQ, rest__},
             data_Association
         ] :> (
             (* LogDebug[node]; *)
             DocumentSymbol[<|
                 "name" -> (
-                    FirstCase[head, AST`SymbolNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                    FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
                 ),
                 (* "detail" -> (op), *)
                 "kind" -> Replace[op, {
@@ -492,14 +498,14 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             |>]
         ),
         AST`CallNode[
-            AST`SymbolNode[Symbol, op:ASTPattern["TenarySet"], _],
-            {AST`SymbolNode[Symbol, tag_String, _], head_?lhsQ, rest__},
+            AST`LeafNode[Symbol, op:ASTPattern["TenarySet"], _],
+            {AST`LeafNode[Symbol, tag_String, _], head_?lhsQ, rest__},
             data_Association
         ] :> (
             (* LogDebug[node]; *)
             DocumentSymbol[<|
                 "name" -> (
-                    FirstCase[head, AST`SymbolNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                    FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
                 ),
                 "detail" -> (tag),
                 "kind" -> If[op == "TagSetDelayed",
@@ -521,7 +527,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             |>]
         ),
         AST`CallNode[
-            AST`SymbolNode[Symbol, op:("CompoundExpression"), _],
+            AST`LeafNode[Symbol, op:("CompoundExpression"), _],
             exprs_List,
             data_Association
         ] :> (
@@ -530,7 +536,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
             // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
         ),
         (* lhsNode[AST`CallNode[caller_, {callees__}, _]] :> ({}),
-        lhsNode[AST`SymbolNode[Symbol, symbolName_String, _]] :> ({}), *)
+        lhsNode[AST`LeafNode[Symbol, symbolName_String, _]] :> ({}), *)
         _ -> (Nothing)
     }]
 
@@ -615,24 +621,24 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
         node,
         {restIndices},
         Append[res, node // LogDebug // Replace[{
-            AST`SymbolNode[Symbol, symbolName_, _] :> (
+            AST`LeafNode[Symbol, symbolName_, _] :> (
                 HoverText["Message", {symbolName, "usage"}]
             ),
-            integerNode_AST`IntegerNode :> (
+            integerNode:AST`LeafNode[Integer, _, _] :> (
                 HoverText["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
                 
             ),
-            realNode_AST`RealNode :> (
+            realNode:AST`LeafNode[Real, _, _] :> (
                 HoverText["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
             ),
-            AST`CallNode[AST`SymbolNode[Symbol, symbolName_, _], _List, _] /; Length[{restIndices}] == 0 :> (
+            AST`CallNode[AST`LeafNode[Symbol, symbolName_, _], _List, _] /; Length[{restIndices}] == 0 :> (
                 HoverText["Operator", {symbolName}]
             ),
             AST`CallNode[
-                AST`SymbolNode[Symbol, "MessageName", _],
+                AST`LeafNode[Symbol, "MessageName", _],
                 {
-                    AST`SymbolNode[Symbol, symbolName_, _],
-                    stringNode_AST`StringNode
+                    AST`LeafNode[Symbol, symbolName_, _],
+                    stringNode:AST`LeafNode[String, _, _]
                 },
                 _
             ] :> (
@@ -717,7 +723,7 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
             }]]
             // LogDebug
             // Replace[{
-                TokenNode[_, token_String, assoc_] :> (
+                LeafNode[_, token_String, assoc_] :> (
                     StringTake[token, pos["character"] - Part[assoc[AST`Source], 1, 2] + 1]
                     // (tokenHead \[Function] (
                         Join[
