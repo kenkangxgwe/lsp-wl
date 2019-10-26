@@ -313,7 +313,11 @@ ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // Equ
 CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
     Take[doc["text"], {startLine, endLine}]
     // Curry[StringRiffle]["\n"]
-    // ((StringRepeat["\n", startLine - 1] <> #)&)
+    // ((Check[
+            StringRepeat["\n", startLine - 1],
+            "",
+            {StringRepeat::intp (* before 12.0 *)}
+        ] // Quiet <> #)&)
     // Curry[AST`ConcreteParseString][
         First
         /* DeleteCases[AST`LeafNode[
