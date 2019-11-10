@@ -58,7 +58,7 @@ InitialState = WorkState[<|
 |>];
 
 ServerCapabilities = <|
-	"textDocumentSync" -> 2,
+	"textDocumentSync" -> TextDocumentSyncKind["Full"],
 	"hoverProvider" -> True,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
@@ -1007,7 +1007,7 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	With[
+	(* With[
 		{
 			expectedVersion = state["openedDocs"][uri]["version"] + 1
 		},
@@ -1025,7 +1025,7 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 			];
 			Return[{"Stop", state}]
 		]
-	];
+	]; *)
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
 	LogDebug @ ("Change Document " <> uri);

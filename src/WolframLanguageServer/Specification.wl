@@ -34,6 +34,11 @@ DocumentUri = String
 (* ::Section:: *)
 (*Enum Type*)
 
+TextDocumentSyncKind  = <|
+    "None" -> 0,
+    "Full" -> 1,
+    "Incremental" -> 2
+|>
 
 DiagnosticSeverity = <|
     "Error" -> 1,
