@@ -13,9 +13,9 @@ ClearAll[Evaluate[Context[] <> "*"]]
 TextDocument::usage = "is the type of the text document."
 CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentItem] returns a TextDocument object"
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
-GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
-GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
-GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
+HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to generate a hover message."
+GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
+GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
 
@@ -23,13 +23,12 @@ ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the Document
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 Needs["DataType`"]
-Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`Logger`"]
+Needs["WolframLanguageServer`Specification`"]
 (* SubmitSession[ *)
 Needs["AST`"]
 Needs["Lint`"]
 (* ] *)
-Needs["WolframLanguageServer`Token`"]
 
 
 (* ::Section:: *)
@@ -568,10 +567,10 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
 
 
 (* ::Section:: *)
-(*GetHoverAtPosition*)
+(*GetHoverInfo*)
 
 
-GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
+GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
     {
         newdoc = ReplaceKeyBy[doc, "cell" -> Replace[{
             _?MissingQ :> (doc // divideCells)
@@ -585,58 +584,58 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := With[
         {}, {0, Infinity}
     ]
     // SelectFirst[Curry[Between, 2][line]]
-    // Replace[{
-        lineRange:{_Integer, _Integer} :> (
-            CellToAST[doc, lineRange]
-            // {
-                Identity,
-                FirstPosition[_[_,_,_Association]?(NodeContainsPosition[{line, character}])]
-            } // Through
-            (* get {cst, indices} *)
-            // {
-                Apply[getHoverText],
+    // Replace[lineRange:{_Integer, _Integer} :> (
+        CellToAST[doc, lineRange]
+        // (ast \[Function] (
+            ast
+            // FirstPosition[_[_,_,_Association]?(NodeContainsPosition[{line, character}])]
+            // Replace[indices_List :> {
+                getHoverInfo[ast, indices],
                 (* get range *)
-                Apply[Extract]
-                /* Last
-                /* Key[AST`Source]
-                /* Replace[{
+                ast
+                // Extract[indices]
+                // Last
+                // Key[AST`Source]
+                // Replace[{
                     {} -> Nothing,
                     source_ :> SourceToRange[source]
                 }]
-            } // Through
-        ),
+            }]
+        ))
+    )]
+    // Replace[
+        (* This happens when line not in codeRange or position not in node *)
         _?MissingQ :> {{(* empty hover text: *)} (*, no range *)}
-    }]
-    // Apply[printHoverText]
+    ]
 
 ]
 
 
 (* ::Subsubsection:: *)
-(*getHoverText*)
+(*getHoverInfo*)
 
 
-(* getHoverText[_, _?MissingQ] := {} *)
-getHoverText[ast_List, indices_List] := getHoverTextImpl[{ast, indices, {}}] // DeleteDuplicates
-getHoverTextImpl[{ast_, {}, res_List}] := res
-getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextImpl[
+(* getHoverInfo[_, _?MissingQ] := {} *)
+getHoverInfo[ast_List, indices_List] := getHoverInfoImpl[{ast, indices, {}}] // DeleteDuplicates
+getHoverInfoImpl[{ast_, {}, res_List}] := res
+getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoImpl[
     Part[ast, index]
     // (node \[Function] {
         node,
         {restIndices},
         Append[res, node // LogDebug // Replace[{
             AST`LeafNode[Symbol, symbolName_, _] :> (
-                HoverText["Message", {symbolName, "usage"}]
+                HoverInfo["Message", {symbolName, "usage"}]
             ),
             integerNode:AST`LeafNode[Integer, _, _] :> (
-                HoverText["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
+                HoverInfo["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
                 
             ),
             realNode:AST`LeafNode[Real, _, _] :> (
-                HoverText["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
+                HoverInfo["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
             ),
             AST`CallNode[AST`LeafNode[Symbol, symbolName_, _], _List, _] /; Length[{restIndices}] == 0 :> (
-                HoverText["Operator", {symbolName}]
+                HoverInfo["Operator", {symbolName}]
             ),
             AST`CallNode[
                 AST`LeafNode[Symbol, "MessageName", _],
@@ -646,7 +645,7 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
                 },
                 _
             ] :> (
-                HoverText["Message", {symbolName, AST`FromNode[stringNode]}]
+                HoverInfo["Message", {symbolName, AST`FromNode[stringNode]}]
             ),
             _ :> Nothing
         }]]
@@ -654,57 +653,11 @@ getHoverTextImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverTextI
 ]
 
 
-printHoverText[hoverText_List, range_LspRange:Automatic] := (
-
-    hoverText
-    // Map[printHoverTextImpl]
-    // Curry[StringRiffle]["\n\n---\n\n"]
-    // Replace[{
-        "" -> Null,
-        text_String :> (
-            Hover[<|
-                "contents" -> MarkupContent[<|
-                    "kind" -> MarkupKind["Markdown"],
-                    "value" -> text
-                |>],
-                If[range === Automatic,
-                    Nothing,
-                    "range" -> range
-                ]
-            |>]
-        )
-    }]
-)
-
-printHoverTextImpl[hoverText_HoverText] := (
-    hoverText
-    // Replace[{
-        HoverText["Operator", {symbolName_String}] :> (
-            TokenDocumentation[symbolName, "usage"]
-        ),
-        HoverText["Message", {symbolName_String, tag_String}] :> (
-            TokenDocumentation[symbolName, tag]
-        ),
-        HoverText["Number", {numberString_String, numberValue_}] :> (
-            ToString[numberValue]
-            // Replace[{
-                numberString :> "",
-                numberValueString_ :> StringJoin[
-                    "```mathematica\n",
-                    numberValueString, " (* ", numberString, " *)",  "\n",
-                    "```\n"
-                ]
-            }]
-        )
-    }]
-)
-
-
 (* ::Section:: *)
-(*GetTokenCompletionAtPostion*)
+(*GetTokenPrefix*)
 
 
-GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
+GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
     {
         line = pos["line"] + 1
     },
@@ -715,7 +668,7 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
         {}, {0, Infinity}
     ]
     // SelectFirst[Curry[Between, 2][line]]
-    // Replace[{
+    // Replace[
         lineRange:{rangeStartLine_Integer, _Integer} :> (
             (* get token list *)
             Take[doc["text"], lineRange]
@@ -726,67 +679,17 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
                 pos["character"]
             }]]
             // LogDebug
-            // Replace[{
+            // Replace[
                 LeafNode[_, token_String, assoc_] :> (
                     StringTake[token, pos["character"] - Part[assoc[AST`Source], 1, 2] + 1]
-                    // (tokenHead \[Function] (
-                        Join[
-                            Names[tokenHead<>"*"]
-                            // Select[Context /* EqualTo["System`"]]
-                            // Map[GetTokenCompletion]
-                            (* tokenHead *)
-                            (* // GetLongNameCompletion,
-                            tokenHead
-                            // GetAliasCompletion *)
-                        ]
-                    ))
-                ),
-                (* this happens when character == 0 *)
-                _?MissingQ -> {}
-            }]
-        ),
-        _?MissingQ :> {}
-    }]
-]
-
-
-GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
-    
-    StringTake[Part[doc["text"], pos["line"] + 1], pos["character"]]
-    // StringReverse
-    // StringCases[StartOfString ~~ Shortest[prefix__] ~~ "\\" :> prefix]
-    // First
-    // StringReverse
-    // Replace[{
-        (* for long name characters *)
-        prefix_?(StringStartsQ["["]) :> (
-            StringDrop[prefix, 1]
-            // GetLongNameCompletion
-        ),
-        (* other aliases *)
-        prefix_ :> (
-            prefix
-            // GetAliasCompletion
-            // Map[item \[Function] (
-                item
-                // ReplaceKey["textEdit" -> TextEdit[<|
-                    "range" -> LspRange[<|
-                        "start" -> LspPosition[<|
-                            "line" -> pos["line"],
-                            "character" -> pos["character"] - StringLength[prefix]
-                        |>],
-                        "end" -> LspPosition[<|
-                            "line" -> pos["line"],
-                            "character" -> pos["character"]
-                        |>]
-                    |>],
-                    "newText" -> item["insertText"]
-                |>]]
-            )]
+                )
+            ]
         )
-    }]
-
-)
+    ] // Replace[
+        (* this happens when line is not in codeRange or character == 0 *)
+        _?MissingQ -> ""
+    ]
+]
 
 
 (* ::Section:: *)

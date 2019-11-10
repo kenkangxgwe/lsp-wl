@@ -829,13 +829,16 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 
 handleRequest["completionItem/resolve", msg_, state_] := With[
 	{
-		token = msg["params"]["label"],
-		type = msg["params"]["data"]["type"]
+		markupKind = (
+			state["clientCapabilities"]["textDocument"]["completion"]["completionItem"]["documentationFormat"]
+			// First
+			// Replace[Except[_?(Curry[MemberQ, 2][Values[MarkupKind]])] -> MarkupKind["PlainText"]]
+		)
 	},
 
 	(* LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]); *)
 	
-	type
+	msg["params"]["data"]["type"]
 	// Replace[{
 		"Alias" | "LongName" :> (
 			sendResponse[state["client"], <|
@@ -847,12 +850,13 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"label" -> token, 
-					"kind" -> TokenKind[token], 
-					"documentation" -> <|
-						"kind" -> "markdown",
-						"value" -> TokenDocumentation[token, "usage"]
-					|>
+					msg["params"]
+					// Append[
+						"documentation" -> <|
+							"kind" -> markupKind,
+							"value" -> TokenDocumentation[msg["params"]["label"], "usage", "Format" -> markupKind]
+						|>
+					]
 				|>
 			|>]
 		)
