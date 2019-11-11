@@ -49,7 +49,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                     {
                         GenHeader[token, tag],
                         boxText
-                        // If[(Echo@OptionValue["Format"]) === MarkupKind["Markdown"],
+                        // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
                             /* MapAt[GenMarkdownCodeBlock, {All, 1}]
                             /* MapAt[GenMarkdownText, {All, 2}]
@@ -208,30 +208,38 @@ GenMarkdownCodeBlock[boxText_String] := (
 
 GenMarkdownText[boxText_String] := (
     boxText
-    // StringReplace[{
-        "~" -> "\\~",
-        "`" -> "\\`",
-        "*" -> "\\*"
-    }]
     // (BoxToText[#, "Format" -> "Markdown"]&)
 	// StringReplace[PUACharactersReplaceRule]
+    // StringReplace[{
+        (* empty italic block since no bold type in doc. *)
+        "**" -> ""
+    }]
 )
 
 
 Options[BoxToText] = {
-    "Format" -> "Markdown"
+    "Format" -> "Markdown",
+    "Italic" -> False
 }
 
-BoxToText[input_, o:OptionsPattern[]] := With[
+BoxToText[input_, o:OptionsPattern[]] := Block[
     {
-        recursiveCall = (nextInput \[Function] BoxToText[nextInput, o])
+        recursiveCall
     },
+
+    recursiveCall[nextInput_, newOptions:OptionsPattern[]] := BoxToText[nextInput, newOptions, o];
 
     Replace[input, {
         RowBox[boxlist_List] :> StringJoin[recursiveCall /@ boxlist],
         StyleBox[x_, "TI"] :> (
-            If[OptionValue["Format"] == "Markdown",
-                "*" <> recursiveCall[x] <> "*",
+            If[OptionValue["Format"] == "Markdown" && !OptionValue["Italic"],
+                "*" <> recursiveCall[x, "Italic" -> True] <> "*",
+                recursiveCall[x]
+            ]
+        ),
+        StyleBox[x_, "TR"] :> (
+            If[OptionValue["Format"] == "Markdown" && OptionValue["Italic"],
+                "*" <> recursiveCall[x, "Italic" -> False] <> "*",
                 recursiveCall[x]
             ]
         ),
@@ -239,8 +247,8 @@ BoxToText[input_, o:OptionsPattern[]] := With[
         (* StyleBox[x_, OptionsPattern[]] :> recursiveCall[x], *)
         (Subscript|SubscriptBox)[x_, y_] :> (
             If[OptionValue["Format"] == "Markdown",
-                recursiveCall[x] <> "\\_"<>recursiveCall[y],
-                recursiveCall[x] <> "_"<>recursiveCall[y]
+                recursiveCall[x] <> "\\_" <>recursiveCall[y],
+                recursiveCall[x] <> "_" <>recursiveCall[y]
             ]
         ),
         (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> recursiveCall[y]),
@@ -257,10 +265,28 @@ BoxToText[input_, o:OptionsPattern[]] := With[
         FractionBox[x_, y_] :> (recursiveCall[x] <> "/" <> recursiveCall[y]),
         (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> recursiveCall[x] <> "]"),
         RadicalBox[x_, y_] :> (recursiveCall[x] <> "^{1/" <> recursiveCall[y] <> "}"),
-        _String :> StringReplace[input, {
-            Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
-        }],
-        _ :> ToString[input]
+        _String?(StringContainsQ["\!\(\*"~~__~~"\)"]) :> (
+            StringSplit[input, {Shortest["\!\(\*"~~box__~~"\)"] :> BoxString[box]}]
+            // Map[recursiveCall]
+            // StringJoin
+        ),
+        _String :> (
+            input
+            // If[OptionValue["Format"] == "Markdown",
+                StringReplace[{
+                    "~" -> "\\~",
+                    "`" -> "\\`",
+                    "*" -> "\\*"
+                }],
+                Identity
+            ]
+        ),
+        BoxString[box_String] :> (
+            ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
+        ),
+        _ :> (
+            ToString[input]
+        )
     }]
 ]
 
