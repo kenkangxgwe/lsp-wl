@@ -29,6 +29,7 @@ Needs["WolframLanguageServer`Specification`"]
 Needs["AST`"]
 Needs["Lint`"]
 (* ] *)
+Needs["WolframLanguageServer`AstPatterns`"]
 
 
 (* ::Section:: *)
@@ -346,30 +347,6 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
 )
 
 
-lhsQ[node_] := (
-    FreeQ[node, _AST`AbstractSyntaxErrorNode] &&
-    MatchQ[FirstPosition[node, _AST`LeafNode], {(1)...}]
-)
-
-
-ASTPattern = <|
-    "BinarySet" -> ("Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"),
-    "TenarySet" -> ("TagSet" | "TagSetDelayed"),
-    "Definable" -> (
-        "Options" |
-        "Attributes" |
-        "MessageName" |
-        "Messages" |
-        "OwnValues" |
-        "DownValues" |
-        "UpValues" |
-        "SubValues" |
-        "SyntaxInformation" |
-        "Format"
-    )
-|>
-
-
 (* ::Section:: *)
 (*documentSymbol*)
 
@@ -431,18 +408,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 ]
             ] // Flatten
         ),
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:(ASTPattern["BinarySet"]), _],
-            {
-                head:AST`CallNode[AST`LeafNode[Symbol, func:ASTPattern["Definable"], _], {
-                    AST`LeafNode[Symbol, (key_), _],
-                    ___
-                }, _],
-                rest__
-            },
-            data_Association
-        ] :> (
-            (* LogDebug[node]; *)
+        AstPattern["Definable"][{head_, func_, key_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
                     key
@@ -470,12 +436,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:ASTPattern["BinarySet"], _],
-            {head_?lhsQ, rest__},
-            data_Association
-        ] :> (
-            (* LogDebug[node]; *)
+        AstPattern["BinarySet"][{head_, op_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
                     FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
@@ -500,12 +461,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:ASTPattern["TenarySet"], _],
-            {AST`LeafNode[Symbol, tag_String, _], head_?lhsQ, rest__},
-            data_Association
-        ] :> (
-            (* LogDebug[node]; *)
+        AstPattern["TenarySet"][{head_, tag_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
                     FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
@@ -529,18 +485,13 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:("CompoundExpression"), _],
-            exprs_List,
-            data_Association
-        ] :> (
-            (* LogDebug[node]; *)
+        AstPattern["CompoundExpression"][<|"exprs" -> exprs_|>] :> (
             exprs
             // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
         ),
         (* lhsNode[AST`CallNode[caller_, {callees__}, _]] :> ({}),
         lhsNode[AST`LeafNode[Symbol, symbolName_String, _]] :> ({}), *)
-        _ -> (Nothing)
+        _ -> Nothing
     }]
 
 ]
@@ -629,7 +580,6 @@ getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoI
             ),
             integerNode:AST`LeafNode[Integer, _, _] :> (
                 HoverInfo["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
-                
             ),
             realNode:AST`LeafNode[Real, _, _] :> (
                 HoverInfo["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
