@@ -329,6 +329,20 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
 )
 
 
+GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1
+    },
+
+    FirstCase[
+        doc // divideCells,
+        cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
+        {}, {0, Infinity}
+    ]
+    // SelectFirst[Curry[Between, 2][line]]
+]
+
+
 (* ::Section:: *)
 (*AST utils*)
 
@@ -436,41 +450,25 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
-        AstPattern["BinarySet"][{head_, op_, data_}] :> (
+        AstPattern["Set"][{head_, op_, tag_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
-                    FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                    FirstCase[head, AstPattern["Symbol"][<|"symbolName" -> rootSymbol_|>] :> rootSymbol, "[unnamed]", {0, Infinity}]
                 ),
                 (* "detail" -> (op), *)
                 "kind" -> Replace[op, {
                     "Set"-> SymbolKind["Variable"],
-                    "UpSetDelayed" | "UpSet" -> SymbolKind["Interface"],
+                    "UpSetDelayed" | "UpSet" | FunctionPattern["TenarySet"] -> SymbolKind["Interface"],
                     _ -> SymbolKind["Function"]
                 }],
-                "range" -> (
-                    data
-                    // Key[AST`Source]
-                    // SourceToRange
+                "detail" -> (
+                    tag
+                    // List
+                    // Replace[{
+                        {tagName_String} :> tagName,
+                        {} -> Null
+                    }]
                 ),
-                "selectionRange" -> (
-                    head
-                    // Last
-                    // Key[AST`Source]
-                    // SourceToRange
-                ),
-                "children" -> ({})
-            |>]
-        ),
-        AstPattern["TenarySet"][{head_, tag_, data_}] :> (
-            DocumentSymbol[<|
-                "name" -> (
-                    FirstCase[head, AST`LeafNode[Symbol, rootSymbol_String, _Association] :> rootSymbol, "[unnamed]", {0, Infinity}]
-                ),
-                "detail" -> (tag),
-                "kind" -> If[op == "TagSetDelayed",
-                    SymbolKind["Interface"],
-                    SymbolKind["Interface"]
-                ],
                 "range" -> (
                     data
                     // Key[AST`Source]
@@ -523,18 +521,10 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
 
 GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
     {
-        newdoc = ReplaceKeyBy[doc, "cell" -> Replace[{
-            _?MissingQ :> (doc // divideCells)
-        }]],
         line = pos["line"] + 1, character = pos["character"] + 1
     },
     
-    FirstCase[
-        newdoc["cell"],
-        cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
-        {}, {0, Infinity}
-    ]
-    // SelectFirst[Curry[Between, 2][line]]
+    GetCodeRangeAtPosition[doc, pos]
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
         // (ast \[Function] (
@@ -575,27 +565,20 @@ getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoI
         node,
         {restIndices},
         Append[res, node // LogDebug // Replace[{
-            AST`LeafNode[Symbol, symbolName_, _] :> (
+            AstPattern["Symbol"][{symbolName_}] :> (
                 HoverInfo["Message", {symbolName, "usage"}]
             ),
-            integerNode:AST`LeafNode[Integer, _, _] :> (
-                HoverInfo["Number", {Part[integerNode, 2], AST`FromNode[integerNode]}]
+            integer:AstPattern["Integer"][{integerLiteral_}] :> (
+                HoverInfo["Number", {integerLiteral, AST`FromNode[integer]}]
             ),
-            realNode:AST`LeafNode[Real, _, _] :> (
-                HoverInfo["Number", {Part[realNode, 2], AST`FromNode[realNode]}]
+            real:AstPattern["Real"][{realLiteral_}] :> (
+                HoverInfo["Number", {realLiteral, AST`FromNode[real]}]
             ),
-            AST`CallNode[AST`LeafNode[Symbol, symbolName_, _], _List, _] /; Length[{restIndices}] == 0 :> (
-                HoverInfo["Operator", {symbolName}]
+            AstPattern["Function"][{functionName_}] /; Length[{restIndices}] == 0 :> (
+                HoverInfo["Operator", {functionName}]
             ),
-            AST`CallNode[
-                AST`LeafNode[Symbol, "MessageName", _],
-                {
-                    AST`LeafNode[Symbol, symbolName_, _],
-                    stringNode:AST`LeafNode[String, _, _]
-                },
-                _
-            ] :> (
-                HoverInfo["Message", {symbolName, AST`FromNode[stringNode]}]
+            AstPattern["MessageName"][{symbolName_, message_}] :> (
+                HoverInfo["Message", {symbolName, AST`FromNode[message]}]
             ),
             _ :> Nothing
         }]]
@@ -612,30 +595,23 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
         line = pos["line"] + 1
     },
 
-    FirstCase[
-        doc // divideCells,
-        cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
-        {}, {0, Infinity}
-    ]
-    // SelectFirst[Curry[Between, 2][line]]
-    // Replace[
-        lineRange:{rangeStartLine_Integer, _Integer} :> (
-            (* get token list *)
-            Take[doc["text"], lineRange]
-            // Curry[StringRiffle]["\n"]
-            // AST`TokenizeString
-            // SelectFirst[NodeContainsPosition[{
-                line - rangeStartLine + 1,
-                pos["character"]
-            }]]
-            // LogDebug
-            // Replace[
-                LeafNode[_, token_String, assoc_] :> (
-                    StringTake[token, pos["character"] - Part[assoc[AST`Source], 1, 2] + 1]
-                )
-            ]
-        )
-    ] // Replace[
+    GetCodeRangeAtPosition[doc, pos]
+    // Replace[lineRange:{rangeStartLine_Integer, _Integer} :> (
+        (* get token list *)
+        Take[doc["text"], lineRange]
+        // Curry[StringRiffle]["\n"]
+        // AST`TokenizeString
+        // SelectFirst[NodeContainsPosition[{
+            line - rangeStartLine + 1,
+            pos["character"]
+        }]]
+        // LogDebug
+        // Replace[
+            AstPattern["Token"][{tokenString_, data_}] :> (
+                StringTake[tokenString, pos["character"] - Part[data[AST`Source], 1, 2] + 1]
+            )
+        ]
+    )] // Replace[
         (* this happens when line is not in codeRange or character == 0 *)
         _?MissingQ -> ""
     ]

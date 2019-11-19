@@ -48,7 +48,11 @@ ClearAll[Evaluate[Context[] <> "*"]]
 Needs["WolframLanguageServer`Logger`"]
 
 
-ExportPattern[pattern_] := With[
+Options[ExportPattern] = {
+    "OverwritePostfix" -> True
+}
+
+ExportPattern[pattern_, o:OptionsPattern[]] := With[
     {
         exportedPattern = pattern /. {Verbatim[Pattern] -> ExportedPattern}
     },
@@ -65,7 +69,19 @@ ExportPattern[pattern_] := With[
                     *)
                     {Verbatim[Pattern][_Symbol, _]...} :> (
                         patternNewNameAssocOrList
-                        // Map[(SymbolName[First[#]] -> #)&]
+                        // Map[(
+                            #
+                            // First
+                            // SymbolName
+                            // (patternName \[Function] {
+                                patternName -> #,
+                                If[OptionValue["OverwritePostfix"] && StringEndsQ[patternName, "$"],
+                                    StringDrop[patternName, -1] -> #,
+                                    Nothing
+                                ]
+                            })
+                        )&]
+                        // Flatten
                         // Apply[Association]
                     ),
                     (* otherwise, use empty association *)
@@ -89,7 +105,39 @@ ExportPattern[pattern_] := With[
     // ReleaseHold
 ]
 
+
 AstPattern = <|
+    "Token" -> (
+        AST`LeafNode[kind_Symbol, tokenString_String, data_Association]
+    ),
+
+    "Symbol" -> (
+        AST`LeafNode[Symbol, symbolName_String, data_Association]
+    ),
+
+    "Integer" -> (
+        AST`LeafNode[Integer, integerLiteral_String, data_Association]
+    ),
+
+    "Real" -> (
+        AST`LeafNode[Real, realLiteral_String, data_Association]
+    ),
+
+    "Function" -> (
+        AST`CallNode[AST`LeafNode[Symbol, functionName_String, _], _List, data_Association]
+    ),
+
+    "MessageName" -> (
+        AST`CallNode[
+            AST`LeafNode[Symbol, "MessageName", _],
+            {
+                AST`LeafNode[Symbol, symbolName_String, _],
+                message:AST`LeafNode[String, messageLiteral_String, _]
+            },
+            data_Association
+        ]
+    ),
+
     "Definable" -> (
         AST`CallNode[
             AST`LeafNode[Symbol, op:(FunctionPattern["BinarySet"]), _],
@@ -98,25 +146,69 @@ AstPattern = <|
                     AST`LeafNode[Symbol, (key_), _],
                     ___
                 }, _],
-                rest__
+                rest_
             },
             data_Association
         ]
     ),
-    "BinarySet" -> (
+
+    "Set" -> (
         AST`CallNode[
-            AST`LeafNode[Symbol, op:FunctionPattern["BinarySet"], _],
-            {head_?lhsQ, rest__},
+            AST`LeafNode[Symbol, op:(FunctionPattern["BinarySet"] | FunctionPattern["TenarySet"]), _],
+            {
+                Repeated[AST`LeafNode[Symbol, tag_String, _], {0, 1}],
+                head_?lhsQ,
+                rest_
+            },
             data_Association
         ]
     ),
-    "TenarySet" -> (
+
+    "Scope" -> (
         AST`CallNode[
-            AST`LeafNode[Symbol, op:FunctionPattern["TenarySet"], _],
-            {AST`LeafNode[Symbol, tag_String, _], head_?lhsQ, rest__},
+            AST`LeafNode[Symbol, op:(FunctionPattern["Scope"]), _],
+            {
+                head:AST`CallNode[
+                    AST`LeafNode[Symbol, "List", _],
+                    defs:{___},
+                    _
+                ],
+                body_
+            },
             data_Association
         ]
     ),
+
+    "InscopeSet" -> (
+        AST`CallNode[
+            AST`LeafNode[Symbol, op:("Set" | "SetDelayed"), _],
+            {
+                AST`LeafNode[Symbol, symbolName_String, _],
+                value_
+            },
+            data_Association
+        ]
+    ),
+
+    "Delayed" -> (
+        AST`CallNode[
+            AST`LeafNode[Symbol, op:(FunctionPattern["Delayed"]), _],
+            { (* Optional Tag: *) _:Null, head_, body_},
+            data_Association
+        ]
+    ),
+
+    "DelayedPattern" -> (
+        AST`CallNode[
+            AST`LeafNode[Symbol, "Pattern", _],
+            {
+                AST`LeafNode[Symbol, patternName_String, _Association],
+                patternObject_
+            },
+            data_Association
+        ]
+    ),
+
     "CompoundExpression" -> (
         AST`CallNode[
             AST`LeafNode[Symbol, op:("CompoundExpression"), _],
