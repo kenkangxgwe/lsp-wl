@@ -65,6 +65,7 @@ ServerCapabilities = <|
 		"triggerCharacters" -> "\\"
 	|>,
 	"documentSymbolProvider" -> True,
+	"documentHighlightProvider" -> True,
 	(* "executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef"
@@ -778,7 +779,7 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
 		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
-		pos = LspPosition[LogDebug@msg["params"]["position"]]
+		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	msg["params"]["context"]["triggerKind"]
@@ -844,7 +845,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> msg["params"]
-			|>]
+			|>] 
 		),
 		"Token" :> (
 			sendResponse[state["client"], <|
@@ -873,27 +874,63 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 ]
 
 
-handleRequest["textDocument/documentSymbol", msg_, state_] := With[
-	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
-		(* diagDelay = 3 *)
-	},
-	
-	(* LogDebug@ToAssociation@ToDocumentSymbol[doc]; *)
+(* ::Subsection:: *)
+(*textDocument/documentHighlight*)
 
-	sendResponse[state["client"], <|
-		"id" -> msg["id"],
-		"result" -> ToAssociation@ToDocumentSymbol[doc]
-	|>];
-	
+
+handleRequest["textDocument/documentHighlight", msg_, state_] := With[
+	{
+		delay = 1.0
+	},
+
 	{
 		"Continue",
 		state
-		(* // Curry[addScheduledTask][ServerTask[<|
-			"type" -> "RespondRequest",
-			"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
-			"params" -> msg
-		|>]] *)
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "documentHighlight",
+			"scheduledTime" -> DatePlus[Now, {delay, "Second"}],
+			"params" -> msg,
+			"callback" -> (sendResponse[#1["client"], <|
+				"id" -> msg["id"],
+				"result" -> (
+					{
+						#1["openedDocs"][#2["params"]["textDocument"]["uri"]],
+						LspPosition[#2["params"]["position"]]
+					}
+					// Apply[FindDocumentHighlight]
+					// ToAssociation
+				)
+			|>]&)
+		|>]]
+	}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/documentSymbol*)
+
+
+handleRequest["textDocument/documentSymbol", msg_, state_] := With[
+	{
+		delay = 5.0
+	},
+
+	{
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "documentSymbol",
+			"scheduledTime" -> DatePlus[Now, {delay, "Second"}],
+			"params" -> msg,
+			"callback" -> (sendResponse[#1["client"], <|
+				"id" -> msg["id"],
+				"result" -> (
+					#1["openedDocs"][#2["params"]["textDocument"]["uri"]]
+					// ToDocumentSymbol
+					// ToAssociation
+				)
+			|>]&)
+		|>]]
 	}
 ]
 
@@ -957,7 +994,14 @@ handleNotification["$/cancelRequest", msg_, state_] := (
 		// Curry[addScheduledTask][ServerTask[<|
 			"type" -> "CancelRequest",
 			"scheduledTime" -> Now,
-			"params" -> msg["params"]
+			"params" -> msg["params"],
+			"callback" -> (sendResponse[#1["client"], <|
+				"id" -> #2["id"],
+				"error" -> ServerError[
+					"RequestCancelled",
+					"The request is cancelled."
+				]
+			|>]&)
 		|>]]
 	}
 )
@@ -995,6 +1039,8 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 	},
 	
 	LogInfo @ ("Close Document " <> uri);
+
+	clearDiagnostics[state, uri];
 	{"Continue", ReplaceKeyBy[state, {"openedDocs"} -> KeyDrop[uri]]}
 ]
 
@@ -1007,7 +1053,7 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
         doc = msg["params"]["textDocument"],
 		uri = msg["params"]["textDocument"]["uri"],
-		diagDelay = 1
+		diagDelay = 5
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
@@ -1052,7 +1098,8 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "PublishDiagnostics",
 		"params" -> uri,
-		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}]
+		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
+		"callback" -> (publishDiagnostics[#1, #2]&)
 	|>]]
 	(* Clean the diagnostics given last time *)
 	// (newState \[Function] (
@@ -1201,7 +1248,8 @@ ErrorMessageTemplates = <|
 DeclareType[ServerTask, <|
 	"type" -> _String,
 	"params" -> _,
-	"scheduledTime" -> _DateObject
+	"scheduledTime" -> _DateObject,
+	"callback" -> _
 |>]
 
 
@@ -1218,7 +1266,7 @@ addScheduledTask[state_WorkState, task_ServerTask] := (
 			state
 			// ReplaceKeyBy["scheduledTasks" -> Insert[task, pos]]
 		)
-	}] 
+	}]
 )
 
 
@@ -1229,75 +1277,66 @@ doNextScheduledTask[state_WorkState] := (
 			Pause[0.5];
 			state
 		),
-		task_ServerTask :> (
+		task_ServerTask :> Block[
+			{
+				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
+			},
+
 			task["type"]
 			// LogDebug
 			// Replace[{
 				"PublishDiagnostics" :> (
-					state
+					newState = newState
 					(* delete all same tasks out of date *)
 					// ReplaceKeyBy["scheduledTasks" -> DeleteCases[_?(t \[Function] (
 						t["type"] == "PublishDiagnostics" &&
 						t["scheduledTime"] < Now &&
 						t["params"] == task["params"]
-					))]]
-					// (newState \[Function] (
-						newState["scheduledTasks"]
-						// Count[_?(t \[Function] (
-							t["type"] == "PublishDiagnostics" &&
-							t["params"] == task["params"]
-						))]
-						// Replace[{
-							(* if there will not be a same task in the future, do it now *)
-							0 :> (publishDiagnostics[state, task["params"]])
-						}];
-						newState
-					))
+					))]];
+
+					newState["scheduledTasks"]
+					// Count[t_ /; (
+						t["type"] == "PublishDiagnostics" &&
+						t["params"] == task["params"]
+					)] // Replace[{
+						(* if there will not be a same task in the future, do it now *)
+						0 :> (task["callback"][newState, task["params"]])
+					}]
 				),
-				"JustContinue" :> (
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
-				),
-				"RespondRequest" :> (
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
-				),  
 				"CancelRequest" :> (
-					state["scheduledTasks"]
-					// FirstPosition[_ServerTask?(t \[Function] (
-						t["type"] == "RespondRequest" &&
-						t["params"]["id"] == task["params"]["id"]
-					))]
-					// Replace[{ 
+					FirstPosition[
+						newState["scheduledTasks"],
+						t_ServerTask
+						/; (t["params"]["id"] == task["params"]["id"]),
+						Missing["NotFound"],
+						(*
+							levelspec must be {1} to avoid performance bottleneck,
+							since params or callback might be complicated
+						*)
+						{1}
+					]
+					// Replace[{
 						{pos_} :> (
-							sendResponse[state["client"], <|
-								"id" -> LogDebug@task["params"]["id"],
-								"error" -> ServerError[
-									"RequestCancelled",
-									"The request is cancelled."
-								]
-							|>];
-							state
-							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos] /* Rest)]
-						),
-						_?MissingQ :> (
-							state
-							// ReplaceKeyBy["scheduledTasks" -> Rest]
+							Part[newState["scheduledTasks"], pos]["type"]
+							// Curry[StringJoin][" request is cancelled."]
+							// LogDebug;
+							task["callback"][newState, task["params"]];
+							newState = newState
+							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
 						)
 					}]
 				),
 				"CheckUpgrades" :> (
 					state
 					// checkUpgrades;
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
 				),
-				unknownTask_ :> (
-					Pause[0.5];
-					state
-				)
-			}]
-		)
+				"JustContinue" -> Null,
+				_ :> (If[!MissingQ[task["callback"]],
+					task["callback"][state, task["params"]]
+				])
+			}];
+			newState
+		]
 	}]
 )
 
