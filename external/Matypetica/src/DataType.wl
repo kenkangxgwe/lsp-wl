@@ -29,6 +29,10 @@ TypeCheckOn::usage = "TypeCheckOn[] turns on type checking."
 TypeCheckOff::usage = "TypeCheckOff[] turns off type checking."
 
 
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
+
+
 (* ::Section:: *)
 (*DeclareType*)
 
@@ -121,10 +125,6 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 ]
 
 
-Begin["`Private`"]
-ClearAll[Evaluate[Context[] <> "*"]]
-
-
 (* ::Section:: *)
 (*Default Constructor*)
 
@@ -201,7 +201,7 @@ TypeCheckOn[]
 (*ToAssociation*)
 
 
-ToAssociation[primitive_] := primitive
+ToAssociation[primitive_:Null] := primitive
 ToAssociation[list_List] := ToAssociation /@ list
 ToAssociation[assoc_Association] := ToAssociation /@ assoc
 
