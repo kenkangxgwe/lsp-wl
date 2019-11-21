@@ -18,6 +18,7 @@ GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
+FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 
 
 Begin["`Private`"]
@@ -217,7 +218,7 @@ divideCells[doc_TextDocument] := (
         "style" -> AdditionalStyle["File"],
         "name" -> "",
         "range" -> {1, Infinity},
-        "codeRange" -> {{If[doc@"text" // First // StringStartsQ["#!"], 2, 1], Infinity}},
+        "codeRange" -> {{If[doc["text"] // First // StringStartsQ["#!"], 2, 1], Infinity}},
         "children" -> {}
     |>]]
     // Fold[InsertCell]
@@ -311,14 +312,20 @@ ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // Equ
 
 
 CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
+    If[startLine == 1 &&
+        (doc["text"] // First // StringStartsQ["#!"]),
+        Return[CellToAST[doc, {2, endLine}]]
+    ];
+
     Take[doc["text"], {startLine, endLine}]
     // Curry[StringRiffle]["\n"]
-    // (StringJoin[Check[
+    // Curry[StringJoin, 2][
+        Check[
             StringRepeat["\n", startLine - 1],
             "",
             {StringRepeat::intp (* before 12.0 *)}
-        ] // Quiet, #]&)
-    // Curry[AST`ConcreteParseString][
+        ] // Quiet
+    ] // Curry[AST`ConcreteParseString][
         First
         /* DeleteCases[AST`LeafNode[
             Token`Comment |
@@ -625,23 +632,16 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
 DiagnoseDoc[doc_TextDocument] := (
 
     doc["text"]
+    // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
     // Curry[StringRiffle]["\n"]
-    // Replace[err:Except[_String] :> Head[doc]]
+    // Replace[err:Except[_String] :> (LogDebug[doc]; "")]
     // Lint`LintString
     // Replace[_?FailureQ -> {}]
     // ReplaceAll[Lint`Lint[tag_, description_, severity_, data_] :> Diagnostic[<|
         "range" -> (
-            data[AST`Source]
-            // Replace[{{startLine_, startChar_}, {endLine_, endChar_}} :> LspRange[<|
-                "start" -> LspPosition[<|
-                    "line" -> (startLine - 1),
-                    "character" -> (startChar - 1)
-                |>],
-                "end" -> LspPosition[<|
-                    "line" -> (endLine - 1),
-                    "character" -> endChar
-                |>]
-            |>]]
+            data
+            // Key[AST`Source]
+            // SourceToRange
         ),
         "severity" -> (
             severity
@@ -664,6 +664,130 @@ DiagnoseDoc[doc_TextDocument] := (
 )
 
 
+(* ::Section:: *)
+(*DocumentHighlight*)
+
+
+FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1, character = pos["character"] + 1
+    },
+
+    GetCodeRangeAtPosition[doc, pos]
+    // Replace[lineRange:{_Integer, _Integer} :> (
+        CellToAST[doc, lineRange]
+        // (ast \[Function] With[
+            {
+                name = LogDebug@FirstCase[
+                    ast,
+                    AstPattern["Symbol"][{symbolName_}]
+                        ?(NodeContainsPosition[{line, character}]) :> (
+                        symbolName
+                    ),
+                    Missing["NotFound"],
+                    {0, Infinity}
+                ]
+            },
+            FirstCase[
+                ast,
+                (
+                AstPattern["Scope"][{head_, body_, op_}]
+                    ?(NodeContainsPosition[{line, character}]) |
+                AstPattern["Delayed"][{head_, body_, op_}]
+                    ?(NodeContainsPosition[{line, character}])
+                ) /; (NodeDefinesSymbolQ[name, head, op]) :> (
+                    Join[
+                        Cases[
+                            head,
+                            AstPattern["Symbol"][{symbolName_, data_}]
+                                /; (name == symbolName) :> (
+                                data
+                            ),
+                            {0, Infinity}
+                        ]
+                        // Map[
+                            Key[AST`Source]
+                            /* (source \[Function] <|
+                                "range" -> SourceToRange[source],
+                                "kind" -> DocumentHighlightKind["Write"]
+                            |>)
+                        ],
+                        Cases[
+                            body,
+                            AstPattern["Symbol"][{symbolName_, data_}] 
+                                /; (name == symbolName) :> (
+                                data
+                            ),
+                            {0, Infinity}
+                        ]
+                        // Map[
+                            Key[AST`Source]
+                            /* (source \[Function] <|
+                                "range" -> SourceToRange[source],
+                                "kind" -> DocumentHighlightKind["Write"]
+                            |>)
+                        ]
+                    ]
+                ),
+                If[MissingQ[name],
+                    name,
+                    Missing["NotScoped", name]
+                ],
+                {0, Infinity}
+            ]
+        ])
+    )] // Replace[{
+        Missing["NotScoped", name_String] :> (
+            FindAllOccurences[doc, name]
+        ),
+        (* this happens when line is not in codeRange *)
+        _?MissingQ -> Null
+    }]
+]
+
+
+NodeDefinesSymbolQ[_?MissingQ, _, _] = False
+NodeDefinesSymbolQ[name_String, head_, FunctionPattern["Scope"]] :=(
+    Part[head, 2]
+    // FirstCase[
+        AstPattern["InscopeSet"][{symbolName_}]
+            /; (name == symbolName)
+    ] // Replace[{
+        _?MissingQ -> False,
+        _ -> True
+    }]
+)
+NodeDefinesSymbolQ[name_String, head_, FunctionPattern["Delayed"]] :=(
+    FirstCase[
+        Part[head, 2],
+        AstPattern["DelayedPattern"][{patternName_}]
+            /; (name == patternName),
+        Missing["NotFound"],
+        {0, Infinity}
+    ] // Replace[{
+        _?MissingQ -> False,
+        _ -> True
+    }]
+)
+
+
+FindAllOccurences[doc_TextDocument, name_String] := (
+    Cases[
+        CellToAST[doc, {1, doc["text"] // Length}],
+        AstPattern["Symbol"][{symbolName_, data_}] /; (name == symbolName) :> (
+            data
+            // Key[AST`Source]
+            // Replace[{
+                _?MissingQ -> Nothing,
+                source_ :> <|
+                    "range" -> SourceToRange[source],
+                    "kind" -> DocumentHighlightKind["Text"]
+                |>
+            }]
+        ),
+        {0, Infinity}
+    ]
+)
 
 
 End[]

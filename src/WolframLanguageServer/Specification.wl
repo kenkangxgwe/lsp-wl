@@ -141,6 +141,12 @@ MarkupKind = <|
     "Markdown" -> "markdown"
 |>
 
+DocumentHighlightKind = <|
+    "Text" -> 1,
+    "Read" -> 2,
+    "Write" -> 3
+|>
+
 
 (* ::Section:: *)
 (*Constants*)
