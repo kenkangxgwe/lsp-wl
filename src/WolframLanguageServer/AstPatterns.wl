@@ -39,6 +39,19 @@ FunctionPattern = <|
         "UpSetDelayed" |
         "TagSetDelayed" |
         "RuleDelayed"
+    ),
+    "StaticLocal" -> (
+        "Function" |
+        "With" |
+        "SetDelayed" |
+        "UpSetDelayed" |
+        "TagSetDelayed" |
+        "RuleDelayed"
+    ),
+    "DynamicLocal" -> (
+        "Block" |
+        "Module" |
+        "DynamicModule"
     )
 |>
 
@@ -94,7 +107,7 @@ ExportPattern[pattern_, o:OptionsPattern[]] := With[
     //. {ExportedPattern[patternName_Symbol, patternObject_] :> (
         (* Renamed function parameter *)
         patternNewNamesAssoc
-        // Lookup[SymbolName[patternName]]
+        // Key[SymbolName[patternName]]
         // (patternObject
             // If[MissingQ[#],
                 Identity,
@@ -124,7 +137,7 @@ AstPattern = <|
     ),
 
     "Function" -> (
-        AST`CallNode[AST`LeafNode[Symbol, functionName_String, _], _List, data_Association]
+        AST`CallNode[AST`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
     ),
 
     "MessageName" -> (
@@ -173,7 +186,9 @@ AstPattern = <|
                     defs:{___},
                     _
                 ],
-                body_
+                body_,
+                (* Function only *)
+                attrs_:{}
             },
             data_Association
         ]
@@ -183,7 +198,7 @@ AstPattern = <|
         AST`CallNode[
             AST`LeafNode[Symbol, op:("Set" | "SetDelayed"), _],
             {
-                AST`LeafNode[Symbol, symbolName_String, _],
+                AST`LeafNode[Symbol, symbolName_String, symbolData_Association],
                 value_
             },
             data_Association
@@ -202,7 +217,7 @@ AstPattern = <|
         AST`CallNode[
             AST`LeafNode[Symbol, "Pattern", _],
             {
-                AST`LeafNode[Symbol, patternName_String, _Association],
+                AST`LeafNode[Symbol, patternName_String, patternData_Association],
                 patternObject_
             },
             data_Association

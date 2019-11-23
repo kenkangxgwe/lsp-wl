@@ -668,124 +668,158 @@ DiagnoseDoc[doc_TextDocument] := (
 (*DocumentHighlight*)
 
 
-FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := With[
+FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := Block[
     {
-        line = pos["line"] + 1, character = pos["character"] + 1
+        line = pos["line"] + 1, character = pos["character"] + 1,
+        ast, name
     },
 
-    GetCodeRangeAtPosition[doc, pos]
+    ast = GetCodeRangeAtPosition[doc, pos]
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
-        // (ast \[Function] With[
-            {
-                name = LogDebug@FirstCase[
-                    ast,
-                    AstPattern["Symbol"][{symbolName_}]
-                        ?(NodeContainsPosition[{line, character}]) :> (
-                        symbolName
-                    ),
-                    Missing["NotFound"],
-                    {0, Infinity}
-                ]
-            },
-            FirstCase[
-                ast,
-                (
-                AstPattern["Scope"][{head_, body_, op_}]
-                    ?(NodeContainsPosition[{line, character}]) |
-                AstPattern["Delayed"][{head_, body_, op_}]
-                    ?(NodeContainsPosition[{line, character}])
-                ) /; (NodeDefinesSymbolQ[name, head, op]) :> (
-                    Join[
-                        Cases[
-                            head,
-                            AstPattern["Symbol"][{symbolName_, data_}]
-                                /; (name == symbolName) :> (
-                                data
-                            ),
-                            {0, Infinity}
-                        ]
-                        // Map[
-                            Key[AST`Source]
-                            /* (source \[Function] <|
-                                "range" -> SourceToRange[source],
-                                "kind" -> DocumentHighlightKind["Write"]
-                            |>)
-                        ],
-                        Cases[
-                            body,
-                            AstPattern["Symbol"][{symbolName_, data_}] 
-                                /; (name == symbolName) :> (
-                                data
-                            ),
-                            {0, Infinity}
-                        ]
-                        // Map[
-                            Key[AST`Source]
-                            /* (source \[Function] <|
-                                "range" -> SourceToRange[source],
-                                "kind" -> DocumentHighlightKind["Write"]
-                            |>)
-                        ]
-                    ]
-                ),
-                If[MissingQ[name],
-                    name,
-                    Missing["NotScoped", name]
-                ],
-                {0, Infinity}
-            ]
-        ])
-    )] // Replace[{
-        Missing["NotScoped", name_String] :> (
-            FindAllOccurences[doc, name]
+    )]
+    // Replace[_?MissingQ :> Return[]];
+
+    name = LogDebug@FirstCase[
+        ast,
+        AstPattern["Symbol"][{symbolName_}]
+            ?(NodeContainsPosition[{line, character}]) :> (
+            symbolName
         ),
-        (* this happens when line is not in codeRange *)
-        _?MissingQ -> Null
-    }]
+        Missing["NotFound"],
+        {0, Infinity}
+    ] // Replace[_?MissingQ :> Return[]];
+
+    FirstCase[
+        ast,
+        (
+            AstPattern["Scope"][{head_, body_, op_}]
+                ?(NodeContainsPosition[{line, character}]) |
+            AstPattern["Delayed"][{head_, body_, op_}]
+                ?(NodeContainsPosition[{line, character}])
+        ) :> Block[
+            {
+                headSource
+            },
+
+            Join[
+                headSource
+                // Map[source \[Function] <|
+                    "range" -> SourceToRange[source],
+                    "kind" -> DocumentHighlightKind["Write"]
+                |>],
+                Replace[op, {
+                    FunctionPattern["StaticLocal"] :>
+                        StaticLocalSource[body, name],
+                    FunctionPattern["DynamicLocal"] :>
+                        DynamicLocalSource[body, name]
+                }]
+                // Map[source \[Function] <|
+                    "range" -> SourceToRange[source],
+                    "kind" -> DocumentHighlightKind["Read"]
+                |>]
+            ]
+            (* a pattern test with inner side effect *)
+            /; (
+                Replace[op, {
+                    FunctionPattern["Scope"] :>
+                        ScopeHeadSymbolSource[head, name],
+                    FunctionPattern["Delayed"] :>
+                        DelayedHeadPatternNameSource[head, name]
+                }]
+                // ((headSource = #)&)
+                // MatchQ[Except[{}, _List]]
+            )
+        ],
+        (* search it the whole doc as a dynamic local *)
+        DynamicLocalSource[
+            CellToAST[doc, {1, doc["text"] // Length}],
+            name
+        ] // Map[source \[Function] <|
+            "range" -> SourceToRange[source],
+            "kind" -> DocumentHighlightKind["Text"]
+        |>],
+        {0, Infinity}
+    ]
 ]
 
 
-NodeDefinesSymbolQ[_?MissingQ, _, _] = False
-NodeDefinesSymbolQ[name_String, head_, FunctionPattern["Scope"]] :=(
-    Part[head, 2]
-    // FirstCase[
-        AstPattern["InscopeSet"][{symbolName_}]
-            /; (name == symbolName)
-    ] // Replace[{
-        _?MissingQ -> False,
-        _ -> True
-    }]
-)
-NodeDefinesSymbolQ[name_String, head_, FunctionPattern["Delayed"]] :=(
+ScopeHeadSymbolSource[head_, name_String] :=(
     FirstCase[
         Part[head, 2],
-        AstPattern["DelayedPattern"][{patternName_}]
-            /; (name == patternName),
-        Missing["NotFound"],
-        {0, Infinity}
-    ] // Replace[{
-        _?MissingQ -> False,
-        _ -> True
-    }]
+        AstPattern["InscopeSet"][{symbolName_, symbolData_}]
+        /; (symbolName == name) :> (
+            symbolData[AST`Source]
+        ),
+        Nothing
+    ] // List
 )
 
 
-FindAllOccurences[doc_TextDocument, name_String] := (
+DelayedHeadPatternNameSource[head_, name_String] :=(
+    Join[
+        Cases[
+            Part[head, 2],
+            AstPattern["DelayedPattern"][{patternName_, patternData_}]
+            /; (patternName == name) :> (
+                patternData[AST`Source]
+            ),
+            {0, Infinity}
+        ],
+        Replace[head, {
+            AstPattern["Function"][{functionName_, arguments_}]
+            /; (functionName == "Condition") :> (
+                arguments
+                // Last
+                // Curry[StaticLocalSource][name]
+            ),
+            _ :> {}
+        }]
+    ]
+)
+
+
+StaticLocalSource[node_, name_String] := (
     Cases[
-        CellToAST[doc, {1, doc["text"] // Length}],
-        AstPattern["Symbol"][{symbolName_, data_}] /; (name == symbolName) :> (
-            data
-            // Key[AST`Source]
-            // Replace[{
-                _?MissingQ -> Nothing,
-                source_ :> <|
-                    "range" -> SourceToRange[source],
-                    "kind" -> DocumentHighlightKind["Text"]
-                |>
-            }]
+        node,
+        AstPattern["Symbol"][{symbolName_, data_}]
+        /; (symbolName == name) :> (
+            data[AST`Source]
         ),
         {0, Infinity}
+    ]
+)
+
+
+DynamicLocalSource[node_, name_String] := (
+    Complement[
+        LogDebug@StaticLocalSource[node, name],
+        LogDebug@Cases[
+            node,
+            AstPattern["Scope"][{head_, body_, op_}] |
+            AstPattern["Delayed"][{head_, body_, op_}] :> Block[
+                {
+                    headSource
+                },
+
+                Join[
+                    headSource,
+                    StaticLocalSource[body, name]
+                ]
+                (* a pattern test with inner side effect *)
+                /; (
+                    Replace[op, {
+                        FunctionPattern["Scope"] :>
+                            ScopeHeadSymbolSource[head, name],
+                        FunctionPattern["Delayed"] :>
+                            DelayedHeadPatternNameSource[head, name]
+                    }]
+                    // ((headSource = #)&)
+                    // MatchQ[Except[{}, _List]]
+                )
+            ],
+            {0, Infinity}
+        ]
     ]
 )
 
