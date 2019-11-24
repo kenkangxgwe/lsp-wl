@@ -880,7 +880,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 
 handleRequest["textDocument/documentHighlight", msg_, state_] := With[
 	{
-		delay = 1.0
+		delay = 0.5
 	},
 
 	{
@@ -912,7 +912,10 @@ handleRequest["textDocument/documentHighlight", msg_, state_] := With[
 
 handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 	{
-		delay = 5.0
+		scheduledTime = DatePlus[
+			state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"],
+			{5.0, "Second"}
+		]
 	},
 
 	{
@@ -920,7 +923,7 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 		state
 		// Curry[addScheduledTask][ServerTask[<|
 			"type" -> "documentSymbol",
-			"scheduledTime" -> DatePlus[Now, {delay, "Second"}],
+			"scheduledTime" -> scheduledTime,
 			"params" -> msg,
 			"callback" -> (sendResponse[#1["client"], <|
 				"id" -> msg["id"],

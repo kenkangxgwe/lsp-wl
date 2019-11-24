@@ -41,14 +41,17 @@ DeclareType[TextDocument, <|
     "uri" -> _DocumentUri,
     "text" -> {__String},
     "version" -> _Integer,
-    "cell" -> _CellNode
+    "cell" -> _CellNode,
+    "lastUpdate" -> _DateObject
 |>]
+
 TextDocument /: ToString[textDocument_TextDocument] := StringJoin["TextDocument[<|",
     "\"uri\" -> ", textDocument["uri"], ", ",
     "\"text\" -> ", textDocument["text"] // Shallow // ToString, ", ",
     "\"version\" -> ", ToString[textDocument["version"]], ", ",
     "\"cell\" -> ", ToString[textDocument["cell"]],
 "|>]"]
+
 TextDocument /: Format[textDocument_TextDocument] := ToString[textDocument]
 
 
@@ -60,7 +63,8 @@ CreateTextDocument[textDocumentItem_TextDocumentItem] := (
     TextDocument[<|
         "uri" -> textDocumentItem["uri"],
 	    "text" -> StringSplit[textDocumentItem["text"], EOL, All],
-        "version" -> textDocumentItem["version"]
+        "version" -> textDocumentItem["version"],
+        "lastUpdate" -> DatePlus[Now, {-5.0, "Second"}]
     |>]
 )
 
@@ -113,7 +117,9 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
             )
         }]
     )]
-    
+    // ReplaceKey["lastUpdate" -> (
+        Now
+    )]
 ]
 
 
