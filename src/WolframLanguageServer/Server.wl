@@ -64,6 +64,7 @@ ServerCapabilities = <|
 		"resolveProvider" -> True,
 		"triggerCharacters" -> "\\"
 	|>,
+	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
 	"documentHighlightProvider" -> True,
 	(* "executeCommandProvider" -> <|
@@ -870,6 +871,29 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 			"type" -> "JustContinue",
 			"scheduledTime" -> Now
 		|>]]
+	}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/references*)
+
+
+handleRequest["textDocument/references", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[msg["params"]["position"]],
+		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation@FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
+	|>];
+
+	{
+		"Continue",
+		state
 	}
 ]
 

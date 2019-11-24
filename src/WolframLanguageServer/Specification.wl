@@ -23,6 +23,8 @@ DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 Diagnostic::usage = "is the type of Diagnostic interface in LSP."
 DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformation interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
+Location::usage = "is the type of Location interface in LSP."
+DocumentHighlight ::usage = "is the type of Location interface in LSP."
 
 (* ::Section:: *)
 (*Type Aliases*)
@@ -244,6 +246,16 @@ DeclareType[CompletionItem, <|
     "commitCharacters" -> {___String}
 |>]
 
+
+DeclareType[Location, <|
+    "uri" -> DocumentUri,
+    "range" -> LspRange
+|>]
+
+DeclareType[DocumentHighlight, <|
+    "range" -> LspRange,
+    "kind" -> _Integer
+|>]
 
 End[]
 

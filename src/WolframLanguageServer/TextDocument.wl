@@ -18,6 +18,7 @@ GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
+FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 
 
@@ -683,10 +684,65 @@ DiagnoseDoc[doc_TextDocument] := (
 
 
 (* ::Section:: *)
+(*Occurence*)
+
+
+(* ::Subsection:: *)
+(*References*)
+
+
+Options[FindReferences] = {
+    "IncludeDeclaration" -> True
+}
+
+
+FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := (
+    FindScopeOccurence[doc, pos, "GlobalSearch" -> True]
+    // If[OptionValue["IncludeDeclaration"],
+        MapAt[Map[source \[Function] Location[<|
+            "uri" -> doc["uri"],
+            "range" -> SourceToRange[source]
+        |>]], 1],
+        (* does not include declaration, discards first part *)
+        ReplacePart[1 -> {}]
+    ]
+    // MapAt[Map[source \[Function] Location[<|
+        "uri" -> doc["uri"],
+        "range" -> SourceToRange[source]
+    |>]], 2]
+    // Flatten
+)
+
+
+(* ::Subsection:: *)
 (*DocumentHighlight*)
 
 
-FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := Block[
+FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := (
+    FindScopeOccurence[doc, pos]
+    // LogDebug
+    // MapAt[Map[source \[Function] DocumentHighlight[<|
+        "range" -> SourceToRange[source],
+        "kind" -> DocumentHighlightKind["Write"]
+    |>]], 1]
+    // MapAt[Map[source \[Function] DocumentHighlight[<|
+        "range" -> SourceToRange[source],
+        "kind" -> DocumentHighlightKind["Read"]
+    |>]], 2]
+    // Flatten
+)
+
+
+(* ::Subsection:: *)
+(*ScopeOccurence*)
+
+
+Options[FindScopeOccurence] = {
+    (* only document-wide search, not pooject-wide currently *)
+    "GlobalSearch" -> True
+}
+
+FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Block[
     {
         line = pos["line"] + 1, character = pos["character"] + 1,
         ast, name
@@ -696,7 +752,7 @@ FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := Block[
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
     )]
-    // Replace[_?MissingQ :> Return[]];
+    // Replace[_?MissingQ :> Return[{{}, {}}]];
 
     name = LogDebug@FirstCase[
         ast,
@@ -706,7 +762,7 @@ FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := Block[
         ),
         Missing["NotFound"],
         {0, Infinity}
-    ] // Replace[_?MissingQ :> Return[]];
+    ] // Replace[_?MissingQ :> Return[{{}, {}}]];
 
     FirstCase[
         ast,
@@ -720,57 +776,122 @@ FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := Block[
                 headSource
             },
 
-            Join[
-                headSource
-                // Map[source \[Function] <|
-                    "range" -> SourceToRange[source],
-                    "kind" -> DocumentHighlightKind["Write"]
-                |>],
+            {
+                headSource,
                 Replace[op, {
                     FunctionPattern["StaticLocal"] :>
                         StaticLocalSource[body, name],
                     FunctionPattern["DynamicLocal"] :>
                         DynamicLocalSource[body, name]
                 }]
-                // Map[source \[Function] <|
-                    "range" -> SourceToRange[source],
-                    "kind" -> DocumentHighlightKind["Read"]
-                |>]
-            ]
+            }
             (* a pattern test with inner side effect *)
             /; (
                 Replace[op, {
                     FunctionPattern["Scope"] :>
-                        ScopeHeadSymbolSource[head, name],
+                        ScopeHeadSymbolSource[op, head, name],
                     FunctionPattern["Delayed"] :>
                         DelayedHeadPatternNameSource[head, name]
                 }]
                 // ((headSource = #)&)
+                // LogDebug
                 // MatchQ[Except[{}, _List]]
             )
         ],
         (* search it the whole doc as a dynamic local *)
-        DynamicLocalSource[
-            CellToAST[doc, {1, doc["text"] // Length}],
-            name
-        ] // Map[source \[Function] <|
-            "range" -> SourceToRange[source],
-            "kind" -> DocumentHighlightKind["Text"]
-        |>],
+        {
+            {},
+            If[OptionValue["GlobalSearch"],
+                DynamicLocalSource[
+                    CellToAST[doc, {1, doc["text"] // Length}],
+                    name
+                ],
+                {}
+            ]
+        },
         {0, Infinity}
     ]
 ]
 
 
-ScopeHeadSymbolSource[head_, name_String] :=(
+ScopeHeadSymbolSource["With", head_, name_String] :=(
     FirstCase[
+        (* elements in the list *)
         Part[head, 2],
         AstPattern["InscopeSet"][{symbolName_, symbolData_}]
         /; (symbolName == name) :> (
             symbolData[AST`Source]
+            // Replace[
+                _?MissingQ :> (
+                    LogDebug["With"];
+                    LogDebug[symbolData];
+                    Nothing
+                )
+            ]
         ),
         Nothing
     ] // List
+)
+
+ScopeHeadSymbolSource["Function", head_, name_String] := (
+    Replace[head, {
+        AstPattern["Symbol"][{symbolName_, data_}]
+        /; (symbolName == name) :> (
+            data[AST`Source]
+            // Replace[
+                _?MissingQ :> (
+                    LogDebug["Function"];
+                    LogDebug[data];
+                    Nothing
+                )
+            ]
+        ),
+        AstPattern["Function"][{functionName_, arguments_}]
+        /; (functionName == "List") :> (
+            FirstCase[
+                arguments,
+                AstPattern["Symbol"][{symbolName_, data_}]
+                /; (symbolName == name) :> (
+                    data[AST`Source]
+                    // Replace[
+                        _?MissingQ :> (
+                            LogDebug["Function"];
+                            LogDebug[data];
+                            Nothing
+                        )
+                    ]
+                ),
+                Nothing
+            ]
+        ),
+        _ -> Nothing
+    }]
+    // List
+)
+
+ScopeHeadSymbolSource["Block"|"Module"|"DynamicModule", head_, name_String] :=(
+    Replace[head, {
+        AstPattern["Function"][{functionName_, arguments_}]
+        /; (functionName == "List") :> (
+            FirstCase[
+                arguments,
+                AstPattern["InscopeSet"][{symbolName_, symbolData_}] |
+                AstPattern["Symbol"][<|"symbolName" -> symbolName_, "data" -> symbolData_|>]
+                /; (symbolName == name) :> (
+                    symbolData[AST`Source]
+                    // Replace[
+                        _?MissingQ :> (
+                            LogDebug["Block"];
+                            LogDebug[symbolData];
+                            Nothing
+                        )
+                    ]
+                ),
+                Nothing
+            ]),
+        _ -> Nothing
+    }]
+    // List
 )
 
 
@@ -781,6 +902,13 @@ DelayedHeadPatternNameSource[head_, name_String] :=(
             AstPattern["DelayedPattern"][{patternName_, patternData_}]
             /; (patternName == name) :> (
                 patternData[AST`Source]
+                // Replace[
+                    _?MissingQ :> (
+                        LogDebug["Delayed"];
+                        LogDebug[patternData];
+                        Nothing
+                    )
+                ]
             ),
             {0, Infinity}
         ],
@@ -803,6 +931,8 @@ StaticLocalSource[node_, name_String] := (
         AstPattern["Symbol"][{symbolName_, data_}]
         /; (symbolName == name) :> (
             data[AST`Source]
+            (* happens when an operator is parsed as a symbol *)
+            // Replace[_?MissingQ -> Nothing]
         ),
         {0, Infinity}
     ]
@@ -811,8 +941,8 @@ StaticLocalSource[node_, name_String] := (
 
 DynamicLocalSource[node_, name_String] := (
     Complement[
-        LogDebug@StaticLocalSource[node, name],
-        LogDebug@Cases[
+        StaticLocalSource[node, name],
+        Cases[
             node,
             AstPattern["Scope"][{head_, body_, op_}] |
             AstPattern["Delayed"][{head_, body_, op_}] :> Block[
@@ -828,7 +958,7 @@ DynamicLocalSource[node_, name_String] := (
                 /; (
                     Replace[op, {
                         FunctionPattern["Scope"] :>
-                            ScopeHeadSymbolSource[head, name],
+                            ScopeHeadSymbolSource[op, head, name],
                         FunctionPattern["Delayed"] :>
                             DelayedHeadPatternNameSource[head, name]
                     }]
