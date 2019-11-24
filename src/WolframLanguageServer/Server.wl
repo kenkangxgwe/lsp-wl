@@ -1023,7 +1023,7 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
 	]
 	// (newState \[Function] (
-		publishDiagnostics[newstate, textDocumentItem["uri"]];
+		publishDiagnostics[newState, textDocumentItem["uri"]];
 		{"Continue", newState}
 	))
 ]

@@ -649,6 +649,15 @@ DiagnoseDoc[doc_TextDocument] := (
                 "Fatal" -> "Error",
                 "ImplicitTimes"|"Formatting"|"Remark" -> "Hint"
             }]
+            // Replace[{
+                "Warning" :> (
+                    tag
+                    // Replace[{
+                        "ExperimentalSymbol" -> "Hint",
+                        _ -> "Warning"
+                    }]
+                )
+            }]
             // DiagnosticSeverity
         ),
         "source" -> "Wolfram",
@@ -656,7 +665,10 @@ DiagnoseDoc[doc_TextDocument] := (
             StringJoin[
                 "[", tag, "] ",
                 description
-                // ReplaceAll[{Lint`Format`LintMarkup[content_, ___] :> ToString[content]}]
+                // ReplaceAll[{Lint`Format`LintMarkup[content_, ___] :> (
+                    ToString[content]
+                )}]
+                // StringReplace["``" -> "\""]
             ]
         )
     |>]]
