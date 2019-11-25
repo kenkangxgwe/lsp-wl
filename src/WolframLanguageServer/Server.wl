@@ -64,6 +64,7 @@ ServerCapabilities = <|
 		"resolveProvider" -> True,
 		"triggerCharacters" -> "\\"
 	|>,
+	"definitionProvider" -> True,
 	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
 	"documentHighlightProvider" -> True,
@@ -105,7 +106,6 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
     If[clientPid === Null, clientPid = GetParentPid[]];
 	(* If[FileExistsQ[Last @ $Path <> "Cache"], LogError @ "Please delete a file named cache in working directory first."]; *)
-
     
 	(*Temporary cache.*)
 	tempDirPath = FileNameJoin[{workingDir, "wlServerCache"}];
@@ -876,6 +876,28 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 
 
 (* ::Subsection:: *)
+(*textDocument/definition*)
+
+
+handleRequest["textDocument/definition", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[msg["params"]["position"]]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation@FindDefinitions[doc, pos]
+	|>] // AbsoluteTiming // First // LogDebug;
+
+	{
+		"Continue",
+		state
+	}
+]
+
+
+(* ::Subsection:: *)
 (*textDocument/references*)
 
 
@@ -889,7 +911,7 @@ handleRequest["textDocument/references", msg_, state_] := With[
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
 		"result" -> ToAssociation@FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
-	|>];
+	|>] // AbsoluteTiming // First // LogDebug;
 
 	{
 		"Continue",

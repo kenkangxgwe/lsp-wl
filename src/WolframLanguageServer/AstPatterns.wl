@@ -159,7 +159,7 @@ AstPattern = <|
                     AST`LeafNode[Symbol, (key_), _],
                     ___
                 }, _],
-                rest_
+                body_
             },
             data_Association
         ]
@@ -171,7 +171,7 @@ AstPattern = <|
             {
                 Repeated[AST`LeafNode[Symbol, tag_String, _], {0, 1}],
                 head_?lhsQ,
-                rest_
+                body_
             },
             data_Association
         ]
@@ -181,11 +181,7 @@ AstPattern = <|
         AST`CallNode[
             AST`LeafNode[Symbol, op:(FunctionPattern["Scope"]), _],
             {
-                head:AST`CallNode[
-                    AST`LeafNode[Symbol, "List", _],
-                    defs:{___},
-                    _
-                ],
+                head_,
                 body_,
                 (* Function only *)
                 attrs_:{}

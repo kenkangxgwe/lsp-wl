@@ -18,6 +18,7 @@ GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
+FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 
@@ -387,11 +388,7 @@ ToDocumentSymbol[doc_TextDocument] := (
 )
 
 
-ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
-    {
-
-    },
-
+ToDocumentSymbolImpl[doc_TextDocument, node_] := (
     node
     // Replace[{
         _CellNode?HeadingCellQ :> (DocumentSymbol[<|
@@ -409,7 +406,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                         node["codeRange"]
                         // Map[Curry[CellToAST, 2][doc]]
                         // Flatten
-                        // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                        // Map[ToDocumentSymbolImpl],
                         {}
                     ],
                     If[!MissingQ[node["children"]],
@@ -426,7 +423,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                     node["codeRange"]
                     // Map[Curry[CellToAST, 2][doc]]
                     // Flatten
-                    // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                    // Map[ToDocumentSymbolImpl],
                     {}
                 ],
                 If[!MissingQ[node["children"]],
@@ -435,7 +432,13 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                     {}
                 ]
             ] // Flatten
-        ),
+        )
+    }]
+)
+
+ToDocumentSymbolImpl[node_] := (
+    node
+    // Replace[{
         AstPattern["Definable"][{head_, func_, key_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
@@ -464,10 +467,59 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
+
+        AstPattern["Set"][{head_, op_, data_}] :> Block[
+            {
+                symbolList
+            },
+
+            (
+                symbolList
+                // Map[Replace[{
+                    AstPattern["Symbol"][<|"symbolName" -> symbolName_, "data" -> symbolData_|>] :> (
+                        DocumentSymbol[<|
+                            "name" -> (
+                                symbolName
+                            ),
+                            "kind" -> SymbolKind["Variable"],
+                            "range" -> (
+                                data
+                                // Key[AST`Source]
+                                // SourceToRange
+                            ),
+                            "selectionRange" -> (
+                                symbolData
+                                // Key[AST`Source]
+                                // SourceToRange
+                            ),
+                            "children" -> ({})
+                        |>]
+                    ),
+                    _ -> Nothing
+                }]]
+            )
+
+            /; (
+                op == "Set"
+                && (
+                    head
+                    // GetSymbolList
+                    // ((symbolList = #)&)
+                    // MissingQ
+                    // Not
+                )
+            )
+        ],
+
         AstPattern["Set"][{head_, op_, tag_, data_}] :> (
             DocumentSymbol[<|
                 "name" -> (
-                    FirstCase[head, AstPattern["Symbol"][<|"symbolName" -> rootSymbol_|>] :> rootSymbol, "[unnamed]", {0, Infinity}]
+                    FirstCase[
+                        head,
+                        AstPattern["Symbol"][<|"symbolName" -> rootSymbol_|>] :> rootSymbol,
+                        "[unnamed]",
+                        {0, Infinity}
+                    ]
                 ),
                 (* "detail" -> (op), *)
                 "kind" -> Replace[op, {
@@ -480,7 +532,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                     // List
                     // Replace[{
                         {tagName_String} :> tagName,
-                        {} -> Null
+                        {} -> ""
                     }]
                 ),
                 "range" -> (
@@ -497,16 +549,17 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := With[
                 "children" -> ({})
             |>]
         ),
+
         AstPattern["CompoundExpression"][<|"exprs" -> exprs_|>] :> (
             exprs
-            // Map[Curry[ToDocumentSymbolImpl, 2][doc]]
+            // Map[ToDocumentSymbolImpl]
         ),
         (* lhsNode[AST`CallNode[caller_, {callees__}, _]] :> ({}),
         lhsNode[AST`LeafNode[Symbol, symbolName_String, _]] :> ({}), *)
         _ -> Nothing
     }]
 
-]
+)
 
 
 ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
@@ -527,6 +580,24 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
         ]
     ]
 |>
+
+
+GetSymbolList[node_] := (
+    node
+    // Replace[{
+        AstPattern["Function"][{functionName_, arguments_}]
+        /; (functionName == "List") :> (
+            arguments
+            // Map[GetSymbolList]
+            // Catenate
+            // Replace[_?(MemberQ[_?MissingQ]) -> Missing["NotSymbolList"]]
+        ),
+        symbolNode:AstPattern["Symbol"][{}] :> (
+            {symbolNode}
+        ),
+        _ -> {Missing["NotSymbolList"]}
+    }]
+)
 
 
 (* ::Section:: *)
@@ -578,7 +649,7 @@ getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoI
     // (node \[Function] {
         node,
         {restIndices},
-        Append[res, node // LogDebug // Replace[{
+        Append[res, node // Replace[{
             AstPattern["Symbol"][{symbolName_}] :> (
                 HoverInfo["Message", {symbolName, "usage"}]
             ),
@@ -688,6 +759,20 @@ DiagnoseDoc[doc_TextDocument] := (
 
 
 (* ::Subsection:: *)
+(*Definitions*)
+
+
+FindDefinitions[doc_TextDocument, pos_LspPosition] := (
+    FindScopeOccurence[doc, pos, "GlobalSearch" -> "TopLevelOnly", "BodySearch" -> False]
+    // Catenate
+    // Map[source \[Function] Location[<|
+        "uri" -> doc["uri"],
+        "range" -> SourceToRange[source]
+    |>]]
+)
+
+
+(* ::Subsection:: *)
 (*References*)
 
 
@@ -720,7 +805,6 @@ FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := (
 
 FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := (
     FindScopeOccurence[doc, pos]
-    // LogDebug
     // MapAt[Map[source \[Function] DocumentHighlight[<|
         "range" -> SourceToRange[source],
         "kind" -> DocumentHighlightKind["Write"]
@@ -739,7 +823,8 @@ FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := (
 
 Options[FindScopeOccurence] = {
     (* only document-wide search, not pooject-wide currently *)
-    "GlobalSearch" -> True
+    "GlobalSearch" -> True,
+    "BodySearch" -> True
 }
 
 FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Block[
@@ -778,12 +863,15 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
 
             {
                 headSource,
-                Replace[op, {
-                    FunctionPattern["StaticLocal"] :>
-                        StaticLocalSource[body, name],
-                    FunctionPattern["DynamicLocal"] :>
-                        DynamicLocalSource[body, name]
-                }]
+                If[OptionValue["BodySearch"],
+                    Replace[op, {
+                        FunctionPattern["StaticLocal"] :>
+                            StaticLocalSource[body, name],
+                        FunctionPattern["DynamicLocal"] :>
+                            DynamicLocalSource[body, name]
+                    }],
+                    {}
+                ]
             }
             (* a pattern test with inner side effect *)
             /; (
@@ -794,27 +882,31 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
                         DelayedHeadPatternNameSource[head, name]
                 }]
                 // ((headSource = #)&)
-                // LogDebug
                 // MatchQ[Except[{}, _List]]
             )
         ],
         (* search it the whole doc as a dynamic local *)
         {
             {},
-            If[OptionValue["GlobalSearch"],
-                DynamicLocalSource[
+            OptionValue["GlobalSearch"]
+            // Replace[{
+                True :> DynamicLocalSource[
                     CellToAST[doc, {1, doc["text"] // Length}],
                     name
                 ],
-                {}
-            ]
+                "TopLevelOnly" -> (
+                    CellToAST[doc, {1, doc["text"] // Length}]
+                    // Map[Curry[FindTopLevelSymbols][name]]
+                ),
+                _ -> {}
+            }]
         },
         {0, Infinity}
     ]
 ]
 
 
-ScopeHeadSymbolSource["With", head_, name_String] :=(
+ScopeHeadSymbolSource["With", head_, name_String] := (
     FirstCase[
         (* elements in the list *)
         Part[head, 2],
@@ -969,6 +1061,69 @@ DynamicLocalSource[node_, name_String] := (
             {0, Infinity}
         ]
     ]
+)
+
+
+FindTopLevelSymbols[node_, name_String] := (
+    node
+    // Replace[{
+        AstPattern["Set"][{head_, op_}] :> Block[
+            {
+                symbolSource
+            },
+
+            symbolSource
+            /; (
+                op == "Set"
+                && (
+                    head
+                    // GetSymbolList
+                    // FirstCase[
+                        AstPattern["Symbol"][{symbolName_, data_}]
+                        /; (functionName == name) :> (
+                            data[AST`Source]
+                        )
+                    ]
+                    // ((symbolSource = #)&)
+                    // MissingQ
+                    // Not
+                )
+            )
+        ],
+
+        AstPattern["Set"][{head_}] :> Block[
+            {
+                symbolSource
+            },
+
+            symbolSource
+            /; (
+                FirstCase[
+                    head,
+                    AstPattern["Symbol"][{}],
+                    Missing["NotFound"],
+                    {0, Infinity}
+                ]
+                // Replace[{
+                    AstPattern["Symbol"][{symbolName_, data_}]
+                    /; (symbolName == name) :> (
+                        data[AST`Source]
+                    ),
+                    _ -> Missing["NotFound"]
+                }]
+                // ((symbolSource = #)&)
+                // MissingQ
+                // Not
+            )
+        ],
+
+        AstPattern["CompoundExpression"][<|"exprs" -> exprs_|>] :> (
+            exprs
+            // Map[Curry[FindTopLevelSymbols][name]]
+        ),
+
+        _ -> Nothing
+    }]
 )
 
 
