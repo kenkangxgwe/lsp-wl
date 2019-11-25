@@ -40,6 +40,8 @@ Options[TokenDocumentation] = {
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
 
+    If[Names["System`"<>token] === {}, Return[""]];
+
     ToExpression[token<>"::"<>tag]
     // Replace[{
         _MessageName -> "",
