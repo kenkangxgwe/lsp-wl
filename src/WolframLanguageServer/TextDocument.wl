@@ -693,7 +693,6 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
             line - rangeStartLine + 1,
             pos["character"]
         }]]
-        // LogDebug
         // Replace[
             AstPattern["Token"][{tokenString_, data_}] :> (
                 StringTake[tokenString, pos["character"] - Part[data[AST`Source], 1, 2] + 1]
@@ -715,7 +714,7 @@ DiagnoseDoc[doc_TextDocument] := (
     doc["text"]
     // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
     // Curry[StringRiffle]["\n"]
-    // Replace[err:Except[_String] :> (LogDebug[doc]; "")]
+    // Replace[err:Except[_String] :> (LogError[doc]; "")]
     // Lint`LintString
     // Replace[_?FailureQ -> {}]
     // ReplaceAll[Lint`Lint[tag_, description_, severity_, data_] :> Diagnostic[<|
@@ -897,9 +896,10 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
                     CellToAST[doc, {1, doc["text"] // Length}],
                     name
                 ],
-                "TopLevelOnly" -> (
+                "TopLevelOnly" :> (
                     CellToAST[doc, {1, doc["text"] // Length}]
                     // Map[Curry[FindTopLevelSymbols][name]]
+                    // Catenate
                 ),
                 _ -> {}
             }]
@@ -1075,7 +1075,7 @@ FindTopLevelSymbols[node_, name_String] := (
                 symbolSource
             },
 
-            symbolSource
+            {symbolSource}
             /; (
                 op == "Set"
                 && (
@@ -1099,7 +1099,7 @@ FindTopLevelSymbols[node_, name_String] := (
                 symbolSource
             },
 
-            symbolSource
+            {symbolSource}
             /; (
                 FirstCase[
                     head,
@@ -1111,6 +1111,13 @@ FindTopLevelSymbols[node_, name_String] := (
                     AstPattern["Symbol"][{symbolName_, data_}]
                     /; (symbolName == name) :> (
                         data[AST`Source]
+                        // Replace[{
+                            source_ :> (
+                                LogDebug[symbolName];
+                                LogDebug[data];
+                                source
+                            )
+                        }]
                     ),
                     _ -> Missing["NotFound"]
                 }]
@@ -1123,9 +1130,10 @@ FindTopLevelSymbols[node_, name_String] := (
         AstPattern["CompoundExpression"][{exprs_}] :> (
             exprs
             // Map[Curry[FindTopLevelSymbols][name]]
+            // Catenate
         ),
 
-        _ -> Nothing
+        _ -> {}
     }]
 )
 
