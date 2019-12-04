@@ -21,6 +21,8 @@ ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the Document
 FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
+FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
+GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
 
 
 Begin["`Private`"]
@@ -33,6 +35,7 @@ Needs["AST`"]
 Needs["Lint`"]
 (* ] *)
 Needs["WolframLanguageServer`AstPatterns`"]
+Needs["WolframLanguageServer`ColorTable`"]
 
 
 (* ::Section:: *)
@@ -550,7 +553,7 @@ ToDocumentSymbolImpl[node_] := (
             |>]
         ),
 
-        AstPattern["CompoundExpression"][<|"exprs" -> exprs_|>] :> (
+        AstPattern["CompoundExpression"][{exprs_}] :> (
             exprs
             // Map[ToDocumentSymbolImpl]
         ),
@@ -1117,7 +1120,7 @@ FindTopLevelSymbols[node_, name_String] := (
             )
         ],
 
-        AstPattern["CompoundExpression"][<|"exprs" -> exprs_|>] :> (
+        AstPattern["CompoundExpression"][{exprs_}] :> (
             exprs
             // Map[Curry[FindTopLevelSymbols][name]]
         ),
@@ -1125,6 +1128,119 @@ FindTopLevelSymbols[node_, name_String] := (
         _ -> Nothing
     }]
 )
+
+
+(* ::Subsection:: *)
+(*DocumentColor*)
+
+
+FindDocumentColor[doc_TextDocument] := Join[
+    Cases[
+        CellToAST[doc, {1, doc["text"] // Length}],
+        AstPattern["NamedColor"][{color_, data_}] :> (
+            ColorInformation[<|
+                "range" -> (
+                    data
+                    // Key[AST`Source]
+                    // SourceToRange
+                ),
+                "color" -> (
+                    ColorConvert[ToExpression[color], "RGB"]
+                    // Apply[List]
+                    // ToLspColor
+                )
+            |>]
+        )
+    ],
+    Cases[
+        CellToAST[doc, {1, doc["text"] // Length}],
+        AstPattern["ColorModel"][{model_, params_, data_}] :> With[
+            {
+                color = (
+                    params
+                    // Map[AST`FromNode]
+                    // Apply[ToExpression[model]]
+                )
+            },
+
+            If[ColorQ[color],
+                ColorInformation[<|
+                    "range" -> (
+                        data
+                        // Key[AST`Source]
+                        // SourceToRange
+                    ),
+                    "color" -> (
+                        ColorConvert[color, "RGB"]
+                        // Apply[List]
+                        // ToLspColor
+                    )
+                |>],
+                Nothing
+            ]
+        ]
+    ]
+]
+
+
+GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] := With[
+    {
+        rgbColor = color // FromLspColor // Apply[RGBColor]
+    },
+
+    Join[
+        WolframLanguageServer`ColorTable`ColorName
+        // Select[(ToRGBA[#] == rgbColor)&]
+        // Map[
+            ColorPresentation[<|
+                "label" -> #
+            |>]&
+        ],
+        Table[
+            ColorPresentation[<|
+                "label" -> (
+                    rgbColor
+                    // Curry[ColorConvert][colorSpace]
+                    // InputForm
+                    // ToString
+                )
+            |>],
+            {colorSpace, WolframLanguageServer`ColorTable`Colorspace}
+        ]
+    ]
+]
+
+
+ToLspColor[{r_, g_, b_, a_:1}] := (
+    LspColor[<|
+        "red" -> r,
+        "green" -> g,
+        "blue" -> b,
+        "alpha" -> a
+    |>]
+)
+
+
+FromLspColor[color_LspColor] := (
+    {
+        color["red"],
+        color["green"],
+        color["blue"],
+        color["alpha"]
+    }
+)
+
+
+ToRGBA[colorName_String] := With[
+    {
+        rgbColor = ColorConvert[ToExpression[colorName], "RGB"]
+    },
+
+    If[Length[rgbColor] == 3,
+        rgbColor // Append[1.],
+        rgbColor
+    ]
+]
 
 
 End[]

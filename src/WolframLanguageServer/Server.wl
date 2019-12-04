@@ -68,6 +68,7 @@ ServerCapabilities = <|
 	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
 	"documentHighlightProvider" -> True,
+	"colorProvider" -> True,
 	(* "executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef"
@@ -985,6 +986,60 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 
 
 (* ::Subsection:: *)
+(*textDocument/documentColor*)
+
+
+handleRequest["textDocument/documentColor", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> (
+			doc
+			// FindDocumentColor
+			// ToAssociation
+		)
+	|>];
+
+	{"Continue", state}
+
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/colorPresentation*)
+
+
+handleRequest["textDocument/colorPresentation", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		color = msg["params"]["color"] // LspColor,
+		range = msg["params"]["range"] // LspRange
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> (
+			GetColorPresentation[doc, color, range]
+			// ToAssociation
+		)
+	|>];
+
+	{
+		"Continue",
+		state
+		// Curry[addScheduledTask][ServerTask[<|
+			"type" -> "JustContinue",
+			"scheduledTime" -> Now
+		|>]]
+	}
+
+]
+
+
+(* ::Subsection:: *)
 (*Invalid Request*)
 
 
@@ -1323,7 +1378,7 @@ doNextScheduledTask[state_WorkState] := (
 	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
 	// Replace[{
 		_?MissingQ :> (
-			Pause[0.5];
+			Pause[0.1];
 			state
 		),
 		task_ServerTask :> Block[

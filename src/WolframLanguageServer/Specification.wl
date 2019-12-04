@@ -25,6 +25,9 @@ DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformati
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
 Location::usage = "is the type of Location interface in LSP."
 DocumentHighlight ::usage = "is the type of Location interface in LSP."
+ColorInformation::usage = "is the type of ColorInformation interface in LSP."
+LspColor::usage = "is the type of Color interface in LSP."
+ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 
 (* ::Section:: *)
 (*Type Aliases*)
@@ -255,6 +258,24 @@ DeclareType[Location, <|
 DeclareType[DocumentHighlight, <|
     "range" -> LspRange,
     "kind" -> _Integer
+|>]
+
+DeclareType[ColorInformation, <|
+    "range" -> LspRange,
+    "color" -> LspColor
+|>]
+
+DeclareType[LspColor, <|
+    "red" -> _?NumericQ,
+    "green" -> _?NumericQ,
+    "blue" -> _?NumericQ,
+    "alpha" -> _?NumericQ
+|>]
+
+DeclareType[ColorPresentation, <|
+    "label" -> _String,
+    "textEdit" -> _TextEdit,
+    "additionalTextEdits" -> {__TextEdit}
 |>]
 
 End[]

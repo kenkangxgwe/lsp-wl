@@ -1,6 +1,6 @@
 (* ::Package:: *)
 
-(* Wolfram Language Server Documentation *)
+(* Wolfram Language Server Ast Patterns *)
 (* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
            huxianglong <hxianglong_at_gmail.com>
 *)
@@ -9,12 +9,21 @@ BeginPackage["WolframLanguageServer`AstPatterns`"]
 Construct[ClearAll, Context[] <> "*"]
 
 
+FunctionPattern::usage = "A set of function head patterns."
 AstPattern::usage = "A set of pattern transformations that returns the desired pattern."
+
+
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
+Needs["WolframLanguageServer`Logger`"]
+Needs["WolframLanguageServer`ColorTable`"]
 
 
 FunctionPattern = <|
     "BinarySet" -> ("Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"),
+
     "TenarySet" -> ("TagSet" | "TagSetDelayed"),
+
     "Definable" -> (
         "Options" |
         "Attributes" |
@@ -27,6 +36,7 @@ FunctionPattern = <|
         "SyntaxInformation" |
         "Format"
     ),
+
     "Scope" -> (
         "Function" |
         "With" |
@@ -34,12 +44,14 @@ FunctionPattern = <|
         "Module" |
         "DynamicModule"
     ),
+
     "Delayed" -> (
         "SetDelayed" |
         "UpSetDelayed" |
         "TagSetDelayed" |
         "RuleDelayed"
     ),
+
     "StaticLocal" -> (
         "Function" |
         "With" |
@@ -48,17 +60,27 @@ FunctionPattern = <|
         "TagSetDelayed" |
         "RuleDelayed"
     ),
+
     "DynamicLocal" -> (
         "Block" |
         "Module" |
         "DynamicModule"
+    ),
+
+    "NamedColor" -> (
+        WolframLanguageServer`ColorTable`ColorName
+        // Apply[Alternatives]
+    ),
+
+    "ColorModel" -> (
+        "RGBColor" | "Hue" | "CMYKColor" | "GrayLevel" | "LABColor" |
+        "LCHColor" | "LUVColor" | "XYZColor"
+    ),
+
+    "ColorDirective" -> (
+        "Opacity" | "Lighter" | "Darker" | "ColorNegate"
     )
 |>
-
-
-Begin["`Private`"]
-ClearAll[Evaluate[Context[] <> "*"]]
-Needs["WolframLanguageServer`Logger`"]
 
 
 Options[ExportPattern] = {
@@ -226,7 +248,22 @@ AstPattern = <|
             exprs_List,
             data_Association
         ]
+    ),
+
+    "NamedColor" -> (
+        AST`LeafNode[Symbol, color:FunctionPattern["NamedColor"], data_Association]
+    ),
+
+    "ColorModel" -> (
+        AST`CallNode[
+            AST`LeafNode[Symbol, model:FunctionPattern["ColorModel"], _], 
+            params: {
+                (AST`LeafNode[Integer | Real | String, _, _])..
+            },
+            data_Association
+        ]
     )
+
 |> // Map[ExportPattern]
 
 
