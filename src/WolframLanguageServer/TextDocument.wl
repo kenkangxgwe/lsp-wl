@@ -291,8 +291,21 @@ CellContainsLine[indexLine_Integer][cell_CellNode] := (
 )
 
 
+NodeDataContainsPosition[{line_Integer, col_Integer}][data_] := NodeDataContainsPosition[data, {line, col}]
+NodeDataContainsPosition[data_Association, {line_Integer, col_Integer}] := With[
+    {
+        source = data // Key[AST`Source]
+    },
+
+    (!MissingQ[source]) &&
+    Between[line, Part[source, All, 1]] &&
+    ((Part[source, 1, 1] == line) \[Implies] (Part[source, 1, 2] <= col)) && 
+    ((Part[source, 2, 1] == line) \[Implies] (Part[source, 2, 2] >= col))
+
+]
+
 NodeContainsPosition[{line_Integer, col_Integer}][node_] := NodeContainsPosition[node, {line, col}]
-NodeContainsPosition[node_, {line_Integer, col_Integer}] := With[
+NodeContainsPosition[node:Except[_Association], {line_Integer, col_Integer}] := With[
     {
         source = node // Last // Key[AST`Source]
     },
@@ -521,7 +534,7 @@ ToDocumentSymbolImpl[node_] := (
                         head,
                         AstPattern["Symbol"][<|"symbolName" -> rootSymbol_|>] :> rootSymbol,
                         "[unnamed]",
-                        {0, Infinity}
+                        AstLevelspec["LeafNodeWithSource"]
                     ]
                 ),
                 (* "detail" -> (op), *)
@@ -616,8 +629,14 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
         // (ast \[Function] (
-            ast
-            // FirstPosition[_[_,_,_Association]?(NodeContainsPosition[{line, character}])]
+            FirstPosition[
+               ast,
+                _Association?(NodeDataContainsPosition[{line, character}]),
+                Missing["NotFound"],
+                AstLevelspec["DataWithSource"],
+                Heads -> False
+            ]
+            // Most
             // Replace[indices_List :> {
                 getHoverInfo[ast, indices],
                 (* get range *)
@@ -626,7 +645,7 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
                 // Last
                 // Key[AST`Source]
                 // Replace[{
-                    {} -> Nothing,
+                    _?MissingQ -> Nothing,
                     source_ :> SourceToRange[source]
                 }]
             }]
@@ -848,7 +867,7 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
             symbolName
         ),
         Missing["NotFound"],
-        {0, Infinity}
+        AstLevelspec["LeafNodeWithSource"]
     ] // Replace[_?MissingQ :> Return[{{}, {}}]];
 
     FirstCase[
@@ -990,7 +1009,7 @@ ScopeHeadSymbolSource["Block"|"Module"|"DynamicModule", head_, name_String] :=(
 )
 
 
-DelayedHeadPatternNameSource[head_, name_String] :=(
+DelayedHeadPatternNameSource[head_, name_String] := (
     Join[
         Cases[
             Part[head, 2],
@@ -1029,7 +1048,8 @@ StaticLocalSource[node_, name_String] := (
             (* happens when an operator is parsed as a symbol *)
             // Replace[_?MissingQ -> Nothing]
         ),
-        {0, Infinity}
+        AstLevelspec["LeafNodeWithSource"],
+        Heads -> False
     ]
 )
 
@@ -1061,7 +1081,8 @@ DynamicLocalSource[node_, name_String] := (
                     // MatchQ[Except[{}, _List]]
                 )
             ],
-            {0, Infinity}
+            AstLevelspec["2levels"],
+            Heads -> False
         ]
     ]
 )
@@ -1105,7 +1126,7 @@ FindTopLevelSymbols[node_, name_String] := (
                     head,
                     AstPattern["Symbol"][{}],
                     Missing["NotFound"],
-                    {0, Infinity}
+                    AstLevelspec["LeafNodeWithSource"]
                 ]
                 // Replace[{
                     AstPattern["Symbol"][{symbolName_, data_}]
@@ -1158,7 +1179,8 @@ FindDocumentColor[doc_TextDocument] := Join[
                     // ToLspColor
                 )
             |>]
-        )
+        ),
+        AstLevelspec["LeafNodeWithSource"]
     ],
     Cases[
         CellToAST[doc, {1, doc["text"] // Length}],
@@ -1186,7 +1208,8 @@ FindDocumentColor[doc_TextDocument] := Join[
                 |>],
                 Nothing
             ]
-        ]
+        ],
+        AstLevelspec["2levels"]
     ]
 ]
 

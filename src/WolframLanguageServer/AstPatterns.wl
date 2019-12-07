@@ -11,6 +11,7 @@ Construct[ClearAll, Context[] <> "*"]
 
 FunctionPattern::usage = "A set of function head patterns."
 AstPattern::usage = "A set of pattern transformations that returns the desired pattern."
+AstLevelspec::usage = "A set of levelspec that is useful to specify when using Cases, Position, etc."
 
 
 Begin["`Private`"]
@@ -265,6 +266,16 @@ AstPattern = <|
     )
 
 |> // Map[ExportPattern]
+
+
+AstLevelspec = <|
+    "DataWithSource" -> {-4},
+    "Data" -> {-4, -1},
+    "LeafNodeWithSource" -> {-5},
+    "LeafNode" -> {-5, -2},
+    "ColorModel" -> {-7},
+    "2levels" -> {0, -7}
+|>
 
 
 lhsQ[node_] := (
