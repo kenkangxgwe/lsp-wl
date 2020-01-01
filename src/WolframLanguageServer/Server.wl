@@ -1106,24 +1106,42 @@ handleNotification["exit", msg_, state_] := (
 (*$/cancelRequest*)
 
 
-handleNotification["$/cancelRequest", msg_, state_] := (
+handleNotification["$/cancelRequest", msg_, state_] := With[
 	{
-		"Continue",
-		state
-		// Curry[addScheduledTask][ServerTask[<|
-			"type" -> "CancelRequest",
-			"scheduledTime" -> DatePlus[Now, {-1, "Year"}],
-			"params" -> msg["params"],
-			"callback" -> (sendResponse[#1["client"], <|
-				"id" -> #2["id"],
+		id = msg["params"]["id"]
+	},
+
+	FirstPosition[
+		state["scheduledTasks"],
+		t_ServerTask
+		/; (t["id"] == id),
+		Missing["NotFound"],
+		(*
+			levelspec must be {1} to avoid performance bottleneck,
+			since params or callback might be complicated
+		*)
+		{1}
+	]
+	// Replace[{
+		{pos_} :> (
+			Part[state["scheduledTasks"], pos]["type"]
+			// Curry[StringJoin][" request is cancelled."]
+			// LogDebug;
+			sendResponse[state["client"], <|
+				"id" -> id,
 				"error" -> ServerError[
 					"RequestCancelled",
 					"The request is cancelled."
 				]
-			|>]&)
-		|>]]
-	}
-)
+			|>];
+			state
+			// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
+		),
+		_?MissingQ :> state
+	}]
+	// List
+	// Prepend["Continue"]
+]
 
 
 (* ::Subsection:: *)
@@ -1435,29 +1453,6 @@ doNextScheduledTask[state_WorkState] := (
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							task["callback"][newState, task["params"]]
 						]
-					}]
-				),
-				"CancelRequest" :> (
-					FirstPosition[
-						newState["scheduledTasks"],
-						t_ServerTask
-						/; (t["params"]["id"] == task["params"]["id"]),
-						Missing["NotFound"],
-						(*
-							levelspec must be {1} to avoid performance bottleneck,
-							since params or callback might be complicated
-						*)
-						{1}
-					]
-					// Replace[{
-						{pos_} :> (
-							Part[newState["scheduledTasks"], pos]["type"]
-							// Curry[StringJoin][" request is cancelled."]
-							// LogDebug;
-							task["callback"][newState, task["params"]];
-							newState = newState
-							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
-						)
 					}]
 				),
 				"CheckUpgrades" :> (
