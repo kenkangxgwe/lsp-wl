@@ -180,7 +180,7 @@ divideCells[doc_TextDocument] := (
                             {} -> {"", (* name line: *) False}
                         }]
                     ),
-                    _AdditionalStyle :>  {"", (* name line: *) False}
+                    _AdditionalStyle ->  {"", (* name line: *) False}
                 }]
                 // Apply[{name, nameLineQ} \[Function] CellNode[<|
                     "style" -> style,
@@ -188,7 +188,7 @@ divideCells[doc_TextDocument] := (
                         "" -> "[unnamed]"
                     ]),
                     "range" -> {line, Infinity},
-                    style 
+                    style
                     // Replace[{
                         _String :> (
                             "selectionRange" -> (
@@ -211,7 +211,7 @@ divideCells[doc_TextDocument] := (
                                 |>]]
                             )
                         ),
-                        _AdditionalStyle :> (
+                        _AdditionalStyle -> (
                             Nothing
                         )
                     }],
@@ -221,7 +221,7 @@ divideCells[doc_TextDocument] := (
                     }}
                 |>]]
             ),
-            {(* current line does not contain styles *)} :> Nothing
+            {(* current line does not contain styles *)} -> Nothing
         }],
         {line, Length@doc@"text"}
     ]
@@ -242,15 +242,16 @@ InsertCell[rootCell_CellNode, newCell_CellNode] := (
 
     rootCell["children"]
     // Replace[{
-        _?MissingQ|{} :> (If[HeadingQ[newCell["style"]],
+        _?MissingQ|{} :> (
             rootCell
-            // ReplaceKey["children" -> {newCell}]
-            // ReplaceKey[{"codeRange", -1, -1} -> (First[newCell["range"]] - 1)],
-            (* not a heading style, append its code range to its parent *)
-            rootCell
-            // ReplaceKey[{"codeRange", -1, -1} -> (First[newCell["range"]] - 1)]
-            // ReplaceKeyBy["codeRange" -> (Join[#, newCell["codeRange"]]&)]
-        ]),
+            // ReplaceKey[{"codeRange", -1 ,-1} -> (First[newCell["range"]] - 1)]
+            // ReplaceKeyBy[{"codeRange", -1} -> Replace[{s_, e_} /; (s > e) -> Nothing]]
+            // If[HeadingQ[newCell["style"]],
+                ReplaceKey["children" -> {newCell}],
+                (* not a heading style, append its code range to its parent *)
+                ReplaceKeyBy["codeRange" -> (Join[#, newCell["codeRange"]]&)]
+            ]
+        ),
         {preCells___, lastCell_CellNode} :> (
             If[HeadingQ[newCell["style"]] \[Implies] (HeadingLevel[lastCell["style"]] < HeadingLevel[newCell["style"]]),
                 (* includes the new cell in the last child *)
@@ -276,6 +277,7 @@ TerminateCell[cell_CellNode, endLine_Integer] := (
     // ReplaceKeyBy[{"codeRange", -1, -1} -> Replace[{
         Infinity -> endLine
     }]]
+    // ReplaceKeyBy[{"codeRange", -1} -> Replace[{s_, e_} /; (s > e) -> Nothing]]
     // ReplaceKeyBy[{"children"} -> Replace[{
         _?MissingQ :> {},
         {children___, lastChild_CellNode} :> {
@@ -289,33 +291,6 @@ TerminateCell[cell_CellNode, endLine_Integer] := (
 CellContainsLine[indexLine_Integer][cell_CellNode] := (
     indexLine // Between[cell["range"]]
 )
-
-
-NodeDataContainsPosition[{line_Integer, col_Integer}][data_] := NodeDataContainsPosition[data, {line, col}]
-NodeDataContainsPosition[data_Association, {line_Integer, col_Integer}] := With[
-    {
-        source = data // Key[AST`Source]
-    },
-
-    (!MissingQ[source]) &&
-    Between[line, Part[source, All, 1]] &&
-    ((Part[source, 1, 1] == line) \[Implies] (Part[source, 1, 2] <= col)) && 
-    ((Part[source, 2, 1] == line) \[Implies] (Part[source, 2, 2] >= col))
-
-]
-
-NodeContainsPosition[{line_Integer, col_Integer}][node_] := NodeContainsPosition[node, {line, col}]
-NodeContainsPosition[node:Except[_Association], {line_Integer, col_Integer}] := With[
-    {
-        source = node // Last // Key[AST`Source]
-    },
-
-    (!MissingQ[source]) &&
-    Between[line, Part[source, All, 1]] &&
-    ((Part[source, 1, 1] == line) \[Implies] (Part[source, 1, 2] <= col)) && 
-    ((Part[source, 2, 1] == line) \[Implies] (Part[source, 2, 2] >= col))
-
-]
 
 
 HeadingCellQ[cellNode_CellNode] := HeadingQ[cellNode["style"]]
@@ -349,14 +324,11 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
             "",
             {StringRepeat::intp (* before 12.0 *)}
         ] // Quiet
-    ] // Curry[AST`ConcreteParseString][
-        First
-        /* DeleteCases[AST`LeafNode[
-            Token`Comment |
-            Token`WhiteSpace |
-            Token`Newline,
-        _, _]]
-    ] // Map[AST`Abstract`Aggregate /* AST`Abstract`Abstract]
+    ]
+    // Curry[AST`ConcreteParseString][First]
+    // Curry[Drop][startLine - 1]
+    // Map[AST`Abstract`Aggregate]
+    // Map[AST`Abstract`Abstract]
 )
 
 
@@ -376,6 +348,41 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
 
 (* ::Section:: *)
 (*AST utils*)
+
+
+
+NodeDataContainsPosition[pos:{_Integer, _Integer}][data_] := NodeDataContainsPosition[data, pos]
+NodeDataContainsPosition[data_Association, pos:{_Integer, _Integer}] := (
+    CompareNodePosition[{data}, pos] === 0
+)
+
+NodeContainsPosition[pos:{_Integer, _Integer}][node_] := NodeContainsPosition[node, pos]
+NodeContainsPosition[node_, pos:{_Integer, _Integer}] := (
+    CompareNodePosition[node, pos] === 0
+)
+
+
+(*
+    Returns
+      -1, if node is before pos;
+      0, if node contains pos;
+      +1, if node is after pos;
+      default, node does not have AST`Source information.
+*)
+CompareNodePosition[node_, {line_Integer, col_Integer}, default_:Missing["NotFound"]] := With[
+    {
+        source = node // Last // Key[AST`Source]
+    },
+
+    Which[
+        MissingQ[source], default,
+        Part[source, 2, 1] < line, -1,
+        line < Part[source, 1, 1], 1,
+        line == Part[source, 1, 1] && col < Part[source, 1, 2], 1,
+        line == Part[source, 2, 1] && Part[source, 2 ,2] < col, -1,
+        True, 0
+    ]
+]
 
 
 SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
@@ -632,13 +639,14 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
             FirstPosition[
                ast,
                 _Association?(NodeDataContainsPosition[{line, character}]),
-                Missing["NotFound"],
+                Missing["NotFound", {(* Will be Discarded by Most *)}],
                 AstLevelspec["DataWithSource"],
                 Heads -> False
             ]
             // Most
             // Replace[indices_List :> {
-                getHoverInfo[ast, indices],
+                getHoverInfoImpl[ast, indices, {}]
+                // DeleteDuplicates,
                 (* get range *)
                 ast
                 // Extract[indices]
@@ -659,16 +667,10 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-(* ::Subsubsection:: *)
-(*getHoverInfo*)
-
-
-(* getHoverInfo[_, _?MissingQ] := {} *)
-getHoverInfo[ast_List, indices_List] := getHoverInfoImpl[{ast, indices, {}}] // DeleteDuplicates
-getHoverInfoImpl[{ast_, {}, res_List}] := res
-getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoImpl[
+getHoverInfoImpl[ast_, {}, res_List] := res
+getHoverInfoImpl[ast_, {index_Integer, restIndices___}, res_] := (
     Part[ast, index]
-    // (node \[Function] {
+    // (node \[Function] getHoverInfoImpl[
         node,
         {restIndices},
         Append[res, node // Replace[{
@@ -683,14 +685,15 @@ getHoverInfoImpl[{ast_, {index_Integer, restIndices___}, res_}] := getHoverInfoI
             ),
             AstPattern["Function"][{functionName_}] /; Length[{restIndices}] == 0 :> (
                 HoverInfo["Operator", {functionName}]
+                (* TODO(kenkangxgwe): to know whether the cursor is hovering on the operator *)
             ),
             AstPattern["MessageName"][{symbolName_, message_}] :> (
                 HoverInfo["Message", {symbolName, AST`FromNode[message]}]
             ),
             _ :> Nothing
         }]]
-    })
-]
+    ])
+)
 
 
 (* ::Section:: *)
