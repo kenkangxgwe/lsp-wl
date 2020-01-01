@@ -19,6 +19,9 @@ TextDocumentContentChangeEvent::usage = "is an event describing a change to a te
  the new text is considered to be the full content of the document."
 MarkupContent::usage = "is the type of MarkupContent interface in LSP."
 Hover::usage = "is the type of Hover interface in LSP."
+SignatureHelp::usage = "is the type of SignatureHelp interface in LSP."
+SignatureInformation::usage = "is the type of SignatureInformation interface in LSP."
+ParameterInformation::usage = "is the type of ParameterInformation interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 Diagnostic::usage = "is the type of Diagnostic interface in LSP."
 DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformation interface in LSP."
@@ -209,6 +212,23 @@ DeclareType[MarkupContent, <|
 DeclareType[Hover, <|
     "contents" -> _MarkupContent,
     "range" -> _LspRange
+|>]
+
+DeclareType[SignatureHelp, <|
+    "signatures" -> {___SignatureInformation},
+    "activeSignature" -> _Integer,
+    "activeParameter" -> _Integer
+|>]
+
+DeclareType[SignatureInformation, <|
+    "label" -> _String,
+    "documentation" -> _String | _MarkupContent,
+    "parameters" -> {___ParameterInformation}
+|>]
+
+DeclareType[ParameterInformation, <|
+    "label" -> _String | {_Integer, _Integer},
+    "documentation" -> _String | _MarkupContent
 |>]
 
 DeclareType[DocumentSymbol, <|

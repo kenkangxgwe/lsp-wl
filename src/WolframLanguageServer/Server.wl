@@ -78,6 +78,9 @@ InitialState = WorkState[<|
 ServerCapabilities = <|
 	"textDocumentSync" -> TextDocumentSyncKind["Full"],
 	"hoverProvider" -> True,
+	"signatureHelpProvider" -> <|
+		"triggerCharacters" -> {"[", ","}
+	|>,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
 		"triggerCharacters" -> "\\"
@@ -903,6 +906,43 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 	|>];
 
 	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/signatureHelp*)
+
+
+handleRequest["textDocument/signatureHelp", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		pos = LspPosition[msg["params"]["position"]]
+	},
+
+	state
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "signatureHelp",
+		"scheduledTime" -> DatePlus[Now, {
+			state["config"]["signatrueHelpDelay"],
+			"Second"
+		}],
+		"id" -> id,
+		"params" -> {uri, pos},
+		"callback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> (
+				{
+					#1["openedDocs"][uri],
+					pos
+				}
+				// Apply[GetSignatureHelp]
+				// ToAssociation
+			)
+		|>]&)
+	|>]]
+	// List
+	// Prepend["Continue"]
 ]
 
 

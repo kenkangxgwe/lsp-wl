@@ -1,6 +1,6 @@
 (* ::Package:: *)
 
-(* Wolfram Language Server Documentation *)
+(* Wolfram Language Server Token *)
 (* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
            huxianglong <hxianglong_at_gmail.com>
 *)
@@ -15,6 +15,7 @@ TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] ret
   \"Format\" -> \"plaintext\" | \"markdown\"
 "
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
+GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] gives the signature help at the position."
 GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
 GetTriggerKeys::usage = "GetTriggerKeys[] returns a list of characters that trigger a completion request when input."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
@@ -35,7 +36,8 @@ Needs["WolframLanguageServer`TextDocument`"]
 
 
 Options[TokenDocumentation] = {
-    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *),
+    "Header" -> True
 }
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
@@ -49,7 +51,10 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
             tag // Replace[{
                 "usage" :> (
                     {
-                        GenHeader[token, tag],
+                        If[OptionValue["Header"],
+                            GenHeader[token, tag, "Format" -> OptionValue["Format"]],
+                            Nothing
+                        ],
                         boxText
                         // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
@@ -58,13 +63,16 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             /* Flatten /* DeleteCases[""],
                             GenPlainText
                         ],
-                        GenFooter[token]
+                        GenOptions[token, "Format" -> OptionValue["Format"]]
                     } // Flatten
                     // Curry[StringRiffle]["\n\n"]
                 ),
                 _(* other messages *) :> (
                     {
-                        GenHeader[token, tag],
+                        If[OptionValue["Header"],
+                            GenHeader[token, tag, OptionValue["Format"]],
+                            Nothing
+                        ],
                         boxText
                         // If[OptionValue["Format"] === MarkupKind["Markdown"],
                             GenMarkdownText,
@@ -91,12 +99,23 @@ splitUsage[usageText_String] := (
     ))]
     (* split header and content *)
     // Map[{
-        StringCases[StartOfString ~~ (header:Shortest["\!\(\*"~~box__~~"\)"]) ~~ content__ ~~ EndOfString :> {header, content}],
+        StringCases[StartOfString ~~
+            (header:(
+                Shortest[(* box: *) "\!\(\*"~~__~~"\)"] ~~ ((
+                    (Whitespace|"") ~~
+                    (","|"or"|("," ~~ Whitespace ~~ "or")) ~~
+                    Whitespace ~~
+                    Shortest[(* box: *) "\!\(\*"~~__~~"\)"]
+                )...))
+            ) ~~
+            content__ ~~
+            EndOfString :> {header, content}
+        ],
         Identity
     } /* Through
     /* Replace[{
         {{{header_, content_}}, _} :> (
-            {header, content} 
+            {header, content}
         ),
         {{(* no matches *)}, origin_} :> (
             (* use fallback method *)
@@ -130,7 +149,11 @@ groupBalanceQ[text_String] := And[
 
 
 
-GenHeader[token_String, tag_String] := (
+
+Options[GenHeader] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
     tag
     // Replace[{
         "usage" :> (
@@ -140,13 +163,23 @@ GenHeader[token_String, tag_String] := (
                 Curry[GetUri][tag],
                 GenAttributes
             } // Through
-            // Apply[StringTemplate["**`1`**&nbsp;`2`&emsp;(_`3`_)\n"]]
+            // Apply[
+                If[OptionValue["Format"] == MarkupKind["Markdown"],
+                    StringTemplate["**`1`**&nbsp;`2`&emsp;(`3`)\n"],
+                    StringTemplate["`1`\t(`3`)\n"]
+                ]
+            ]
         ),
         _ :> (
-            StringJoin[
-                "```mathematica\n",
-                token, "::", tag, "\n",
-                "```"
+            If[OptionValue["Format"] == MarkupKind["Markdown"],
+                StringJoin[
+                    token, "::", tag, "\n"
+                ],
+                StringJoin[
+                    "```mathematica\n",
+                    token, "::", tag, "\n",
+                    "```"
+                ]
             ]
         )
     }]
@@ -166,28 +199,40 @@ GetUri[token_String, tag_String] := (
     }]
 )
 
-
-GenAttributes[token_String] := (
+Options[GenAttributes] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenAttributes[token_String, o:OptionsPattern[]] := (
     Attributes[token]
     // Replace[_Attributes -> {}]
     // Curry[StringRiffle][", "]
 )
 
-GenFooter[token_String] := ({
+Options[GenOptions] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenOptions[token_String, o:OptionsPattern[]] := (
     token
     // StringTemplate["Options[``]"]
     // ToExpression
     // Replace[_Options -> {}]
     // Map[Curry[ToString][InputForm]]
     // Replace[{options__} :> (
-        {
-            "__Options:__",
-            "``` mathematica",
-            options,
-            "```"
-        } // Curry[StringRiffle]["\n"]
+        If[OptionValue["Format"] == MarkupKind["Markdown"],
+            {
+                "__Options:__",
+                "``` mathematica",
+                options,
+                "```"
+            },
+            {
+                "Options:",
+                options
+            }
+        ]
     )]
-})
+    // Curry[StringRiffle]["\n"]
+)
 
 
 GenPlainText[boxText_String] := (
@@ -357,6 +402,45 @@ printHoverTextImpl[hoverInfo_HoverInfo] := (
                     "```\n"
                 ]
             }]
+        )
+    }]
+)
+
+
+(* ::Section:: *)
+(*SignatureHelp*)
+
+
+GetSignatureHelp[doc_TextDocument, pos_LspPosition] := (
+    GetFunctionName[doc, pos]
+    // Replace[{
+        _?MissingQ -> Null,
+        functionName_ :> (
+            printSignatureHelp[functionName]
+        )
+    }]
+)
+
+
+printSignatureHelp[functionName_String] := (
+
+    TokenDocumentation[functionName, "usage", "Header" -> False]
+    // Replace[{
+        "" -> Null,
+        text_String :> (
+            SignatureHelp[<|
+                "signatures" -> {
+                    SignatureInformation[<|
+                        "label" -> functionName,
+                        "documentation" -> MarkupContent[<|
+                            "kind" -> MarkupKind["Markdown"],
+                            "value" -> text
+                        |>],
+                        "parameters" -> {}
+                    |>]
+                },
+                "activeSignature" -> 0
+            |>]
         )
     }]
 )

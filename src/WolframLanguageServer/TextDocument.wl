@@ -15,6 +15,7 @@ CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentIte
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
 HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to generate a hover message."
 GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
+GetFunctionName::usage = "GetFunctionName[doc_TextDocument, pos_LspPosition] gives the function being called at the position."
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
@@ -901,6 +902,53 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}, res_] := (
             _ :> Nothing
         }]]
     ])
+)
+
+
+(* ::Section:: *)
+(*GetFunctionName*)
+
+
+GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1, character = pos["character"] + 1
+    },
+    
+    GetCodeRangeAtPosition[doc, pos]
+    // Replace[lineRange:{_Integer, _Integer} :> (
+        CellToAST[doc, lineRange]
+        // (ast \[Function] (
+            FirstPosition[
+                ast,
+                _Association?(NodeDataContainsPosition[{line, character}]),
+                Missing["NotFound", {}],
+                AstLevelspec["DataWithSource"],
+                Heads -> False
+            ]
+            // Most
+            // Replace[indices_List :> (
+                getFunctionNameImpl[ast, indices]
+            )]
+        ))
+    )]
+]
+
+getFunctionNameImpl[ast_, indices_] := (
+    Extract[ast, indices // Replace[{} -> {All}]]
+    // Replace[{
+        AstPattern["Function"][{functionName_}] :> (
+            functionName
+        ),
+        _ :> (
+            indices
+            // Replace[{
+                {} -> Missing["NotFound"],
+                _ :> (
+                    getFunctionNameImpl[ast, indices // Most]
+                )
+            }]
+        )
+    }]
 )
 
 
