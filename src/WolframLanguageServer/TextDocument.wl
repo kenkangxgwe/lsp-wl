@@ -1163,37 +1163,15 @@ FindTopLevelSymbols[node_, name_String] := (
 (*DocumentColor*)
 
 
-FindDocumentColor[doc_TextDocument] := Join[
-    Cases[
-        CellToAST[doc, {1, doc["text"] // Length}],
-        AstPattern["NamedColor"][{color_, data_}] :> (
-            ColorInformation[<|
-                "range" -> (
-                    data
-                    // Key[AST`Source]
-                    // SourceToRange
-                ),
-                "color" -> (
-                    ColorConvert[ToExpression[color], "RGB"]
-                    // Apply[List]
-                    // ToLspColor
-                )
-            |>]
-        ),
-        AstLevelspec["LeafNodeWithSource"]
-    ],
-    Cases[
-        CellToAST[doc, {1, doc["text"] // Length}],
-        AstPattern["ColorModel"][{model_, params_, data_}] :> With[
-            {
-                color = (
-                    params
-                    // Map[AST`FromNode]
-                    // Apply[ToExpression[model]]
-                )
-            },
+FindDocumentColor[doc_TextDocument] := With[
+    {
+        ast = CellToAST[doc, {1, doc["text"] // Length}]
+    },
 
-            If[ColorQ[color],
+    Join[
+        Cases[
+            ast,
+            AstPattern["NamedColor"][{color_, data_}] :> (
                 ColorInformation[<|
                     "range" -> (
                         data
@@ -1201,15 +1179,43 @@ FindDocumentColor[doc_TextDocument] := Join[
                         // SourceToRange
                     ),
                     "color" -> (
-                        ColorConvert[color, "RGB"]
+                        ColorConvert[ToExpression[color], "RGB"]
                         // Apply[List]
                         // ToLspColor
                     )
-                |>],
-                Nothing
-            ]
+                |>]
+            ),
+            AstLevelspec["LeafNodeWithSource"]
         ],
-        AstLevelspec["CallNodeWithArgs"]
+        Cases[
+            ast,
+            AstPattern["ColorModel"][{model_, params_, data_}] :> With[
+                {
+                    color = (
+                        params
+                        // Map[AST`FromNode]
+                        // Apply[ToExpression[model]]
+                    )
+                },
+
+                If[ColorQ[color],
+                    ColorInformation[<|
+                        "range" -> (
+                            data
+                            // Key[AST`Source]
+                            // SourceToRange
+                        ),
+                        "color" -> (
+                            ColorConvert[color, "RGB"]
+                            // Apply[List]
+                            // ToLspColor
+                        )
+                    |>],
+                    Nothing
+                ]
+            ],
+            AstLevelspec["CallNodeWithArgs"]
+        ]
     ]
 ]
 
