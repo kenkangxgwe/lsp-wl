@@ -918,20 +918,27 @@ handleRequest["textDocument/references", msg_, state_] := With[
 
 handleRequest["textDocument/documentHighlight", msg_, state_] := With[
 	{
-		delay = 0.5
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		pos = LspPosition[msg["params"]["position"]],
+		scheduledTime = DatePlus[Now, {
+			state["config"]["documentHighlightDelay"],
+			"Second"
+		}]
 	},
 
 	state
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "documentHighlight",
-		"scheduledTime" -> DatePlus[Now, {delay, "Second"}],
-		"params" -> msg,
+		"scheduledTime" -> scheduledTime,
+		"id" -> id,
+		"params" -> {uri, pos},
 		"callback" -> (sendResponse[#1["client"], <|
-			"id" -> msg["id"],
+			"id" -> id,
 			"result" -> (
 				{
-					#1["openedDocs"][#2["params"]["textDocument"]["uri"]],
-					LspPosition[#2["params"]["position"]]
+					#1["openedDocs"][uri],
+					pos
 				}
 				// Apply[FindDocumentHighlight]
 				// ToAssociation
@@ -950,9 +957,11 @@ handleRequest["textDocument/documentHighlight", msg_, state_] := With[
 
 handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
 		scheduledTime = DatePlus[
 			state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"],
-			{5.0, "Second"}
+			{state["config"]["documentSymbolDelay"], "Second"}
 		]
 	},
 
@@ -960,11 +969,12 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "documentSymbol",
 		"scheduledTime" -> scheduledTime,
-		"params" -> msg,
+		"id" -> id,
+		"params" -> uri,
 		"callback" -> (sendResponse[#1["client"], <|
-			"id" -> msg["id"],
+			"id" -> id,
 			"result" -> (
-				#1["openedDocs"][#2["params"]["textDocument"]["uri"]]
+				#1["openedDocs"][uri]
 				// ToDocumentSymbol
 				// ToAssociation
 			)
@@ -981,9 +991,11 @@ handleRequest["textDocument/documentSymbol", msg_, state_] := With[
 
 handleRequest["textDocument/documentColor", msg_, state_] := With[
 	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
 		scheduledTime = DatePlus[
 			state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"],
-			{8.0, "Second"}
+			{state["config"]["documentColorDelay"], "Second"}
 		]
 	},
 
@@ -991,14 +1003,19 @@ handleRequest["textDocument/documentColor", msg_, state_] := With[
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "documentColor",
 		"scheduledTime" -> scheduledTime,
-		"params" -> msg,
+		"id" -> id,
+		"params" -> uri,
 		"callback" -> (sendResponse[#1["client"], <|
-			"id" -> msg["id"],
+			"id" -> id,
 			"result" -> (
-				#1["openedDocs"][#2["params"]["textDocument"]["uri"]]
+				#1["openedDocs"][uri]
 				// FindDocumentColor
 				// ToAssociation
 			)
+		|>]&),
+		"duplicateFallback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> {}
 		|>]&)
 	|>]]
 	// List
@@ -1154,8 +1171,7 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
         doc = msg["params"]["textDocument"],
-		uri = msg["params"]["textDocument"]["uri"],
-		diagDelay = 5
+		uri = msg["params"]["textDocument"]["uri"]
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
@@ -1182,8 +1198,11 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 
 	LogDebug @ ("Change Document " <> uri);
 
-	(* Clean the diagnostics only if lastUpdate time is before diagDelay *)
-	If[DatePlus[state["openedDocs"][uri]["lastUpdate"], {diagDelay, "Second"}] < Now,
+	(* Clean the diagnostics only if lastUpdate time is before delay *)
+	If[DatePlus[state["openedDocs"][uri]["lastUpdate"], {
+			state["config"]["diagnosticsDelay"],
+			"Second"
+		}] < Now,
 		clearDiagnostics[state, uri]
 	];
 
@@ -1201,12 +1220,15 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
 	|>]]
-	(* Give diagnostics in at least diagDelay seconds *)
+	(* Give diagnostics after delay *)
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "PublishDiagnostics",
 		"params" -> uri,
-		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
-		"callback" -> (publishDiagnostics[#1, #2]&)
+		"scheduledTime" -> DatePlus[Now, {
+			state["config"]["diagnosticsDelay"],
+			"Second"
+		}],
+		"callback" -> (publishDiagnostics[#1, uri]&)
 	|>]]
 	// List
 	// Prepend["Continue"]
@@ -1224,7 +1246,7 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 	},
 
 	(* Give diagnostics after save *)
-	publishDiagnostics[state["client"], uri];
+	publishDiagnostics[state, uri];
 
 	{"Continue", state}
 ]
@@ -1351,9 +1373,11 @@ ErrorMessageTemplates = <|
 
 DeclareType[ServerTask, <|
 	"type" -> _String,
+	"id" -> _Integer,
 	"params" -> _,
 	"scheduledTime" -> _DateObject,
-	"callback" -> _
+	"callback" -> _,
+	"duplicateFallback" -> _
 |>]
 
 
@@ -1378,7 +1402,7 @@ doNextScheduledTask[state_WorkState] := (
 	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
 	// Replace[{
 		_?MissingQ :> (
-			Pause[0.1];
+			Pause[0.001];
 			state
 		),
 		task_ServerTask :> Block[
@@ -1446,8 +1470,8 @@ doNextScheduledTask[state_WorkState] := (
 						newState["scheduledTasks"],
 						t_ /; (
 							t["type"] == task["type"] &&
-							(* same params in msg *)
-							t["params"]["params"] == task["params"]["params"]
+							(* same params *)
+							t["params"] == task["params"]
 						),
 						Missing["NotFound"],
 						{1}
@@ -1456,23 +1480,30 @@ doNextScheduledTask[state_WorkState] := (
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendResponse[state["client"], <|"id" -> task["params"]["id"], "result" -> <||>|>]], *)
-							task["callback"][newState, task["params"]],
+							task["callback"][newState, task["params"]]
+							// AbsoluteTiming
+							// Apply[(LogInfo[{task["type"], #1}];#2)&],
 							sendResponse[newState["client"], <|
-								"id" -> task["params"]["id"],
+								"id" -> task["id"],
 								"error" -> ServerError[
 									"InternalError",
 									"There is no callback function for this scheduled task."
 								]
 							|>]
 						],
-						(* otherwise, return ContentModified error *)
-						_ :> sendResponse[newState["client"], <|
-							"id" -> task["params"]["id"],
-							"error" -> ServerError[
-								"ContentModified",
-								"There is a more recent duplicate request."
-							]
-						|>]
+						(* find a recent duplicate request *)
+						_ :> If[!MissingQ[task["duplicateFallback"]],
+							(* execute fallback function if applicable *)
+							task["duplicateFallback"][newState, task["params"]],
+							(* otherwise, return ContentModified error *)
+							sendResponse[newState["client"], <|
+								"id" -> task["id"],
+								"error" -> ServerError[
+									"ContentModified",
+									"There is a more recent duplicate request."
+								]
+							|>]
+						]
 					}]
 				)
 			}];
@@ -1491,16 +1522,18 @@ doNextScheduledTask[state_WorkState] := (
 (*load config*)
 
 
-loadConfig[] := With[
+loadConfig[] := Block[
 	{
-		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}],
+		newConfig
 	},
 
-	If[FileExistsQ[configPath],
-		Import[configPath, "RawJSON"],
-		Export[configPath, defaultConfig, "RawJSON"];
+	newConfig = If[FileExistsQ[configPath],
+		Join[defaultConfig, Import[configPath, "RawJSON"]],
 		defaultConfig
-	]
+	];
+	Export[configPath, newConfig, "RawJSON"];
+	newConfig
 ]
 
 
@@ -1515,7 +1548,13 @@ saveConfig[newConfig_Association] := With[
 
 
 defaultConfig = <|
-	"lastCheckForUpgrade" -> DateString[Today]
+	"lastCheckForUpgrade" -> DateString[Today],
+	(* default delays (seconds) *)
+	"diagnosticsDelay" -> 5.0,
+	"signatrueHelpDelay" -> 0.5,
+	"documentSymbolDelay" -> 3.0,
+	"documentHighlightDelay" -> 0.5,
+	"documentColorDelay" -> 5.0
 |>
 
 
