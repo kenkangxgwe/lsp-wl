@@ -1081,7 +1081,7 @@ DynamicLocalSource[node_, name_String] := (
                     // MatchQ[Except[{}, _List]]
                 )
             ],
-            AstLevelspec["2levels"],
+            AstLevelspec["CallNodeWithArgs"],
             Heads -> False
         ]
     ]
@@ -1209,7 +1209,7 @@ FindDocumentColor[doc_TextDocument] := Join[
                 Nothing
             ]
         ],
-        AstLevelspec["2levels"]
+        AstLevelspec["CallNodeWithArgs"]
     ]
 ]
 

@@ -269,12 +269,13 @@ AstPattern = <|
 
 
 AstLevelspec = <|
-    "DataWithSource" -> {-4},
-    "Data" -> {-4, -1},
+    "Data" -> {0, Infinity},
+    "DataWithSource" -> {0, -4},
     "LeafNodeWithSource" -> {-5},
     "LeafNode" -> {-5, -2},
     "ColorModel" -> {-7},
-    "2levels" -> {0, -7}
+    "CallNodeWithArgs" -> {0, -7},
+    "CallNode" -> {0, -6}
 |>
 
 
