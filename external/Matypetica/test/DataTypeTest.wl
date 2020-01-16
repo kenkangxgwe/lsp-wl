@@ -16,7 +16,7 @@ Needs[TestingContext]
 {
 
 VerificationTest[
-	AssociationSameQ @@@ {
+	DataType`Test`AssociationSameQ @@@ {
 		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 2, "a" -> 1 |>},
 		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 1, "a" -> 2 |>},
 		{<|"a" -> 1, "b" -> 2|>, <|"a" -> 2 |>},
@@ -155,7 +155,7 @@ VerificationTest[
 	stu1["courses"],
 	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>,
 	TestID -> "Replace Association",
-	SameTest -> AssociationSameQ
+	SameTest -> DataType`Test`AssociationSameQ
 ],
 
 VerificationTest[
@@ -178,7 +178,7 @@ VerificationTest[
 	stu1["courses"],
 	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>,
 	TestID -> "Replace Association",
-	SameTest -> AssociationSameQ
+	SameTest -> DataType`Test`AssociationSameQ
 ],
 
 VerificationTest[
