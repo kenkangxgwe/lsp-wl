@@ -341,14 +341,18 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
         // Replace[{
             "empty" :> (
                 If[state["startLine"] < state["endLine"],
-                    Sow[{"codeEnd", state["endLine"] - 2}]
+                    Sow[{"codeEnd", state["endLine"] - 2}];
+                    Sow[{"codeStart", state["endLine"] + 1}]
                 ]
             ),
             "style" :> (
-                Sow[{"untitledStyle", state["startLine"], state["data"]}]
+                Sow[{"untitledStyle", state["startLine"], state["data"]}];
+                Sow[{"codeStart", state["endLine"] + 1}]
+            ),
+            "title" | "start" :> (
+                Sow[{"codeStart", state["endLine"] + 1}]
             )
         }];
-        Sow[{"codeStart", state["endLine"] + 1}];
         (* normal -> any *)
         lineState["label"]
         // Replace[{
@@ -360,7 +364,7 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 |>
             ),
             "style" :> (
-                Sow[{"codeEnd", lineState["line"]}];
+                Sow[{"codeEnd", lineState["line"] - 1}];
                 <|
                     "label" -> "style",
                     "startLine" -> lineState["line"], 
@@ -417,7 +421,7 @@ InsertCell[rootCell_CellNode, directive:{"titledStyle"|"untitledStyle", line_Int
 cellDirectiveToCellNode[{label:("titledStyle"|"untitledStyle"), line_Integer, data_Association}] := (
     CellNode[<|
         "style" -> data["style"],
-        "name" -> If[label == "titledStyle", data["title"], "[untitled]"],
+        "name" -> If[label == "titledStyle" && data["title"] != "", data["title"], "[untitled]"],
         "range" -> {
             line,
             line + If[label == "titledStyle", 1, 0]
@@ -792,7 +796,7 @@ ToDocumentSymbolImpl[node_] := (
 )
 
 
-ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
+ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<|
     "start" -> LspPosition[<|
         "line" -> startLine - 1,
         "character" -> 0
@@ -809,7 +813,7 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := <|
             |>
         ]
     ]
-|>
+|>]
 
 
 GetSymbolList[node_] := (
@@ -1078,7 +1082,8 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
         ),
         Missing["NotFound"],
         AstLevelspec["LeafNodeWithSource"]
-    ] // Replace[_?MissingQ :> Return[{{}, {}}]];
+    ]
+    // Replace[_?MissingQ :> Return[{{}, {}}]];
 
     LogDebug["Searching for " <> name];
 
