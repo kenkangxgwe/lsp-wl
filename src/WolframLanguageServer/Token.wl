@@ -6,28 +6,28 @@
 *)
 
 
-BeginPackage["WolframLanguageServer`Token`"];
-ClearAll[Evaluate[Context[] <> "*"]];
+BeginPackage["WolframLanguageServer`Token`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TokenDocumentation::usage = "TokenDocumentation[token_String] returns the documentation for input token in Markdown format.
+TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in Markdown format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\"
 "
-TokenKind::usage = "TokenKind[token_String] returns the symbol kind of input token. See WolframLanguageServer`Specification`CompletionItemKind."
-TokenCompletionList::usage = "TokenCompletionList[token_String] returns a list of predicted completions for the input token."
-GetTokenCompletion::usage = "GetTokenCompletion[token_String] returns a list of CompletionItems to complete a given token."
+GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
+GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
 GetTriggerKeys::usage = "GetTriggerKeys[] returns a list of characters that trigger a completion request when input."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
-GetAliasCompletion::usage = "GetAliasCompletion[prefix_String] returns a list of CompletionItems for unicode alias prefix."
-GetLongNameCompletion::usage = "GetLongNameCompletion[prefix_String] returns a list of CompletionItems for unicode long name prefix."
+GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
 
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
+Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`UnicodeTable`"]
+Needs["WolframLanguageServer`TextDocument`"]
 
 
 (* ::Section:: *)
@@ -35,10 +35,12 @@ Needs["WolframLanguageServer`UnicodeTable`"]
 
 
 Options[TokenDocumentation] = {
-    "Format" -> "Markdown" (* | "Plaintext" *)
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
 }
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
+
+    If[Names["System`"<>token] === {}, Return[""]];
 
     ToExpression[token<>"::"<>tag]
     // Replace[{
@@ -49,21 +51,22 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                     {
                         GenHeader[token, tag],
                         boxText
-                        // If[OptionValue["Format"] == "Markdown",
+                        // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
                             /* MapAt[GenMarkdownCodeBlock, {All, 1}]
                             /* MapAt[GenMarkdownText, {All, 2}]
                             /* Flatten /* DeleteCases[""],
                             GenPlainText
-                        ]
+                        ],
+                        GenFooter[token]
                     } // Flatten
                     // Curry[StringRiffle]["\n\n"]
                 ),
                 _(* other messages *) :> (
-                    { 
+                    {
                         GenHeader[token, tag],
                         boxText
-                        // If[OptionValue["Format"] == "Markdown",
+                        // If[OptionValue["Format"] === MarkupKind["Markdown"],
                             GenMarkdownText,
                             GenPlainText
                         ]
@@ -131,16 +134,13 @@ GenHeader[token_String, tag_String] := (
     tag
     // Replace[{
         "usage" :> (
-            StringJoin[
-                "**", token, "**",
-                (* "[**", token, "**]", *)
-                (* "(", URLBuild[<|
-                    "Scheme" -> "command", 
-                    "Path" -> "WolframLanguageServer.openRef", 
-                    "Query" -> <|"name" -> token, "tag" -> tag|>
-                |>], ")", *)
-                "\t", GetUri[token, tag], "\n"
-            ]
+            token
+            // {
+                Identity,
+                Curry[GetUri][tag],
+                GenAttributes
+            } // Through
+            // Apply[StringTemplate["**`1`**&nbsp;`2`&emsp;(_`3`_)\n"]]
         ),
         _ :> (
             StringJoin[
@@ -167,6 +167,29 @@ GetUri[token_String, tag_String] := (
 )
 
 
+GenAttributes[token_String] := (
+    Attributes[token]
+    // Replace[_Attributes -> {}]
+    // Curry[StringRiffle][", "]
+)
+
+GenFooter[token_String] := ({
+    token
+    // StringTemplate["Options[``]"]
+    // ToExpression
+    // Replace[_Options -> {}]
+    // Map[Curry[ToString][InputForm]]
+    // Replace[{options__} :> (
+        {
+            "__Options:__",
+            "``` mathematica",
+            options,
+            "```"
+        } // Curry[StringRiffle]["\n"]
+    )]
+})
+
+
 GenPlainText[boxText_String] := (
     boxText
     // (BoxToText[#, "Format" -> "PlainText"]&)
@@ -187,30 +210,38 @@ GenMarkdownCodeBlock[boxText_String] := (
 
 GenMarkdownText[boxText_String] := (
     boxText
-    // StringReplace[{
-        "~" -> "\\~",
-        "`" -> "\\`",
-        "*" -> "\\*"
-    }]
     // (BoxToText[#, "Format" -> "Markdown"]&)
 	// StringReplace[PUACharactersReplaceRule]
+    // StringReplace[{
+        (* empty italic block since no bold type in doc. *)
+        "**" -> ""
+    }]
 )
 
 
 Options[BoxToText] = {
-    "Format" -> "Markdown"
+    "Format" -> "Markdown",
+    "Italic" -> False
 }
 
-BoxToText[input_, o:OptionsPattern[]] := With[
+BoxToText[input_, o:OptionsPattern[]] := Block[
     {
-        recursiveCall = (nextInput \[Function] BoxToText[nextInput, o])
+        recursiveCall
     },
+
+    recursiveCall[nextInput_, newOptions:OptionsPattern[]] := BoxToText[nextInput, newOptions, o];
 
     Replace[input, {
         RowBox[boxlist_List] :> StringJoin[recursiveCall /@ boxlist],
         StyleBox[x_, "TI"] :> (
-            If[OptionValue["Format"] == "Markdown",
-                "*" <> recursiveCall[x] <> "*",
+            If[OptionValue["Format"] == "Markdown" && !OptionValue["Italic"],
+                "*" <> recursiveCall[x, "Italic" -> True] <> "*",
+                recursiveCall[x]
+            ]
+        ),
+        StyleBox[x_, "TR"] :> (
+            If[OptionValue["Format"] == "Markdown" && OptionValue["Italic"],
+                "*" <> recursiveCall[x, "Italic" -> False] <> "*",
                 recursiveCall[x]
             ]
         ),
@@ -218,8 +249,8 @@ BoxToText[input_, o:OptionsPattern[]] := With[
         (* StyleBox[x_, OptionsPattern[]] :> recursiveCall[x], *)
         (Subscript|SubscriptBox)[x_, y_] :> (
             If[OptionValue["Format"] == "Markdown",
-                recursiveCall[x] <> "\\_"<>recursiveCall[y],
-                recursiveCall[x] <> "_"<>recursiveCall[y]
+                recursiveCall[x] <> "\\_" <>recursiveCall[y],
+                recursiveCall[x] <> "_" <>recursiveCall[y]
             ]
         ),
         (Superscript|SuperscriptBox)["\[Null]", y_] :> ("-" <> recursiveCall[y]),
@@ -236,16 +267,35 @@ BoxToText[input_, o:OptionsPattern[]] := With[
         FractionBox[x_, y_] :> (recursiveCall[x] <> "/" <> recursiveCall[y]),
         (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> recursiveCall[x] <> "]"),
         RadicalBox[x_, y_] :> (recursiveCall[x] <> "^{1/" <> recursiveCall[y] <> "}"),
-        _String :> StringReplace[input, {
-            Shortest["\!\(\*"~~box__~~"\)"] :> ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
-        }],
-        _ :> ToString[input]
+        _String?(StringContainsQ["\!\(\*"~~__~~"\)"]) :> (
+            StringSplit[input, {Shortest["\!\(\*"~~box__~~"\)"] :> BoxString[box]}]
+            // Map[recursiveCall]
+            // StringJoin
+        ),
+        _String :> (
+            input
+            // If[OptionValue["Format"] == "Markdown",
+                StringReplace[{
+                    "~" -> "\\~",
+                    "`" -> "\\`",
+                    "*" -> "\\*"
+                }],
+                Identity
+            ]
+        ),
+        BoxString[box_String] :> (
+            ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
+        ),
+        _ :> (
+            ToString[input]
+        )
     }]
 ]
 
 
 PUACharactersReplaceRule = {
     "\[Rule]" -> "->",
+    "\[RuleDelayed]" -> ":>",
     "\[TwoWayRule]" -> "\[LeftRightArrow]",
     "\[UndirectedEdge]" -> "\[LeftRightArrow]",
     "\[LongEqual]" -> "==",
@@ -256,9 +306,64 @@ PUACharactersReplaceRule = {
     "\[Null]" -> ""
 }
 
+(* ::Section:: *)
+(*Hover*)
+
+
+GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := (
+    GetHoverInfo[doc, pos]
+    // Apply[printHoverText]
+
+)
+
+
+printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
+
+    hoverInfo
+    // Map[printHoverTextImpl]
+    // Curry[StringRiffle]["\n\n---\n\n"]
+    // Replace[{
+        "" -> Null,
+        text_String :> (
+            Hover[<|
+                "contents" -> MarkupContent[<|
+                    "kind" -> MarkupKind["Markdown"],
+                    "value" -> text
+                |>],
+                If[range === Automatic,
+                    Nothing,
+                    "range" -> range
+                ]
+            |>]
+        )
+    }]
+)
+printHoverTextImpl[hoverInfo_HoverInfo] := (
+    hoverInfo
+    // Replace[{
+        HoverInfo["Operator", {symbolName_String}] :> (
+            TokenDocumentation[symbolName, "usage"]
+        ),
+        HoverInfo["Message", {symbolName_String, tag_String}] :> (
+            TokenDocumentation[symbolName, tag]
+        ),
+        HoverInfo["Number", {numberString_String, numberValue_}] :> (
+            ToString[numberValue]
+            // Replace[{
+                numberString :> "",
+                numberValueString_ :> StringJoin[
+                    "```mathematica\n",
+                    numberValueString, " (* ", numberString, " *)",  "\n",
+                    "```\n"
+                ]
+            }]
+        )
+    }]
+)
+
 
 (* ::Section:: *)
-(*Kind*)
+(*Completion*)
 
 
 TokenKind[token_String] := Module[
@@ -278,27 +383,40 @@ TokenKind[token_String] := Module[
 ];
 
 
-(* ::Section:: *)
-(*GetCommonToken*)
-
-
-TokenCompletionList[token_String] := Module[
+GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
     {
-        allNames
+        prefix = GetTokenPrefix[doc, pos]
     },
-   
-    allNames = Names["System`" <> token <> "*"]
-];
 
-GetTokenCompletion[token_String] := (
-    CompletionItem[<|
-        "label" -> token,
-        "kind" -> TokenKind[token],
-        "data" -> <|
-            "type" -> "Token"
-        |>
-    |>]
-)
+    If[prefix == "",
+        Return[{}]
+    ];
+
+    Names[prefix<>"*"]
+    // Select[Context /* EqualTo["System`"]]
+    // Map[item \[Function] (
+        CompletionItem[<|
+            "label" -> item,
+            "kind" -> TokenKind[item],
+            "textEdit" -> TextEdit[<|
+                "range" -> LspRange[<|
+                    "start" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"] - StringLength[prefix]
+                    |>],
+                    "end" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"]
+                    |>]
+                |>],
+                "newText" -> item
+            |>],
+            "data" -> <|
+                "type" -> "Token"
+            |>
+        |>]
+    )]
+]
 
 
 GetTriggerKeys[] := UnicodeLeaders
@@ -334,14 +452,14 @@ GetTriggerKeyCompletion[] := (
 )
 
 
-GetAliasCompletion[prefix_String] := (
+GetAliasCompletion[prefix_String, pos_LspPosition] := (
     AliasToLongName
     // KeySelect[StringStartsQ[prefix]]
     // KeyValueMap[{alias, longName} \[Function] With[
         {
             unicode = LongNameToUnicode[longName]
         },
-        
+
         CompletionItem[<|
             "label" -> StringJoin[
                 If[unicode < 16^^E000,
@@ -353,10 +471,22 @@ GetAliasCompletion[prefix_String] := (
             ],
             "kind" -> CompletionItemKind["Text"],
             "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+            (* label has some extra information, thus cannot be used to sort, filter or insert *)
             "sortText" -> StringDrop[alias, StringLength[prefix] - 1],
             "filterText" -> StringDrop[alias, StringLength[prefix] - 1],
-            "insertText" -> StringJoin["[", longName, "]"],
-            "insertTextFormat" -> InsertTextFormat["PlainText"],
+            "textEdit" -> TextEdit[<|
+                "range" -> LspRange[<|
+                    "start" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"] - StringLength[prefix]
+                    |>],
+                    "end" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"]
+                    |>]
+                |>],
+                "newText" -> StringJoin["[", longName, "]"]
+            |>],
             "data" -> <|"type" -> "Alias"|>
         |>]
     ]]
@@ -378,6 +508,7 @@ GetLongNameCompletion[prefix_String] := (
             ],
             "kind" -> CompletionItemKind["Text"],
             "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+            (* label has some extra information, thus cannot be used to sort, filter or insert *)
             "sortText" -> longName,
             "filterText" -> longName,
             "insertText" -> longName,
@@ -389,7 +520,30 @@ GetLongNameCompletion[prefix_String] := (
 )
 
 
-End[];
+GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
+
+    StringTake[Part[doc["text"], pos["line"] + 1], pos["character"]]
+    // StringReverse
+    // StringCases[StartOfString ~~ Shortest[prefix__] ~~ "\\" :> prefix]
+    // First
+    // StringReverse
+    // Replace[{
+        (* for long name characters *)
+        prefix_?(StringStartsQ["["]) :> (
+            StringDrop[prefix, 1]
+            // GetLongNameCompletion
+        ),
+        (* other aliases *)
+        prefix_ :> (
+            prefix
+            // Curry[GetAliasCompletion][pos]
+        )
+    }]
+
+)
 
 
-EndPackage[];
+End[]
+
+
+EndPackage[]

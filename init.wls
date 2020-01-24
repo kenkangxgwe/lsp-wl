@@ -32,14 +32,20 @@ WolframLanguageServer`RootDirectory = (
     }]
 );
 
-WolframLanguageServer`DependencyDirectories = {
+WolframLanguageServer`SourceDirectories = {
+    FileNameJoin[{WolframLanguageServer`RootDirectory, "src"}],
     FileNameJoin[{WolframLanguageServer`RootDirectory, "external", "Matypetica", "src"}]
+}
+
+WolframLanguageServer`TestDirectories = {
+    FileNameJoin[{WolframLanguageServer`RootDirectory, "test"}],
+    FileNameJoin[{WolframLanguageServer`RootDirectory, "external", "Matypetica", "test"}]
 }
 
 
 $Path = Join[
-    WolframLanguageServer`DependencyDirectories,
-    {WolframLanguageServer`RootDirectory},
+    WolframLanguageServer`SourceDirectories,
+    WolframLanguageServer`TestDirectories,
     $Path
 ]
 
@@ -107,7 +113,7 @@ Options:
 (*Version*)
 
 
-WolframLanguageServer`Version = "0.1.1";
+WolframLanguageServer`Version = "0.2.1";
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
     Print["
 Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
@@ -125,8 +131,8 @@ If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
 Running tests for all.
 "];
     Off[General::shdw];
-    << WolframLanguageServer`Test`RunTest`;
-    Print[WolframLanguageServer`Test`RunTest`TestRunAll[]];
+    << RunTest`;
+    Print[RunTest`TestRunAll[]];
     Quit[];
 ];
 
@@ -136,6 +142,12 @@ Running tests for all.
 
 
 Needs["WolframLanguageServer`Logger`"];
+
+If[$VersionNumber < 11.3,
+    (* load myCurry *)
+    Needs["MyCurry`"];
+    System`Curry = MyCurry`MyCurry
+]
 
 Module[
     {

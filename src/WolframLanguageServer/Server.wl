@@ -26,7 +26,6 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
-Needs["GeneralUtilities`"]
 
 
 (* ::Section:: *)
@@ -59,13 +58,17 @@ InitialState = WorkState[<|
 |>];
 
 ServerCapabilities = <|
-	"textDocumentSync" -> 2,
+	"textDocumentSync" -> TextDocumentSyncKind["Full"],
 	"hoverProvider" -> True,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
 		"triggerCharacters" -> "\\"
 	|>,
+	"definitionProvider" -> True,
+	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
+	"documentHighlightProvider" -> True,
+	"colorProvider" -> True,
 	(* "executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef"
@@ -104,7 +107,6 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
     If[clientPid === Null, clientPid = GetParentPid[]];
 	(* If[FileExistsQ[Last @ $Path <> "Cache"], LogError @ "Please delete a file named cache in working directory first."]; *)
-
     
 	(*Temporary cache.*)
 	tempDirPath = FileNameJoin[{workingDir, "wlServerCache"}];
@@ -119,7 +121,6 @@ WLServerStart[o:OptionsPattern[]] := Module[
 		    Quit[1]
 		)]
 	];
-	LogDebug @ ("Cache: " <> tempDirPath);
 	
 	LogInfo["Language server is connecting the client through "<> stream <> "."];
 	Replace[stream, {
@@ -164,7 +165,7 @@ WLServerStart[o:OptionsPattern[]] := Module[
 
 							LogInfo["Server listening on pipe " <> pipename <> "..."];
 							(*LogInfo[WLServerListen[connection, InitialState]];*)
-				
+
 							Block[{$IterationLimit = Infinity},
 								InitialState
 								// ReplaceKey["client" -> NamedPipe[<|
@@ -538,7 +539,7 @@ InputBinary[] := (LogDebug["waiting for input"];a=Import["!D:\\Programs\\msys64\
 (*WriteMessage*)
 
 
-WriteMessage[client_SocketClient][msglist:{_ByteArray..}] := Module[
+WriteMessage[client_SocketClient][msglist:{__ByteArray}] := Module[
 	{
 		targetsocket
 	},
@@ -563,13 +564,13 @@ WriteMessage[client_NamedPipe][msglist:{header_ByteArray, content_ByteArray}] :=
 ]
 
 
-WriteMessage[client_SocketObject][msglist:{_ByteArray..}] := (
+WriteMessage[client_SocketObject][msglist:{__ByteArray}] := (
     BinaryWrite[client, First@msglist];
     BinaryWrite[client, Last@msglist];
 );
 
 
-WriteMessage["stdio"][msglist:{_ByteArray..}] := (
+WriteMessage["stdio"][msglist:{__ByteArray}] := (
     BinaryWrite[OutputStream["stdout",1], First@msglist];
     BinaryWrite[OutputStream["stdout",1], Last@msglist];
 );
@@ -590,15 +591,30 @@ RPCPatterns = <|
 |>;
 
 
-constructRPCBytes[msg_Association] := Module[
-	{
-		headerBytes, jsonBytes
-	},
-	
-	jsonBytes = ExportByteArray[msg, "RawJSON"];
-	headerBytes = StringToByteArray["Content-Length: " <> ToString[Length[jsonBytes]] <> "\r\n\r\n"];
-	{headerBytes, jsonBytes}
-];
+constructRPCBytes[msg_Association] := (
+	Check[
+		ExportByteArray[msg, "RawJSON"],
+		(*
+			if the result is not able to convert to JSON,
+			returns an error respond
+		*)
+		ExportByteArray[
+			msg
+			// KeyDrop["result"]
+			// Append["error" -> ServerError[
+				"InternalError",
+				"The request is not handled correctly."
+			]],
+		"RawJSON"]
+	] // {
+		(* header *)
+		Length
+		/* StringTemplate["Content-Length: `1`\r\n\r\n"]
+		/* StringToByteArray,
+		(* content *)
+		Identity
+	} // Through
+)
 
 
 getContentLength[header_ByteArray] := getContentLength[ByteArrayToString[header, "ASCII"]];
@@ -742,15 +758,13 @@ handleRequest["shutdown", msg_, state_] := Module[
 
 handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		hover = GetHoverAtPosition[
-			state["openedDocs"][msg["params"]["textDocument"]["uri"]],
-			LspPosition[msg["params"]["position"]]
-		]
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	sendResponse[state["client"], <|
 		"id" -> msg["id"],
-		"result" -> ToAssociation[hover]
+		"result" -> ToAssociation[GetHoverAtPosition[doc, pos]]
 	|>];
 
 	{"Continue", state}
@@ -764,7 +778,7 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
 		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
-		pos = LspPosition[LogDebug@msg["params"]["position"]]
+		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	msg["params"]["context"]["triggerKind"]
@@ -773,7 +787,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"isIncomplete" -> False, 
+					"isIncomplete" -> False,
 					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
 				|>
 			|>]
@@ -782,7 +796,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"isIncomplete" -> True, 
+					"isIncomplete" -> True,
 					"items" -> (
 						GetTriggerKeyCompletion[]
 						// ToAssociation
@@ -815,35 +829,218 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 
 handleRequest["completionItem/resolve", msg_, state_] := With[
 	{
-		token = msg["params"]["label"],
-		type = msg["params"]["data"]["type"]
+		markupKind = (
+			state["clientCapabilities"]["textDocument"]["completion"]["completionItem"]["documentationFormat"]
+			// First
+			// Replace[Except[_?(Curry[MemberQ, 2][Values[MarkupKind]])] -> MarkupKind["PlainText"]]
+		)
 	},
 
 	(* LogDebug @ ("Completion Resolve over token: " <> ToString[token, InputForm]); *)
 	
-	type
+	msg["params"]["data"]["type"]
 	// Replace[{
 		"Alias" | "LongName" :> (
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> msg["params"]
-			|>]
+			|>] 
 		),
 		"Token" :> (
 			sendResponse[state["client"], <|
 				"id" -> msg["id"],
 				"result" -> <|
-					"label" -> token, 
-					"kind" -> TokenKind[token], 
-					"documentation" -> <|
-						"kind" -> "markdown",
-						"value" -> TokenDocumentation[token, "usage"]
-					|>
+					msg["params"]
+					// Append[
+						"documentation" -> <|
+							"kind" -> markupKind,
+							"value" -> TokenDocumentation[msg["params"]["label"], "usage", "Format" -> markupKind]
+						|>
+					]
 				|>
 			|>]
 		)
 	}];
-	
+
+	state
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "JustContinue",
+		"scheduledTime" -> Now
+	|>]]
+	// List
+	// Prepend["Continue"]
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/definition*)
+
+
+handleRequest["textDocument/definition", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[msg["params"]["position"]]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation@FindDefinitions[doc, pos]
+	|>] // AbsoluteTiming // First // LogDebug;
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/references*)
+
+
+handleRequest["textDocument/references", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		pos = LspPosition[msg["params"]["position"]],
+		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation@FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
+	|>] // AbsoluteTiming // First // LogDebug;
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/documentHighlight*)
+
+
+handleRequest["textDocument/documentHighlight", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		pos = LspPosition[msg["params"]["position"]],
+		scheduledTime = DatePlus[Now, {
+			state["config"]["documentHighlightDelay"],
+			"Second"
+		}]
+	},
+
+	state
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "documentHighlight",
+		"scheduledTime" -> scheduledTime,
+		"id" -> id,
+		"params" -> {uri, pos},
+		"callback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> (
+				{
+					#1["openedDocs"][uri],
+					pos
+				}
+				// Apply[FindDocumentHighlight]
+				// ToAssociation
+			)
+		|>]&)
+	|>]]
+	// List
+	// Prepend["Continue"]
+
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/documentSymbol*)
+
+
+handleRequest["textDocument/documentSymbol", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		scheduledTime = DatePlus[
+			state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"],
+			{state["config"]["documentSymbolDelay"], "Second"}
+		]
+	},
+
+	state
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "documentSymbol",
+		"scheduledTime" -> scheduledTime,
+		"id" -> id,
+		"params" -> uri,
+		"callback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> (
+				#1["openedDocs"][uri]
+				// ToDocumentSymbol
+				// ToAssociation
+			)
+		|>]&)
+	|>]]
+	// List
+	// Prepend["Continue"]
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/documentColor*)
+
+
+handleRequest["textDocument/documentColor", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		scheduledTime = DatePlus[
+			state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"],
+			{state["config"]["documentColorDelay"], "Second"}
+		]
+	},
+
+	state
+	// Curry[addScheduledTask][ServerTask[<|
+		"type" -> "documentColor",
+		"scheduledTime" -> scheduledTime,
+		"id" -> id,
+		"params" -> uri,
+		"callback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> (
+				#1["openedDocs"][uri]
+				// FindDocumentColor
+				// ToAssociation
+			)
+		|>]&),
+		"duplicateFallback" -> (sendResponse[#1["client"], <|
+			"id" -> id,
+			"result" -> {}
+		|>]&)
+	|>]]
+	// List
+	// Prepend["Continue"]
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/colorPresentation*)
+
+
+handleRequest["textDocument/colorPresentation", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		color = msg["params"]["color"] // LspColor,
+		range = msg["params"]["range"] // LspRange
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> (
+			GetColorPresentation[doc, color, range]
+			// ToAssociation
+		)
+	|>];
+
 	{
 		"Continue",
 		state
@@ -852,31 +1049,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 			"scheduledTime" -> Now
 		|>]]
 	}
-]
 
-
-handleRequest["textDocument/documentSymbol", msg_, state_] := With[
-	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]]
-		(* diagDelay = 3 *)
-	},
-	
-	(* LogDebug@ToAssociation@ToDocumentSymbol[doc]; *)
-
-	sendResponse[state["client"], <|
-		"id" -> msg["id"],
-		"result" -> ToAssociation@ToDocumentSymbol[doc]
-	|>];
-	
-	{
-		"Continue",
-		state
-		(* // Curry[addScheduledTask][ServerTask[<|
-			"type" -> "RespondRequest",
-			"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}],
-			"params" -> msg
-		|>]] *)
-	}
 ]
 
 
@@ -932,17 +1105,42 @@ handleNotification["exit", msg_, state_] := (
 (*$/cancelRequest*)
 
 
-handleNotification["$/cancelRequest", msg_, state_] := (
+handleNotification["$/cancelRequest", msg_, state_] := With[
 	{
-		"Continue",
-		state
-		// Curry[addScheduledTask][ServerTask[<|
-			"type" -> "CancelRequest",
-			"scheduledTime" -> Now,
-			"params" -> msg["params"]
-		|>]]
-	}
-)
+		id = msg["params"]["id"]
+	},
+
+	FirstPosition[
+		state["scheduledTasks"],
+		t_ServerTask
+		/; (t["id"] == id),
+		Missing["NotFound"],
+		(*
+			levelspec must be {1} to avoid performance bottleneck,
+			since params or callback might be complicated
+		*)
+		{1}
+	]
+	// Replace[{
+		{pos_} :> (
+			Part[state["scheduledTasks"], pos]["type"]
+			// Curry[StringJoin][" request is cancelled."]
+			// LogDebug;
+			sendResponse[state["client"], <|
+				"id" -> id,
+				"error" -> ServerError[
+					"RequestCancelled",
+					"The request is cancelled."
+				]
+			|>];
+			state
+			// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
+		),
+		_?MissingQ :> state
+	}]
+	// List
+	// Prepend["Continue"]
+]
 
 
 (* ::Subsection:: *)
@@ -961,7 +1159,7 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
 	]
 	// (newState \[Function] (
-		publishDiagnostics[newstate, textDocumentItem["uri"]];
+		publishDiagnostics[newState, textDocumentItem["uri"]];
 		{"Continue", newState}
 	))
 ]
@@ -976,7 +1174,9 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 	
-	LogInfo @ ("Close Document " <> uri);
+	LogDebug @ ("Close Document " <> uri);
+
+	clearDiagnostics[state, uri];
 	{"Continue", ReplaceKeyBy[state, {"openedDocs"} -> KeyDrop[uri]]}
 ]
 
@@ -988,13 +1188,11 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 handleNotification["textDocument/didChange", msg_, state_] := With[
 	{
         doc = msg["params"]["textDocument"],
-		uri = msg["params"]["textDocument"]["uri"],
-		diagDelay = 3
+		uri = msg["params"]["textDocument"]["uri"]
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	(* TODO: Use ShowMessage instead of Assert *)
-	With[
+	(* With[
 		{
 			expectedVersion = state["openedDocs"][uri]["version"] + 1
 		},
@@ -1012,10 +1210,18 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 			];
 			Return[{"Stop", state}]
 		]
-	];
+	]; *)
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
 	LogDebug @ ("Change Document " <> uri);
+
+	(* Clean the diagnostics only if lastUpdate time is before delay *)
+	If[DatePlus[state["openedDocs"][uri]["lastUpdate"], {
+			state["config"]["diagnosticsDelay"],
+			"Second"
+		}] < Now,
+		clearDiagnostics[state, uri]
+	];
 
 	state
 	// ReplaceKey[{"openedDocs", uri} -> (
@@ -1031,17 +1237,18 @@ handleNotification["textDocument/didChange", msg_, state_] := With[
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
 	|>]]
-	(* Give diagnostics in at least diagDelay seconds *)
+	(* Give diagnostics after delay *)
 	// Curry[addScheduledTask][ServerTask[<|
 		"type" -> "PublishDiagnostics",
 		"params" -> uri,
-		"scheduledTime" -> DatePlus[Now, {diagDelay, "Second"}]
+		"scheduledTime" -> DatePlus[Now, {
+			state["config"]["diagnosticsDelay"],
+			"Second"
+		}],
+		"callback" -> (publishDiagnostics[#1, uri]&)
 	|>]]
-	(* Clean the diagnostics given last time *)
-	// (newState \[Function] (
-		clearDiagnostics[newState, uri];
-		{"Continue", newState}
-	))
+	// List
+	// Prepend["Continue"]
 
 ]
 
@@ -1056,10 +1263,14 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 	},
 
 	(* Give diagnostics after save *)
-	publishDiagnostics[state["client"], uri];
+	publishDiagnostics[state, uri];
 
 	{"Continue", state}
 ]
+
+
+(* ::Subsection:: *)
+(*textDocument/publishDiagnostics*)
 
 
 diagnoseTextDocument[doc_TextDocument] := (
@@ -1179,8 +1390,11 @@ ErrorMessageTemplates = <|
 
 DeclareType[ServerTask, <|
 	"type" -> _String,
+	"id" -> _Integer,
 	"params" -> _,
-	"scheduledTime" -> _DateObject
+	"scheduledTime" -> _DateObject,
+	"callback" -> _,
+	"duplicateFallback" -> _
 |>]
 
 
@@ -1197,7 +1411,7 @@ addScheduledTask[state_WorkState, task_ServerTask] := (
 			state
 			// ReplaceKeyBy["scheduledTasks" -> Insert[task, pos]]
 		)
-	}] 
+	}]
 )
 
 
@@ -1205,65 +1419,90 @@ doNextScheduledTask[state_WorkState] := (
 	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
 	// Replace[{
 		_?MissingQ :> (
-			Pause[0.5];
+			Pause[0.001];
 			state
 		),
-		task_ServerTask :> (
+		task_ServerTask :> Block[
+			{
+				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
+			},
+
+			{task["type"], DateDifference[task["scheduledTime"], Now, "Second"] // InputForm} // LogDebug;
 			task["type"]
-			// LogDebug
 			// Replace[{
 				"PublishDiagnostics" :> (
-					publishDiagnostics[state, task["params"]];
-					state
+					newState = newState
+					(* delete all same tasks out of date *)
 					// ReplaceKeyBy["scheduledTasks" -> DeleteCases[_?(t \[Function] (
 						t["type"] == "PublishDiagnostics" &&
-						t["scheduledTime"] < Now
-					))]]
-				),
-				"JustContinue" :> (
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
-				),
-				"RespondRequest" :> (
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
-				),  
-				"CancelRequest" :> (
-					state["scheduledTasks"]
-					// FirstPosition[_ServerTask?(t \[Function] (
-						t["type"] == "RespondRequest" &&
-						t["params"]["id"] == task["params"]["id"]
-					))]
-					// Replace[{ 
-						{pos_} :> (
-							sendResponse[state["client"], <|
-								"id" -> LogDebug@task["params"]["id"],
-								"error" -> ServerError[
-									"RequestCancelled",
-									"The request is cancelled."
-								]
-							|>];
-							state
-							// ReplaceKeyBy["scheduledTasks" -> (Delete[pos] /* Rest)]
+						t["scheduledTime"] < Now &&
+						t["params"] == task["params"]
+					))]];
+
+					FirstPosition[
+						newState["scheduledTasks"],
+						t_ /; (
+							t["type"] == "PublishDiagnostics" &&
+							t["params"] == task["params"]
 						),
-						_?MissingQ :> (
-							state
-							// ReplaceKeyBy["scheduledTasks" -> Rest]
-						)
+						Missing["NotFound"],
+						{1}
+					] // Replace[{
+						(* if there will not be a same task in the future, do it now *)
+						_?MissingQ :> If[!MissingQ[task["callback"]],
+							task["callback"][newState, task["params"]]
+						]
 					}]
 				),
 				"CheckUpgrades" :> (
 					state
 					// checkUpgrades;
-					state
-					// ReplaceKeyBy["scheduledTasks" -> Rest]
 				),
-				unknownTask_ :> (
-					Pause[0.5];
-					state
+				"JustContinue" -> Null,
+				_ :> (
+					FirstPosition[
+						newState["scheduledTasks"],
+						t_ /; (
+							t["type"] == task["type"] &&
+							(* same params *)
+							t["params"] == task["params"]
+						),
+						Missing["NotFound"],
+						{1}
+					] // Replace[{
+						(* if there will not be a same task in the future, do it now *)
+						_?MissingQ :> If[!MissingQ[task["callback"]],
+							(* If the function is time constrained, than the there should not be a lot of lags. *)
+							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendResponse[state["client"], <|"id" -> task["params"]["id"], "result" -> <||>|>]], *)
+							task["callback"][newState, task["params"]]
+							(* // AbsoluteTiming
+							// Apply[(LogDebug[{task["type"], #1}];#2)&] *),
+							sendResponse[newState["client"], <|
+								"id" -> task["id"],
+								"error" -> ServerError[
+									"InternalError",
+									"There is no callback function for this scheduled task."
+								]
+							|>]
+						],
+						(* find a recent duplicate request *)
+						_ :> If[!MissingQ[task["duplicateFallback"]],
+							(* execute fallback function if applicable *)
+							task["duplicateFallback"][newState, task["params"]],
+							(* otherwise, return ContentModified error *)
+							sendResponse[newState["client"], <|
+								"id" -> task["id"],
+								"error" -> ServerError[
+									"ContentModified",
+									"There is a more recent duplicate request."
+								]
+							|>]
+						]
+					}]
 				)
-			}]
-		)
+			}];
+			newState
+		]
 	}]
 )
 
@@ -1277,16 +1516,18 @@ doNextScheduledTask[state_WorkState] := (
 (*load config*)
 
 
-loadConfig[] := With[
+loadConfig[] := Block[
 	{
-		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}]
+		configPath = FileNameJoin[{WolframLanguageServer`RootDirectory, "config.json"}],
+		newConfig
 	},
 
-	If[FileExistsQ[configPath],
-		Import[configPath, "RawJSON"],
-		Export[configPath, defaultConfig, "RawJSON"];
+	newConfig = If[FileExistsQ[configPath],
+		Join[defaultConfig, Import[configPath, "RawJSON"]],
 		defaultConfig
-	]
+	];
+	Export[configPath, newConfig, "RawJSON"];
+	newConfig
 ]
 
 
@@ -1302,10 +1543,12 @@ saveConfig[newConfig_Association] := With[
 
 defaultConfig = <|
 	"lastCheckForUpgrade" -> DateString[Today],
-	"dependencies" -> {
-		{"AST", "0.11"},
-		{"Lint", "0.11"}
-	}
+	(* default delays (seconds) *)
+	"diagnosticsDelay" -> 5.0,
+	"signatrueHelpDelay" -> 0.5,
+	"documentSymbolDelay" -> 3.0,
+	"documentHighlightDelay" -> 0.5,
+	"documentColorDelay" -> 5.0
 |>
 
 
@@ -1376,8 +1619,14 @@ checkGitRepo[state_WorkState] := (
 	];
 )
 
+checkDependencies[state_WorkState] := With[
+	{
+		dependencies = {
+			{"AST", "0.15"},
+			{"Lint", "0.15"}
+		}
+	},
 
-checkDependencies[state_WorkState] := (
 	Check[Needs["PacletManager`"],
 		showMessage[
 			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
@@ -1393,7 +1642,7 @@ checkDependencies[state_WorkState] := (
 			{} :> (StringRiffle[depinfo, "-"]),
 			_ :> (Nothing)
 		}],
-		{depinfo, state["config"]["dependencies"]}
+		{depinfo, dependencies}
 	] // Replace[{depInstalls__} :> (
 		showMessage[
 			StringJoin["These dependencies with correct versions need to be installed or upgraded: ",
@@ -1405,7 +1654,7 @@ checkDependencies[state_WorkState] := (
 			state
 		]
 	)];
-)
+]
 
 
 WLServerVersion[] := WolframLanguageServer`Version;

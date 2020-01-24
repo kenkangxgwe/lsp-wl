@@ -10,14 +10,14 @@
 **Table of Contents**
 
 - [Wolfram Language Server](#wolfram-language-server)
-  - [Installation](#installation)
-  - [Run the Server](#run-the-server)
-  - [Features](#features)
-  - [Contribute](#contribute)
-    - [Design Principles](#design-principles)
-    - [Todo list](#todo-list)
-  - [Donations :dollar:](#donations-dollar)
-  - [Footnotes](#footnotes)
+    - [Installation](#installation)
+    - [Run the Server](#run-the-server)
+    - [Features](#features)
+    - [Contribute](#contribute)
+        - [Design Principles](#design-principles)
+        - [Todo list](#todo-list)
+    - [Donations :dollar:](#donations-dollar)
+    - [Footnotes](#footnotes)
 
 <!-- markdown-toc end -->
 
@@ -47,11 +47,12 @@ client would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions from the Wolfram kernel / Mathematica.
+2. Install the dependent paclets with the correct versions (currently 0.15)
+from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
-    PacletInstall[{"AST", "0.11"}, "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
-    PacletInstall[{"Lint", "0.11"}, "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
+    PacletInstall["AST", "UpdateSites" -> True]
+    PacletInstall["Lint", "UpdateSites" -> True]
     ```
 
 3. Install the client. Currently, we provide the VS Code extension on [Visual
@@ -135,6 +136,17 @@ This is a good way to see the results from the unit tests.
 
   ![diagnostics](images/diagnostics.png)
 
+- **Definition / References / DocumentHighlight:** It is now able to look up the
+  definition and references of a local variable in a scope such as `Module` or
+  pattern rules.
+
+  ![references](images/references.png)
+
+- **Document Color / Color Presentation:** Both Named Colors and
+  Color Models with constant parameters are able to show and modify.  
+  (_Experimental, may have performance issues._)
+
+  ![documentColor](images/documentColor.png)
 
 This is an early release, so more features are on the way. Notice that,
 syntax highlight will not be provided as long as it is excluded in the LSP,
@@ -158,18 +170,18 @@ Here is a full list of [LSP features](https://microsoft.github.io/language-serve
   package in the [Matypetica](https://github.com/kenkangxgwe/Matypetica)
   library that supports pattern test on every field of a class. The operations
   on the objects are designed to be immutable.
-   
+
 4. ``WolframLanguageServer`Test`* `` stores the unit tests for some of
    the functions.
-   
+
 ### Todo list
 
-It will be nice if you want to make a contribution to the following topic. 
+It will be nice if you want to make a contribution to the following topic.
 
 * Our server-client communication only supports Socket with TCP protocol. We
   tried to use ZMQ_Stream protocol and `SocketListen[]` to enable concurrency,
   but it fails to send responses back to the client.
-  
+
 * It will be helpful to implement a stdio channel, ~so that the Mathematica
   earlier than 11.2 will also be supported,~ but it is really hard to expose
   the `stdin` channel. Hope this will be dicussed in future release of Wolfram

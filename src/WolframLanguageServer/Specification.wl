@@ -23,6 +23,11 @@ DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 Diagnostic::usage = "is the type of Diagnostic interface in LSP."
 DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformation interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
+Location::usage = "is the type of Location interface in LSP."
+DocumentHighlight ::usage = "is the type of Location interface in LSP."
+ColorInformation::usage = "is the type of ColorInformation interface in LSP."
+LspColor::usage = "is the type of Color interface in LSP."
+ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 
 (* ::Section:: *)
 (*Type Aliases*)
@@ -34,6 +39,11 @@ DocumentUri = String
 (* ::Section:: *)
 (*Enum Type*)
 
+TextDocumentSyncKind  = <|
+    "None" -> 0,
+    "Full" -> 1,
+    "Incremental" -> 2
+|>
 
 DiagnosticSeverity = <|
     "Error" -> 1,
@@ -136,6 +146,12 @@ MarkupKind = <|
     "Markdown" -> "markdown"
 |>
 
+DocumentHighlightKind = <|
+    "Text" -> 1,
+    "Read" -> 2,
+    "Write" -> 3
+|>
+
 
 (* ::Section:: *)
 (*Constants*)
@@ -233,6 +249,34 @@ DeclareType[CompletionItem, <|
     "commitCharacters" -> {___String}
 |>]
 
+
+DeclareType[Location, <|
+    "uri" -> DocumentUri,
+    "range" -> LspRange
+|>]
+
+DeclareType[DocumentHighlight, <|
+    "range" -> LspRange,
+    "kind" -> _Integer
+|>]
+
+DeclareType[ColorInformation, <|
+    "range" -> LspRange,
+    "color" -> LspColor
+|>]
+
+DeclareType[LspColor, <|
+    "red" -> _?NumericQ,
+    "green" -> _?NumericQ,
+    "blue" -> _?NumericQ,
+    "alpha" -> _?NumericQ
+|>]
+
+DeclareType[ColorPresentation, <|
+    "label" -> _String,
+    "textEdit" -> _TextEdit,
+    "additionalTextEdits" -> {__TextEdit}
+|>]
 
 End[]
 

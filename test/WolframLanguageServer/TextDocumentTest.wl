@@ -1,23 +1,18 @@
 (* ::Package:: *)
 
-BeginPackage["WolframLanguageServer`Test`TextDocumentTest`"];
-Construct[ClearAll, Context[] <> "*"];
+BeginPackage["WolframLanguageServer`TextDocumentTest`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
+Begin["`Private`"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
-
-Begin["`Private`"];
-
-
-TestedContext = "WolframLanguageServer`TextDocument`";
-Tests::usage = StringTemplate["Tests for `` context."][TestedContext];
-Needs[TestedContext];
+TestingContext = "WolframLanguageServer`TextDocument`"
+CurrentContext = "WolframLanguageServer`TextDocumentTest`"
+Needs[TestingContext]
 Needs["DataType`"]
 Needs["WolframLanguageServer`Specification`"]
-
-
-Construct[ClearAll, Context[] <> "*"];
 
 
 sampleCode = "\
@@ -39,7 +34,7 @@ sampleTextDoc = TextDocument[<|
 |>]
 
 
-Tests := {
+{
 
 VerificationTest[
 	sampletextdoc = CreateTextDocument[
@@ -109,13 +104,10 @@ VerificationTest[
 	TestID -> "ChangeTextDocument2"
 ]
 
-
-};
-
-Sow[#, "WolframLanguageServer`Test`TextDocumentTest`"]& /@ Tests;
+} // Map@Curry[Sow]@CurrentContext
 
 
-End[];
+End[]
 
 
-EndPackage[];
+EndPackage[]
