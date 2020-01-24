@@ -862,7 +862,7 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
     )]
     // Replace[_?MissingQ :> Return[{{}, {}}]];
 
-    name = LogDebug@FirstCase[
+    name = FirstCase[
         ast,
         AstPattern["Symbol"][{symbolName_}]
             ?(NodeContainsPosition[{line, character}]) :> (
@@ -871,6 +871,8 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
         Missing["NotFound"],
         AstLevelspec["LeafNodeWithSource"]
     ] // Replace[_?MissingQ :> Return[{{}, {}}]];
+
+    LogDebug["Searching for " <> name];
 
     FirstCase[
         ast,

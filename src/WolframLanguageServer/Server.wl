@@ -121,7 +121,6 @@ WLServerStart[o:OptionsPattern[]] := Module[
 		    Quit[1]
 		)]
 	];
-	LogDebug @ ("Cache: " <> tempDirPath);
 	
 	LogInfo["Language server is connecting the client through "<> stream <> "."];
 	Replace[stream, {
@@ -1175,7 +1174,7 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 	
-	LogInfo @ ("Close Document " <> uri);
+	LogDebug @ ("Close Document " <> uri);
 
 	clearDiagnostics[state, uri];
 	{"Continue", ReplaceKeyBy[state, {"openedDocs"} -> KeyDrop[uri]]}
@@ -1428,7 +1427,7 @@ doNextScheduledTask[state_WorkState] := (
 				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
 			},
 
-			{task["type"], DateDifference[task["scheduledTime"], Now, "Second"] // InputForm} // LogInfo;
+			{task["type"], DateDifference[task["scheduledTime"], Now, "Second"] // InputForm} // LogDebug;
 			task["type"]
 			// Replace[{
 				"PublishDiagnostics" :> (
@@ -1476,8 +1475,8 @@ doNextScheduledTask[state_WorkState] := (
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendResponse[state["client"], <|"id" -> task["params"]["id"], "result" -> <||>|>]], *)
 							task["callback"][newState, task["params"]]
-							// AbsoluteTiming
-							// Apply[(LogInfo[{task["type"], #1}];#2)&],
+							(* // AbsoluteTiming
+							// Apply[(LogDebug[{task["type"], #1}];#2)&] *),
 							sendResponse[newState["client"], <|
 								"id" -> task["id"],
 								"error" -> ServerError[
