@@ -47,11 +47,12 @@ client would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions from the Wolfram kernel / Mathematica.
+2. Install the dependent paclets with the correct versions (currently 0.15)
+from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
-    PacletInstall["AST", "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
-    PacletInstall["Lint", "Site" -> "http://pacletserver.wolfram.com", "UpdateSites" -> True]
+    PacletInstall["AST", "UpdateSites" -> True]
+    PacletInstall["Lint", "UpdateSites" -> True]
     ```
 
 3. Install the client. Currently, we provide the VS Code extension on [Visual

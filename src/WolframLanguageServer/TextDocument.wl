@@ -30,10 +30,10 @@ ClearAll[Evaluate[Context[] <> "*"]]
 Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
-(* SubmitSession[ *)
 Needs["AST`"]
 Needs["Lint`"]
-(* ] *)
+(* After AST 0.15: prevent AST parsed into PackageNode and ContextNode *)
+AST`Abstract`Private`abstractTopLevel = List /* Append[{}]
 Needs["WolframLanguageServer`AstPatterns`"]
 Needs["WolframLanguageServer`ColorTable`"]
 
@@ -317,19 +317,18 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
     ];
 
     Take[doc["text"], {startLine, endLine}]
-    // Curry[StringRiffle]["\n"]
-    // Curry[StringJoin, 2][
+    // StringRiffle[#, "\n"]&
+    // StringJoin[
         Check[
             StringRepeat["\n", startLine - 1],
             "",
             {StringRepeat::intp (* before 12.0 *)}
-        ] // Quiet
-    ]
-    // Curry[AST`ConcreteParseString][First]
-    // Curry[Drop][startLine - 1]
-    // Map[AST`Abstract`Aggregate]
-    // Map[AST`Abstract`Abstract]
+        ] // Quiet,
+    #]&
+    // AST`ParseString
+    // Part[#, 2]&
 )
+
 
 
 GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
@@ -379,7 +378,7 @@ CompareNodePosition[node_, {line_Integer, col_Integer}, default_:Missing["NotFou
         Part[source, 2, 1] < line, -1,
         line < Part[source, 1, 1], 1,
         line == Part[source, 1, 1] && col < Part[source, 1, 2], 1,
-        line == Part[source, 2, 1] && Part[source, 2 ,2] < col, -1,
+        line == Part[source, 2, 1] && Part[source, 2 ,2] <= col, -1,
         True, 0
     ]
 ]
@@ -393,7 +392,7 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
         |>],
         "end" -> LspPosition[<|
             "line" -> (endLine - 1),
-            "character" -> endCol
+            "character" -> (endCol - 1)
         |>]
     |>]
 )

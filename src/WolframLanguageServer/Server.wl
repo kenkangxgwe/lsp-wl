@@ -1623,8 +1623,8 @@ checkGitRepo[state_WorkState] := (
 checkDependencies[state_WorkState] := With[
 	{
 		dependencies = {
-			{"AST", "0.14"},
-			{"Lint", "0.14"}
+			{"AST", "0.15"},
+			{"Lint", "0.15"}
 		}
 	},
 
