@@ -45,6 +45,15 @@ ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 
 
 (* ::Section:: *)
+(* Debug Adaptor Protocol*)
+
+
+DapEvent::usage = "is the type of Event interface in DAP."
+DapResponse::usage = "is the type of Response interface in DAP."
+DapThread::usage = "is the type of Thread interface in DAP."
+
+
+(* ::Section:: *)
 (*Type Aliases*)
 
 
@@ -186,7 +195,7 @@ Needs["DataType`"]
 
 
 (* ::Section:: *)
-(*Server Communication Related Type*)
+(*Language Server Types*)
 
 
 (* ::Subsection:: *)
@@ -378,6 +387,33 @@ DeclareType[ColorPresentation, <|
     "textEdit" -> _TextEdit,
     "additionalTextEdits" -> {__TextEdit}
 |>]
+
+
+(* ::Section:: *)
+(*Debug Adaptor Types*)
+
+
+DeclareType[DapEvent, <|
+    "seq" -> _Integer,
+    "type" -> "event",
+    "body" -> _
+|>]
+
+DeclareType[DapResponse, <|
+    "seq" -> _Integer,
+    "type" -> "response",
+    "request_seq -> _Integer,
+    "success" -> ?BooleanQ,
+    "command" -> _String,
+    "message" -> _String,
+    "body" -> _
+|>]
+
+DeclareType[DapThread, <|
+    "id" -> _?NumericQ,
+    "name" -> _String
+|>]
+
 
 End[]
 
