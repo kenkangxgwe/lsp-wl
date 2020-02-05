@@ -46,7 +46,6 @@ DeclareType[TextDocument, <|
     "uri" -> _DocumentUri,
     "text" -> {__String},
     "version" -> _Integer,
-    "cell" -> _CellNode,
     "lastUpdate" -> _DateObject
 |>]
 
@@ -188,11 +187,11 @@ divideCells[doc_TextDocument] := Block[
         (* styleLines *)
         Thread[{
             "label" -> "style",
-            Thread["line" -> styleLineNo], 
+            Thread["line" -> styleLineNo],
             Thread["data" -> Block[
                 {
                     styleLines = Part[doc["text"], styleLineNo]
-                }, 
+                },
 
                 styleLines
                 (* selectionRange *)
@@ -201,10 +200,10 @@ divideCells[doc_TextDocument] := Block[
                 // Apply[{#1 + 5, #2 - 5}&, #, {1}]&
                 // {
                     (* {("selectionRange" -> selectionRange)..} *)
-                    Thread["selectionRange" -> #]&, 
+                    Thread["selectionRange" -> #]&,
                     (* {("style" -> style)..} *)
                     Thread["style" -> (
-                        StringTake @@@ 
+                        StringTake @@@
                         Thread[{styleLines, #}]
                     )]&
                 } // Through
@@ -216,11 +215,11 @@ divideCells[doc_TextDocument] := Block[
         (* titleLines *)
         Thread[{
             "label" -> "title",
-            Thread["line" -> titleLineNo], 
+            Thread["line" -> titleLineNo],
             Thread["data" -> Block[
                 {
                     titleLines = Part[doc["text"], titleLineNo]
-                }, 
+                },
 
                 titleLines
                 // StringPosition["(*" ~~ Longest[title___] ~~ "*)"]
@@ -247,7 +246,6 @@ divideCells[doc_TextDocument] := Block[
     // Map[Association]
     // SortBy[Key["line"]]
     // Append[<|"label" -> "end", "line" -> (Length[doc["text"]] + 1)|>]
-    // LogDebug
     // (divideCellImpl[#,
         If[doc["text"] // First // StringStartsQ["#!"], 1, 0]
         // <|"label" -> "start", "startLine" -> #, "endLine" -> #|>&
@@ -280,8 +278,8 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 // Replace[{
                     "empty" :> (
                         Sow[{
-                            "codeEnd", 
-                            If[state["startLine"] < state["endLine"], 
+                            "codeEnd",
+                            If[state["startLine"] < state["endLine"],
                                 state["startLine"] - 1,
                                 state["endLine"]
                             ]
@@ -294,25 +292,25 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 }];
                 <|
                     "label" -> "style",
-                    "startLine" -> lineState["line"], 
-                    "endLine" -> lineState["line"], 
+                    "startLine" -> lineState["line"],
+                    "endLine" -> lineState["line"],
                     "data" -> lineState["data"]
                 |>
             ),
             If[
-                state["label"] == "style" && 
+                state["label"] == "style" &&
                 state["startLine"] + 1 == lineState["line"] &&
                 !MemberQ[{"Package"}, state["data"]["style"]],
                 "title" :> (
                     Sow[{
                         "titledStyle",
-                        state["startLine"], 
+                        state["startLine"],
                         Join[state["data"], lineState["data"]]
                     }];
                     <|
                         "label" -> "title",
-                        "startLine" -> lineState["line"], 
-                        "endLine" -> lineState["line"], 
+                        "startLine" -> lineState["line"],
+                        "endLine" -> lineState["line"],
                         "data" -> lineState["data"]
                     |>
                 ),
@@ -329,7 +327,7 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 }];
                 <|
                     "label" -> "end",
-                    "startLine" -> lineState["line"], 
+                    "startLine" -> lineState["line"],
                     "endLine" -> lineState["line"]
                 |>
             )
@@ -359,7 +357,7 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
             "empty" :> (
                 <|
                     "label" -> "empty",
-                    "startLine" -> lineState["line"], 
+                    "startLine" -> lineState["line"],
                     "endLine" -> lineState["line"]
                 |>
             ),
@@ -367,8 +365,8 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 Sow[{"codeEnd", lineState["line"] - 1}];
                 <|
                     "label" -> "style",
-                    "startLine" -> lineState["line"], 
-                    "endLine" -> lineState["line"], 
+                    "startLine" -> lineState["line"],
+                    "endLine" -> lineState["line"],
                     "data" -> lineState["data"]
                 |>
             ),
@@ -376,7 +374,7 @@ divideCellImpl[{lineState_Association, lineStates___}, state_Association] := div
                 Sow[{"codeEnd", lineState["line"] - 1}];
                 <|
                     "label" -> "end",
-                    "startLine" -> lineState["line"], 
+                    "startLine" -> lineState["line"],
                     "endLine" -> lineState["line"]
                 |>
             )
@@ -559,7 +557,6 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
 
 (* ::Section:: *)
 (*AST utils*)
-
 
 
 NodeDataContainsPosition[pos:{_Integer, _Integer}][data_] := NodeDataContainsPosition[data, pos]

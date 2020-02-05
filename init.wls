@@ -212,6 +212,7 @@ Module[
     DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
     << WolframLanguageServer`Server`;
+    WolframLanguageServer`CheckReturnTypeQ = True;
     LogDebug @ WolframLanguageServer`Server`WLServerStart[
         "Stream" -> stream,
         "ClientPid" -> clientPid,
