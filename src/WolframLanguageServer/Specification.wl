@@ -24,6 +24,7 @@ Location::usage = "is type of Location interface in LSP."
 Command::usage = "is type of Command interface in LSP."
 TextEdit::usage = "is type of TextEdit interface in LSP."
 TextDocumentItem::usage = "is type of TextDocumentItem interface in LSP."
+WorkspaceEdit::usage = "is type of WorkspaceEdit Interface in LSP."
 MarkupContent::usage = "is the type of MarkupContent interface in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
  the new text is considered to be the full content of the document."
@@ -242,6 +243,13 @@ DeclareType[Command, <|
 DeclareType[TextEdit, <|
     "range" -> _LspRange,
     "newText" -> _String
+|>]
+
+DeclareType[WorkspaceEdit, <|
+    "changes" -> <|
+        (_DocumentUri -> TextEdit)...
+    |>,
+    "documentChanges" -> _ (* not implemented *)
 |>]
 
 DeclareType[TextDocumentItem, <|

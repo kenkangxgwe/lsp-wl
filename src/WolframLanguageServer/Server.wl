@@ -49,6 +49,7 @@ DeclareType[WorkState, <|
 	"debugSession" -> _DebugSession,
 	"scheduledTasks" -> {___ServerTask},
 	"caches" -> _Association,
+	"pendingServerRequests" -> _Association,
 	"config" -> _Association
 |>]
 
@@ -82,6 +83,7 @@ InitialState = WorkState[<|
 	|>],
 	"scheduledTasks" -> {},
 	"caches" -> initialCaches,
+	"pendingServerRequests" -> <||>,
 	"config" -> <|
 		"configFileConfig" -> loadConfig[]
 	|>
@@ -724,6 +726,7 @@ CloseClient[client_NamedPipe] := With[
 
 NotificationQ = KeyExistsQ["id"] /* Not
 (* NotificationQ[msg_Association] := MissingQ[msg["id"]] *)
+ResponseQ = And[KeyExistsQ["method"] /* Not, KeyExistsQ["id"]] /* Through
 
 handleMessageList[msgs:{___Association}, state_WorkState] := (
     FoldWhile[handleMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
@@ -751,6 +754,9 @@ handleMessage[msg_Association, state_WorkState] := With[
 		(* notification*)
 		NotificationQ[msg],
 		handleNotification[method, msg, state],
+		(* response *)
+		ResponseQ[msg],
+		handleResponse[state["pendingServerRequests"][msg["id"]], msg, state],
 		(* resquest *)
 		True,
 		Which[
@@ -1297,7 +1303,7 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> id,
 		"result" -> (
 			{
@@ -1351,9 +1357,8 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 				]
 			}
 			// Flatten
-			// ToAssociation
 		)
-	|>];
+	|>]];
 
 	{"Continue", state}
 
@@ -1370,14 +1375,14 @@ handleRequest["codeLens/resolve", msg_, state_] := With[
 		codeLens = msg["params"]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> id,
-		"result" -> ToAssociation[
-			ConstructType[codeLens, CodeLens]
+		"result" -> (
+      ConstructType[codeLens, CodeLens]
 			// ReplaceKeyBy[{"command", "title"} -> (StringJoin[#1, " ", ToString[codeLens["data"]]]&)]
 			// ReplaceKeyBy["data" -> ((# + 1)&)]
-			]
-	|>];
+    )
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1703,6 +1708,81 @@ handleNotification[_, msg_, state_] := (
 	// LogError;
 
 	{"Continue", state}
+)
+
+
+(* ::Section:: *)
+(*Send Request*)
+
+
+$requestId = 0
+getRequestId[] := (
+	"req_" <> ToString[($requestId += 1)]
+)
+
+(* ::Subsection:: *)
+(*applyEdit*)
+
+sendRequest[method:"workspace/applyEdit", msg_, state_WorkState] := With[
+	{
+		id = getRequestId[]
+	},
+
+	sendMessage[state["client"], NotificationMessage[<|
+		"id" -> id,
+		"method" -> "workspace/applyEdit",
+		"params" -> <|
+			"edit" -> msg["params"]["edit"]
+		|>
+	|>]];
+
+	{
+		"Continue",
+		state
+		// ReplaceKeyBy["pendingServerRequests" -> Append[id -> method]]
+	}
+]
+
+applyEdit["dummyAll", state_WorkState] := (
+	sendRequest[
+		"workspace/applyEdit",
+		Table[uri -> {
+			TextEdit[<|
+				"range" -> LspRange[<|
+					"start" -> <|
+						"line" -> 0,
+						"character" -> 0
+					|>,
+					"end" -> <|
+						"line" -> 0,
+						"character" -> 1
+					|>
+				|>],
+				"newText" -> (
+					state["openedDocs"][uri]["text"]
+					// First
+					// StringTake[#, 1]&
+				)
+			|>]
+		}, {uri, Keys[state["openedDocs"]]}]
+		// WorkspaceEdit[<|"changes" -> <|#|>|>]&
+		// ToAssociation
+		// <|"params" -> <|"edit" -> #|>|>&,
+		state
+	]
+)
+
+
+(* ::Section:: *)
+(*Handle Response*)
+
+
+handleResponse["workspace/applyEdit", msg_, state_WorkState] := (
+	{
+		"Continue",
+		state
+		// DeleteKey[{"pendingServerRequests", msg["id"]}]
+	}
 )
 
 
@@ -2075,6 +2155,7 @@ WLServerVersion[] := WolframLanguageServer`Version;
 
 
 WLServerDebug[] := Print["This is a debug function."];
+
 
 
 End[];
