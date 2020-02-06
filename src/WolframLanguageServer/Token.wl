@@ -348,8 +348,10 @@ PUACharactersReplaceRule = {
     "\[LeftAssociation]" -> "<|",
     "\[RightAssociation]" -> "|>",
     "\[InvisibleSpace]" -> " ",
-    "\[Null]" -> ""
+    "\[Null]" -> "",
+    "\[ExponentialE]" -> "\[ScriptE]"
 }
+
 
 (* ::Section:: *)
 (*Hover*)
@@ -358,7 +360,6 @@ PUACharactersReplaceRule = {
 GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := (
     GetHoverInfo[doc, pos]
     // Apply[printHoverText]
-
 )
 
 
@@ -366,7 +367,7 @@ printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
 
     hoverInfo
     // Map[printHoverTextImpl]
-    // Curry[StringRiffle]["\n\n---\n\n"]
+    // StringRiffle[#, "\n\n---\n\n"]&
     // Replace[{
         "" -> Null,
         text_String :> (
