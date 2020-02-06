@@ -47,7 +47,7 @@ client would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions (currently 0.15)
+2. Install the dependent paclets with the correct versions (currently 0.15.1)
 from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
