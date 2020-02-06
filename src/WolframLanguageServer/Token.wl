@@ -383,6 +383,8 @@ printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
         )
     }]
 )
+
+
 printHoverTextImpl[hoverInfo_HoverInfo] := (
     hoverInfo
     // Replace[{
@@ -424,25 +426,29 @@ GetSignatureHelp[doc_TextDocument, pos_LspPosition] := (
 
 printSignatureHelp[functionName_String] := (
 
-    TokenDocumentation[functionName, "usage", "Header" -> False]
+    If[Names["System`"<>functionName] === {}, Return[Null]];
+
+    ToExpression[functionName<>"::"<>"usage"]
     // Replace[{
-        "" -> Null,
-        text_String :> (
-            SignatureHelp[<|
-                "signatures" -> {
-                    SignatureInformation[<|
-                        "label" -> functionName,
-                        "documentation" -> MarkupContent[<|
-                            "kind" -> MarkupKind["Markdown"],
-                            "value" -> text
-                        |>],
-                        "parameters" -> {}
-                    |>]
-                },
-                "activeSignature" -> 0
-            |>]
+        _MessageName -> {},
+        usageText_String :> (
+            splitUsage[usageText]
+            // MapAt[GenPlainText, {All, 1}]
+            // MapAt[GenMarkdownText, {All, 2}]
         )
     }]
+    // Map[Apply[{label, documentation} \[Function] (
+        SignatureInformation[<|
+            "label" -> label,
+            "documentation" -> MarkupContent[<|
+                "kind" -> MarkupKind["Markdown"],
+                "value" -> documentation
+            |>],
+            "parameters" -> {}
+        |>]
+    )]]
+    // SignatureHelp[<|"signatures" -> #|>]&
+
 )
 
 

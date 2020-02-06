@@ -80,6 +80,14 @@ FunctionPattern = <|
 
     "ColorDirective" -> (
         "Opacity" | "Lighter" | "Darker" | "ColorNegate"
+    ),
+
+    "NoSignatureHelp" -> (
+        "List" | "Association" | "CompoundExpression" |
+        "Rule" | "RuleDelayed" |
+        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" |
+        "TagSet" | "TagSetDelayed" |
+        "With" | "Block" | "Module" | "DynamicModule"
     )
 |>
 

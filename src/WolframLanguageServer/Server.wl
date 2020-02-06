@@ -58,6 +58,7 @@ DeclareType[RequestCache, <|
 |>]
 
 initialCaches = <|
+	"textDocument/signatureHelp" -> <||>,
 	"textDocument/documentSymbol" -> <||>,
 	"textDocument/documentColor" -> <||>,
 	"textDocument/codeLens" -> <||>,
@@ -102,6 +103,7 @@ ServerConfig = <|
 	"updateCheckInterval" -> Quantity[7, "Days"],
 		(* cached results *)
 	"cachedRequests" -> {
+		"textDocument/signatureHelp",
 		"textDocument/documentSymbol",
 		"textDocument/documentColor"
 		(* "textDocument/codeLens" *)
@@ -113,7 +115,7 @@ ServerConfig = <|
 	(* default delays (seconds) *)
 	"requestDelays" -> <|
 		"textDocument/publishDiagnostics" -> 2.5,
-		"textDocument/signatrueHelp" -> 0.5,
+		"textDocument/signatureHelp" -> 0.5,
 		"textDocument/documentSymbol" -> 4.0,
 		"textDocument/documentHighlight" -> 0.5,
 		"textDocument/documentColor" -> 5.0
@@ -638,6 +640,7 @@ constructRPCBytes[msg_Association] := (
 			if the result is not able to convert to JSON,
 			returns an error respond
 		*)
+		LogError[msg];
 		ExportByteArray[
 			msg
 			// KeyDrop["result"]
@@ -913,37 +916,48 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 (*textDocument/signatureHelp*)
 
 
-handleRequest["textDocument/signatureHelp", msg_, state_] := With[
+handleRequest[method:"textDocument/signatureHelp", msg_, state_] := (
+	state
+	// cacheResponse[method, msg]
+	// sendCachedResult[method, msg, #]&
+ )
+
+
+cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := With[
 	{
-		id = msg["id"],
 		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
+
 	},
 
 	state
-	// Curry[addScheduledTask][ServerTask[<|
-		"type" -> "signatureHelp",
-		"scheduledTime" -> DatePlus[Now, {
-			state["config"]["signatrueHelpDelay"],
-			"Second"
-		}],
-		"id" -> id,
-		"params" -> {uri, pos},
-		"callback" -> (sendResponse[#1["client"], <|
-			"id" -> id,
+	// ReplaceKey[
+		{"caches", method, uri} -> RequestCache[<|
+		 	"cachedTime" -> Now,
 			"result" -> (
-				{
-					#1["openedDocs"][uri],
-					pos
-				}
-				// Apply[GetSignatureHelp]
+				GetSignatureHelp[state["openedDocs"][uri], pos]
 				// ToAssociation
 			)
-		|>]&)
-	|>]]
-	// List
-	// Prepend["Continue"]
+		|>]
+	]
 ]
+
+
+cacheAvailableQ[method:"textDocument/signatureHelp", msg_, state_WorkState] := Block[
+	{
+		cachedTime = getCache[method, msg, state]["cachedtime"]
+	},
+
+	!MissingQ[cachedTime] && (
+		cachedTime
+		> DatePlus[Now, {-ServerConfig["requestDelays"][method], "Second"}]
+	)
+]
+
+
+getCache[method:"textDocument/signatureHelp", msg_, state_WorkState] := (
+	state["caches"][method][msg["params"]["textDocument"]["uri"]]
+)
 
 
 (* ::Subsection:: *)
@@ -1155,7 +1169,7 @@ cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := 
 		state["openedDocs"][
 			msg["params"]["textDocument"]["uri"]
 		]["lastUpdate"] <
-		(Now - Quantity[ServerConfig["requestDelays"][method], "Seconds"])
+		DateDifference[{ServerConfig["requestDelays"][method], "Second"}, Now]
 	)
 ]
 
@@ -1353,20 +1367,18 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 	// ReplaceKeyBy["openedDocs" ->
 		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
 	]
-	// ReplaceKeyBy[{"caches", "textDocument/documentSymbol"} ->
-		Append[textDocumentItem["uri"] -> RequestCache[<||>]]
-	]
-	// ReplaceKeyBy[{"caches", "textDocument/documentColor"} ->
-		Append[textDocumentItem["uri"] -> RequestCache[<||>]]
-	]
-	// ReplaceKeyBy[{"caches", "textDocument/codeLens"} ->
-		Append[textDocumentItem["uri"] -> RequestCache[<||>]]
-	]
-	// ReplaceKeyBy[{"caches", "textDocument/publishDiagnostics"} ->
-		Append[textDocumentItem["uri"] -> <|
-			"scheduledQ" -> False
-		|>]
-	]
+	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
+		"textDocument/signatureHelp" ->
+			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+		"textDocument/documentSymbol" ->
+			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+		"textDocument/documentColor" ->
+			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+		"textDocument/codeLens" ->
+			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+		"textDocument/publishDiagnostics" ->
+			Append[textDocumentItem["uri"] -> <|"scheduledQ" -> False|>]
+	 }]&)]
 	// handleRequest["textDocument/publishDiagnostics", textDocumentItem["uri"], #]&
 ]
 
@@ -1384,9 +1396,11 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 
 	state
 	// ReplaceKeyBy[{"openedDocs"} -> KeyDrop[uri]]
-	// ReplaceKeyBy[{"caches", "textDocument/documentSymbol"} -> KeyDrop[uri]]
-	// ReplaceKeyBy[{"caches", "textDocument/documentColor"} -> KeyDrop[uri]]
-	// ReplaceKeyBy[{"caches", "textDocument/codeLens"} -> KeyDrop[uri]]
+	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
+		"textDocument/documentSymbol" -> KeyDrop[uri],
+		"textDocument/documentColor" -> KeyDrop[uri],
+		"textDocument/codeLens" -> KeyDrop[uri]
+	}]&)]
 	// handleRequest["textDocument/clearDiagnostics", uri, #]&
 ]
 

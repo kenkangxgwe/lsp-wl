@@ -938,6 +938,7 @@ getFunctionNameImpl[ast_, indices_] := (
     // Replace[{
         AstPattern["Function"][{functionName_}] :> (
             functionName
+            // Replace[FunctionPattern["NoSignatureHelp"] -> Missing["NotFound"]]
         ),
         _ :> (
             indices
