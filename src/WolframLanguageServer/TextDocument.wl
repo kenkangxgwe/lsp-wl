@@ -1001,12 +1001,16 @@ DiagnoseDoc[doc_TextDocument] := (
             data
             // Key[AST`Source]
             // SourceToRange
+            // If[tag == "GroupMissingCloser",
+                ReplaceKey[#, "end" -> #["start"]]&,
+                Identity
+            ]
         ),
         "severity" -> (
             severity
             // Replace[{
                 "Fatal" -> "Error",
-                "ImplicitTimes"|"Formatting"|"Remark" -> "Hint"
+                "Formatting"|"Remark" -> "Hint"
             }]
             // Replace[{
                 "Warning" :> (
