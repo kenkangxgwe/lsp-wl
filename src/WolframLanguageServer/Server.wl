@@ -1764,7 +1764,7 @@ checkGitRepo[state_WorkState] := (
 			state
 		];
 		Return[]
-	];
+	] // Quiet;
 
 	If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
 		showMessage[

@@ -58,6 +58,10 @@ from the Wolfram kernel / Mathematica.
 3. Install the client. Currently, we provide the VS Code extension on [Visual
 Studio Marketplace: Wolfram Language Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
 
+4. You may also want to install
+[GitLink](https://github.com/WolframResearch/GitLink) packet in order to
+check for updates.
+
 ## Run the Server
 
 Clients can start the server by running the `init.wls` file from Wolfram
