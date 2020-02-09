@@ -251,7 +251,8 @@ divideCells[doc_TextDocument] := Block[
         If[doc["text"] // First // StringStartsQ["#!"], 1, 0]
         // <|"label" -> "start", "startLine" -> #, "endLine" -> #|>&
     ] // Reap)&
-    // Last // First (* Get sown List*)
+    (* Get the sown List if there is one. *)
+    // Last // Replace[{} :> {{}}] // First
     // Prepend[CellNode[<|
         "style" -> AdditionalStyle["File"],
         "name" -> "",
