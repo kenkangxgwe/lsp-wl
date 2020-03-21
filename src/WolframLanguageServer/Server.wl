@@ -62,7 +62,7 @@ ServerCapabilities = <|
 	"hoverProvider" -> True,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
-		"triggerCharacters" -> "\\"
+		"triggerCharacters" -> {"\\"}
 	|>,
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
