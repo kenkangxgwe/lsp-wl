@@ -259,6 +259,12 @@ VerificationTest[
 ],
 
 VerificationTest[
+	FindAllCodeRanges[TextDocument[<|"text" -> {}|>]],
+	{},
+	TestID -> "FindAllCodeRangeEmptyDoc"
+],
+
+VerificationTest[
 	GetHoverInfo[
 		TextDocument[<|
 			"text" -> {
