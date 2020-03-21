@@ -1674,7 +1674,7 @@ doNextScheduledTask[state_WorkState] := (
 							sendResponse[newState["client"], <|
 								"id" -> task["id"],
 								"error" -> ServerError[
-									"ContentModified",
+									"RequestCancelled",
 									"There is a more recent duplicate request."
 								]
 							|>];
@@ -1691,7 +1691,6 @@ doNextScheduledTask[state_WorkState] := (
 	]
 
 )
-
 
 
 (* ::Section:: *)
