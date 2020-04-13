@@ -47,15 +47,40 @@ GenerateUnicodeTable[file_] := Module[
     ) :> (longName -> FromDigits[unicode, 16])]
     // Association;
 
-    Keys[AliasToLongName]
-    // Map[StringTake[#, 1]&]
-    // DeleteDuplicates
-    // DeleteCases[_?LetterQ]
-    // Prepend["["]
-    // DeleteDuplicates
+    (* aliases without A-Za-z. *)
+    NonLetterAliases = Keys[AliasToLongName]
+    // Cases[_?(StringMatchQ[Except[WordCharacter]..])];
+
+    (*
+        Non-letters which are only used as prefix of aliases that contains letters.
+        We know there is only one such leader, i.e. `$`, but we generate it here.
+    *)
+    NonLetterLeaders = Complement[
+        (* all non-letter prefix *)
+        Keys[AliasToLongName]
+        // Map[StringTake[#, 1]&]
+        // Prepend["["] (* for long names `[` is a prefix *)
+        // DeleteDuplicates
+        // DeleteCases[_?LetterQ],
+        (* non-letter prefix *)
+        NonLetterAliases
+        // Map[StringTake[#, 1]&]
+        // DeleteDuplicates
+    ];
+
+    (* Use `Function` to do lexical replacement in `Unevaluated` *)
+    NonLetterLeaders
     // (leaders \[Function] ( 
-        Write[file, Unevaluated[WolframLanguageServer`UnicodeTable`UnicodeLeaders = leaders]];
+        Write[file, Unevaluated[WolframLanguageServer`UnicodeTable`NonLetterLeaders = leaders]];
         leaders
+    ));
+
+    WriteLine[file, "\n"];
+
+    NonLetterAliases
+    // (aliases \[Function] ( 
+        Write[file, Unevaluated[WolframLanguageServer`UnicodeTable`NonLetterAliases = aliases]];
+        aliases
     ));
 
     WriteLine[file, "\n"];
@@ -74,58 +99,11 @@ GenerateUnicodeTable[file_] := Module[
         assoc
     ));
 
-    (* Join[
-        AliasToLongName
-        // KeyValueMap[{alias, longName} \[Function] (
-            <|
-                "label" -> StringJoin[
-                    LongNameToUnicode[longName]
-                    // Replace[{
-                        code_?(LessThan[16^^E000]) :> (
-                            FromCharacterCode[code]
-                        ),
-                        _ -> " "
-                    }], "\t",
-                    alias, "\t\t",
-                    longName
-                ],
-                "kind" -> 1,
-                (* "detail" -> , *)
-                "filterText" -> alias,
-                "insertText" -> StringDrop[longName, 1],
-                "data" -> <|"type" -> "Alias"|>
-            |>
-        )],
-        LongNameToUnicode
-        // KeyValueMap[{longName, unicode} \[Function] (
-            <|
-                "label" -> StringJoin[
-                    unicode
-                    // Replace[{
-                        code_?(LessThan[16^^E000]) :> (
-                            FromCharacterCode[code]
-                        ),
-                        _ -> " "
-                    }], "\t",
-                    longName
-                ],
-                "kind" -> 1,
-                (* "detail" -> , *)
-                "filterText" -> StringDrop[longName, 1],
-                "insertText" -> StringDrop[longName, 1],
-                "data" -> <|"type" -> "LongName"|>
-            |>
-        )]
-    ]
-    // (items \[Function] (
-        Write[file, Unevaluated[WolframLanguageServer`UnicodeTable`UnicodeCompletionItems = items]]
-    ));*)
-
     WriteLine[file, "\n"];
     WriteLine[file, "EndPackage[]"];
 
     Close[file];
-     
+
 ]
 
 

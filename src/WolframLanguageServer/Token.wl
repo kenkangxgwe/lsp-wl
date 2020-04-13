@@ -510,36 +510,58 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-GetTriggerKeys[] := UnicodeLeaders
+(* SetDelayed is not needed. Cache it when define it. *)
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
+    If[GetTokenPrefix[doc, pos] == "\\\\",
+        (* double-triggered *)
+        GetAliasCompletion["\\", pos],
+        NonLetterAliasCompletionItems
+    ]
+)
 
 
-GetTriggerKeyCompletion[] := (
-    AliasToLongName
-    // KeySelect[StringStartsQ[UnicodeLeaders]]
-    // KeyValueMap[{alias, longName} \[Function] With[
-        {
-            unicode = LongNameToUnicode[longName]
-        },
+NonLetterAliasCompletionItems = (
+    Join[
+        AliasToLongName
+        // KeyTake[NonLetterAliases]
+        // KeyValueMap[{alias, longName} \[Function] With[
+            {
+                unicode = LongNameToUnicode[longName]
+            },
 
-        CompletionItem[<|
-            "label" -> StringJoin[
-                If[unicode < 16^^E000,
-                    FromCharacterCode[unicode],
-                    ""
-                ], "\t",
-                alias , "\t\t",
-                "\\[", longName, "]"
-            ],
-            "kind" -> CompletionItemKind["Text"],
-            "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
-            "filterText" -> alias,
-            "sortText" -> alias,
-            "insertText" -> "[" <> longName <> "]",
-            "data" -> <|
-                "type" -> "Alias"
-            |>
-        |>]
-    ]]
+            CompletionItem[<|
+                "label" -> StringJoin[
+                    If[unicode < 16^^E000,
+                        FromCharacterCode[unicode],
+                        ""
+                    ], "\t",
+                    alias // StringReplace[" " -> "\[SpaceIndicator]"] , "\t\t",
+                    "\\[", longName, "]"
+                ],
+                "kind" -> CompletionItemKind["Text"],
+                "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+                "filterText" -> alias,
+                "sortText" -> alias,
+                "insertText" -> "[" <> longName <> "]",
+                "data" -> <|
+                    "type" -> "Alias"
+                |>
+            |>]
+        ]],
+        Table[
+            CompletionItem[<|
+                "label" -> leader <> "...",
+                "kind" -> CompletionItemKind["Text"],
+                "detail" -> "More input needed to show the completion.",
+                "filterText" -> leader,
+                "sortText" -> leader <> "...",
+                "insertText" -> leader,
+                "data" -> <|
+                    "type" -> "Alias"
+                |>
+            |>], {leader, NonLetterLeaders}
+        ]
+    ]
 )
 
 
@@ -563,8 +585,8 @@ GetAliasCompletion[prefix_String, pos_LspPosition] := (
             "kind" -> CompletionItemKind["Text"],
             "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
             (* label has some extra information, thus cannot be used to sort, filter or insert *)
-            "sortText" -> StringDrop[alias, StringLength[prefix] - 1],
-            "filterText" -> StringDrop[alias, StringLength[prefix] - 1],
+            "sortText" -> alias (*StringDrop[alias, StringLength[prefix] - 1]*),
+            "filterText" -> alias (*StringDrop[alias, StringLength[prefix] - 1]*),
             "textEdit" -> TextEdit[<|
                 "range" -> LspRange[<|
                     "start" -> LspPosition[<|
@@ -626,8 +648,7 @@ GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
         ),
         (* other aliases *)
         prefix_ :> (
-            prefix
-            // Curry[GetAliasCompletion][pos]
+            GetAliasCompletion[prefix, pos]
         )
     }]
 

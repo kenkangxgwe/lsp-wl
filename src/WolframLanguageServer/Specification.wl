@@ -261,7 +261,7 @@ DeclareType[CompletionItem, <|
     "kind" -> _Integer,
     "detail" -> _String,
     "documentation" -> _String | _MarkupContent,
-    "preselect" -> _String,
+    "preselect" -> _?BooleanQ,
     "filterText" -> _String,
     "insertText" -> _String,
     "insertTextFormat" -> _Integer,

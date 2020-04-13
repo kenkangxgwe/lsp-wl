@@ -987,7 +987,7 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 				"result" -> <|
 					"isIncomplete" -> True,
 					"items" -> (
-						GetTriggerKeyCompletion[]
+						GetTriggerKeyCompletion[doc, pos]
 						// ToAssociation
 					)
 				|>
