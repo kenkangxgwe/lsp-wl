@@ -70,7 +70,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                 _(* other messages *) :> (
                     {
                         If[OptionValue["Header"],
-                            GenHeader[token, tag, OptionValue["Format"]],
+                            GenHeader[token, tag, "Format" -> OptionValue["Format"]],
                             Nothing
                         ],
                         boxText
@@ -173,12 +173,12 @@ GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
         _ :> (
             If[OptionValue["Format"] == MarkupKind["Markdown"],
                 StringJoin[
-                    token, "::", tag, "\n"
-                ],
-                StringJoin[
                     "```mathematica\n",
                     token, "::", tag, "\n",
                     "```"
+                ],
+                StringJoin[
+                    token, "::", tag, "\n"
                 ]
             ]
         )
@@ -366,7 +366,7 @@ GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := (
 printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
 
     hoverInfo
-    // Map[printHoverTextImpl]
+    // printHoverTextImpl
     // StringRiffle[#, "\n\n---\n\n"]&
     // Replace[{
         "" -> Null,
@@ -386,9 +386,8 @@ printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
 )
 
 
-printHoverTextImpl[hoverInfo_HoverInfo] := (
-    hoverInfo
-    // Replace[{
+printHoverTextImpl[hoverInfo_List] := (
+    Replace[hoverInfo, {
         HoverInfo["Operator", {symbolName_String}] :> (
             TokenDocumentation[symbolName, "usage"]
         ),
@@ -406,7 +405,7 @@ printHoverTextImpl[hoverInfo_HoverInfo] := (
                 ]
             }]
         )
-    }]
+    }, {1}]
 )
 
 

@@ -256,9 +256,186 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "FindAllCodeRangeTwoSection1"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"Replace[a, b]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 3
+		|>]
+	],
+	{
+		{HoverInfo["Message", {"Replace", "usage"}]},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 7
+			|>]
+		|>]
+	},
+	TestID -> "HoverSymbol"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"2^^110"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 3
+		|>]
+	],
+	{
+		{HoverInfo["Number", {"2^^110", 6}]},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 6
+			|>]
+		|>]
+	},
+	TestID -> "HoverNumericLiteral"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"General::obspkg"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 3
+		|>]
+	],
+	{
+		{
+			HoverInfo["Message", {"General", "obspkg"}],
+			HoverInfo["Message", {"General", "usage"}]
+		},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 7
+			|>]
+		|>]
+	},
+	TestID -> "HoverMessageName 1"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"General::obspkg"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 8
+		|>]
+	],
+	{
+		{
+			HoverInfo["Operator", {"MessageName"}],
+			HoverInfo["Message", {"General", "obspkg"}]
+		},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 15
+			|>]
+		|>]
+	},
+	TestID -> "HoverMessageName 2"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"General::obspkg"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 12
+		|>]
+	],
+	{
+		{
+			HoverInfo["Operator", {"MessageName"}],
+			HoverInfo["Message", {"General", "obspkg"}]
+		},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 15
+			|>]
+		|>]
+	},
+	TestID -> "HoverMessageName 3"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"f @@ a"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 3
+		|>]
+	],
+	{
+		{HoverInfo["Operator", {"Apply"}]},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 6
+			|>]
+		|>]
+	},
+	TestID -> "HoverOperator"
 ]
 
-} // Map@Curry[Sow]@CurrentContext
+} // Map[Sow[#, CurrentContext]&]
 
 
 End[]

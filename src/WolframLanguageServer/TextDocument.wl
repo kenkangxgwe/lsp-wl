@@ -898,32 +898,37 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-getHoverInfoImpl[ast_, {}, res_List] := res
-getHoverInfoImpl[ast_, {index_Integer, restIndices___}, res_] := (
+getHoverInfoImpl[ast_, {}] := Null
+getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
     Part[ast, index]
-    // (node \[Function] getHoverInfoImpl[
-        node,
-        {restIndices},
-        Append[res, node // Replace[{
-            AstPattern["Symbol"][{symbolName_}] :> (
-                HoverInfo["Message", {symbolName, "usage"}]
-            ),
-            integer:AstPattern["Integer"][{integerLiteral_}] :> (
-                HoverInfo["Number", {integerLiteral, CodeParser`FromNode[integer]}]
-            ),
-            real:AstPattern["Real"][{realLiteral_}] :> (
-                HoverInfo["Number", {realLiteral, CodeParser`FromNode[real]}]
-            ),
-            AstPattern["Function"][{functionName_}] /; Length[{restIndices}] == 0 :> (
-                HoverInfo["Operator", {functionName}]
-                (* TODO(kenkangxgwe): to know whether the cursor is hovering on the operator *)
-            ),
-            AstPattern["MessageName"][{symbolName_, message_}] :> (
-                HoverInfo["Message", {symbolName, CodeParser`FromNode[message]}]
-            ),
-            _ :> Nothing
-        }]]
-    ])
+    // (node \[Function] (
+        node
+        // {
+            Replace[{
+                AstPattern["Function"][{functionName_}] /; Length[{restIndices}] == 0 :> (
+                    HoverInfo["Operator", {functionName}]
+                    (* TODO(kenkangxgwe): to know whether the cursor is hovering on the operator *)
+                ),
+                _ -> Nothing
+            }],
+            Replace[{
+                AstPattern["Symbol"][{symbolName_}] :> (
+                    HoverInfo["Message", {symbolName, "usage"}]
+                ),
+                integer:AstPattern["Integer"][{integerLiteral_}] :> (
+                    HoverInfo["Number", {integerLiteral, CodeParser`FromNode[integer]}]
+                ),
+                real:AstPattern["Real"][{realLiteral_}] :> (
+                    HoverInfo["Number", {realLiteral, CodeParser`FromNode[real]}]
+                ),
+                AstPattern["MessageName"][{symbolName_, message_}] :> (
+                    HoverInfo["Message", {symbolName, CodeParser`FromNode[message]}]
+                ),
+                _ -> Nothing
+            }]
+        } // Through // Map[Sow];
+        getHoverInfoImpl[node, {restIndices}]
+    ))
 )
 
 
