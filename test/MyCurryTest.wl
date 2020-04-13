@@ -79,9 +79,21 @@ VerificationTest[
     MyCurry[f, 6 -> {5,4,6,3,1}][e, f, d, b, a, c],
 	f[a, b, c, d, e],
 	TestID -> "Currying with a slot map and extended arity"
+],
+
+VerificationTest[
+    MyCurry[f, 3][a, b, c ,d],
+	f[a, b, c][d],
+	TestID -> "Currying with extra arguments 1"
+],
+
+VerificationTest[
+    MyCurry[f][a][b, c ,d],
+	f[b, a][c, d],
+	TestID -> "Currying with extra arguments 2"
 ]
 
-} // Map@Curry[Sow]@CurrentContext
+} // Map[Sow[#, CurrentContext]&]
 
 
 End[]

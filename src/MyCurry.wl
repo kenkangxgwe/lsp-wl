@@ -32,18 +32,17 @@ MyCurry[func_] := MyCurry[func, {2, 1}]
 
 
 CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_] /; (arity == index) := (func@@args)
-CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_][firstArg_, restArgs___] := (
-    CurriedFunction[func, {arity, index + 1}, ReplacePart[args, Position[slotMap, index] -> firstArg], slotMap]
-)
-(curriedFunction:CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_])[] := (
-    curriedFunction
-)
 CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_][firstArg_] := (
-    CurriedFunction[func, {arity, index + 1}, ReplacePart[args, Position[slotMap, index + 1] -> firstArg], slotMap]
+    CurriedFunction[func, {arity, index + 1},
+        ReplacePart[args, Position[slotMap, index + 1, {1}, Heads->False] -> firstArg],
+    slotMap]
 )
 CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_][firstArg_, restArgs__] := (
-    CurriedFunction[func, {arity, index + 1}, ReplacePart[args, Position[slotMap, index + 1] -> firstArg], slotMap][restArgs]
+    CurriedFunction[func, {arity, index + 1},
+        ReplacePart[args, Position[slotMap, index + 1, {1}, Heads->False] -> firstArg],
+    slotMap][restArgs]
 )
+(curriedFunction:CurriedFunction[func_, {arity_, index_Integer}, args_, slotMap_])[] := curriedFunction
 
 
 End[]
