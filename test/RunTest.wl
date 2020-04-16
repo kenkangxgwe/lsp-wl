@@ -7,7 +7,8 @@ ClearAll[Evaluate[Context[] <> "*"]]
 TestContexts = {
     "MyCurryTest`",
 	"DataTypeTest`",
-	"WolframLanguageServer`TextDocumentTest`"
+	"WolframLanguageServer`TextDocumentTest`",
+	"WolframLanguageServer`TokenTest`"
 }
 TestRunContext::usage = "Run tests for given context."
 TestRunAll::usage = "Run tests for all the contexts below:\n\t" <> StringRiffle[TestContexts, "\n\t"]

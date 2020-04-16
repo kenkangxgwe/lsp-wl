@@ -250,7 +250,7 @@ VerificationTest[
     TestID -> "Type usage 2"
 ]
 
-} // Map@Curry[Sow]@CurrentContext
+} // Map[Sow[#, CurrentContext]&]
 
 
 End[]

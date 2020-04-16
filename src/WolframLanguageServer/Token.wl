@@ -17,7 +17,6 @@ TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] ret
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
 GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] gives the signature help at the position."
 GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
-GetTriggerKeys::usage = "GetTriggerKeys[] returns a list of characters that trigger a completion request when input."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
 GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
 
@@ -323,7 +322,8 @@ BoxToText[input_, o:OptionsPattern[]] := Block[
                 StringReplace[{
                     "~" -> "\\~",
                     "`" -> "\\`",
-                    "*" -> "\\*"
+                    "*" -> "\\*",
+                    "\\" -> "\\\\"
                 }],
                 Identity
             ]
