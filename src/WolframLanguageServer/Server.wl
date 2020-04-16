@@ -1798,8 +1798,8 @@ checkGitRepo[state_WorkState] := (
 checkDependencies[state_WorkState] := With[
 	{
 		dependencies = {
-			{"AST", "0.15.1"},
-			{"Lint", "0.15.1"}
+			{"CodeParser", "1.0"},
+			{"CodeInspector", "1.0"}
 		}
 	},
 

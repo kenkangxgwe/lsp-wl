@@ -27,7 +27,7 @@ TestRunContext[context_String] := (
 )
 
 
-ShowTestReport[report_TestReportObject, context_String] := 
+ShowTestReport[report_TestReportObject, context_String] :=
 Column[{
 	TableForm[{
 		{"Test: ", context},
