@@ -7,7 +7,7 @@
 
 
 BeginPackage["WolframLanguageServer`Specification`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]];
 
 
 LspPosition::usage = "is type of Position interface in LSP."
