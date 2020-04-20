@@ -48,8 +48,7 @@ Needs["WolframLanguageServer`ColorTable`"]
 CodeParser`Abstract`Private`abstractTopLevel = (
     Replace[
         #,
-        AstPattern["Function"][{functionName_, arguments_, data_}]
-        /; (functionName == "CodeParser`Comma") :> (
+        AstPattern["Function"][functionName:"CodeParser`Comma", arguments_, data_] :> (
             CodeParser`AbstractSyntaxErrorNode[AbstractSyntaxError`CommaTopLevel, arguments, data]
         ),
         {1}
@@ -691,7 +690,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := (
 ToDocumentSymbolImpl[node_] := (
     node
     // Replace[{
-        AstPattern["Definable"][{head_, func_, key_, data_}] :> (
+        AstPattern["Definable"][head_, func_, key_, data_] :> (
             DocumentSymbol[<|
                 "name" -> (
                     key
@@ -720,50 +719,44 @@ ToDocumentSymbolImpl[node_] := (
             |>]
         ),
 
-        AstPattern["Set"][{head_, op_, data_}] :> Block[
+        AstPattern["Set"][head_, op:"Set", data_] :> Block[
             {
                 symbolList
             },
 
-            (
-                symbolList
-                // Map[Replace[{
-                    AstPattern["Symbol"][<|"symbolName" -> symbolName_, "data" -> symbolData_|>] :> (
-                        DocumentSymbol[<|
-                            "name" -> (
-                                symbolName
-                            ),
-                            "kind" -> SymbolKind["Variable"],
-                            "range" -> (
-                                data
-                                // Key[CodeParser`Source]
-                                // SourceToRange
-                            ),
-                            "selectionRange" -> (
-                                symbolData
-                                // Key[CodeParser`Source]
-                                // SourceToRange
-                            ),
-                            "children" -> ({})
-                        |>]
-                    ),
-                    _ -> Nothing
-                }]]
-            )
+            Replace[symbolList, {
+                AstPattern["Symbol"][<|"symbolName" -> symbolName_, "data" -> symbolData_|>] :> (
+                    DocumentSymbol[<|
+                        "name" -> (
+                            symbolName
+                        ),
+                        "kind" -> SymbolKind["Variable"],
+                        "range" -> (
+                            data
+                            // Key[CodeParser`Source]
+                            // SourceToRange
+                        ),
+                        "selectionRange" -> (
+                            symbolData
+                            // Key[CodeParser`Source]
+                            // SourceToRange
+                        ),
+                        "children" -> ({})
+                    |>]
+                ),
+                _ -> Nothing
+            }, {1}]
 
             /; (
-                op == "Set"
-                && (
-                    head
-                    // GetSymbolList
-                    // ((symbolList = #)&)
-                    // MissingQ
-                    // Not
-                )
+                head
+                // GetSymbolList
+                // ((symbolList = #)&)
+                // MissingQ
+                // Not
             )
         ],
 
-        AstPattern["Set"][{head_, op_, tag_, data_}] :> (
+        AstPattern["Set"][head_, op_, tag_, data_] :> (
             DocumentSymbol[<|
                 "name" -> (
                     FirstCase[
@@ -802,7 +795,7 @@ ToDocumentSymbolImpl[node_] := (
             |>]
         ),
 
-        AstPattern["CompoundExpression"][{exprs_}] :> (
+        AstPattern["CompoundExpression"][exprs_] :> (
             exprs
             // Map[ToDocumentSymbolImpl]
         ),
@@ -837,14 +830,13 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<
 GetSymbolList[node_] := (
     node
     // Replace[{
-        AstPattern["Function"][{functionName_, arguments_}]
-        /; (functionName == "List") :> (
+        AstPattern["Function"][functionName:"List", arguments_] :> (
             arguments
             // Map[GetSymbolList]
             // Catenate
             // Replace[_?(MemberQ[_?MissingQ]) -> Missing["NotSymbolList"]]
         ),
-        symbolNode:AstPattern["Symbol"][{}] :> (
+        symbolNode:AstPattern["Symbol"][] :> (
             {symbolNode}
         ),
         _ -> {Missing["NotSymbolList"]}
@@ -876,7 +868,7 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
             // Replace[indices_List :> {
                 getHoverInfoImpl[ast, indices]
                 // Reap
-                // Last // Last
+                // Last // Flatten
                 // DeleteDuplicates,
                 (* get range *)
                 ast
@@ -904,24 +896,27 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
     // (node \[Function] (
         node
         // {
+            If[Length[{restIndices}] == 0,
+                Replace[{
+                    AstPattern["Function"][functionName_] :> (
+                        HoverInfo["Operator", {functionName}]
+                        (* TODO(kenkangxgwe): to know whether the cursor is hovering on the operator *)
+                    ),
+                    _ -> Nothing
+                }],
+                Nothing
+            ],
             Replace[{
-                AstPattern["Function"][{functionName_}] /; Length[{restIndices}] == 0 :> (
-                    HoverInfo["Operator", {functionName}]
-                    (* TODO(kenkangxgwe): to know whether the cursor is hovering on the operator *)
-                ),
-                _ -> Nothing
-            }],
-            Replace[{
-                AstPattern["Symbol"][{symbolName_}] :> (
+                AstPattern["Symbol"][symbolName_] :> (
                     HoverInfo["Message", {symbolName, "usage"}]
                 ),
-                integer:AstPattern["Integer"][{integerLiteral_}] :> (
+                integer:AstPattern["Integer"][integerLiteral_] :> (
                     HoverInfo["Number", {integerLiteral, CodeParser`FromNode[integer]}]
                 ),
-                real:AstPattern["Real"][{realLiteral_}] :> (
+                real:AstPattern["Real"][realLiteral_] :> (
                     HoverInfo["Number", {realLiteral, CodeParser`FromNode[real]}]
                 ),
-                AstPattern["MessageName"][{symbolName_, message_}] :> (
+                AstPattern["MessageName"][symbolName_, message_] :> (
                     HoverInfo["Message", {symbolName, CodeParser`FromNode[message]}]
                 ),
                 _ -> Nothing
@@ -963,7 +958,7 @@ GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
 getFunctionNameImpl[ast_, indices_] := (
     Extract[ast, indices // Replace[{} -> {All}]]
     // Replace[{
-        AstPattern["Function"][{functionName_}] :> (
+        AstPattern["Function"][functionName_] :> (
             functionName
             // Replace[FunctionPattern["NoSignatureHelp"] -> Missing["NotFound"]]
         ),
@@ -1000,7 +995,7 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
             pos["character"]
         }]]
         // Replace[
-            AstPattern["Token"][{tokenString_, data_}] :> (
+            AstPattern["Token"][tokenString_, data_] :> (
                 StringTake[tokenString, pos["character"] - Part[data[CodeParser`Source], 1, 2] + 1]
             )
         ]
@@ -1153,7 +1148,7 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
 
     name = FirstCase[
         ast,
-        AstPattern["Symbol"][{symbolName_}]
+        AstPattern["Symbol"][symbolName_]
             ?(NodeContainsPosition[{line, character}]) :> (
             symbolName
         ),
@@ -1167,9 +1162,9 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
     FirstCase[
         ast,
         (
-            AstPattern["Scope"][{head_, body_, op_}]
+            AstPattern["Scope"][head_, body_, op_]
                 ?(NodeContainsPosition[{line, character}]) |
-            AstPattern["Delayed"][{head_, body_, op_}]
+            AstPattern["Delayed"][head_, body_, op_]
                 ?(NodeContainsPosition[{line, character}])
         ) :> Block[
             {
@@ -1226,8 +1221,7 @@ ScopeHeadSymbolSource["With", head_, name_String] := (
     FirstCase[
         (* elements in the list *)
         Part[head, 2],
-        AstPattern["InscopeSet"][{symbolName_, symbolData_}]
-        /; (symbolName == name) :> (
+        AstPattern["InscopeSet"][symbolName:name, symbolData_] :> (
             symbolData[CodeParser`Source]
             // Replace[
                 _?MissingQ :> (
@@ -1243,8 +1237,7 @@ ScopeHeadSymbolSource["With", head_, name_String] := (
 
 ScopeHeadSymbolSource["Function", head_, name_String] := (
     Replace[head, {
-        AstPattern["Symbol"][{symbolName_, data_}]
-        /; (symbolName == name) :> (
+        AstPattern["Symbol"][symbolName:name, data_] :> (
             data[CodeParser`Source]
             // Replace[
                 _?MissingQ :> (
@@ -1254,12 +1247,10 @@ ScopeHeadSymbolSource["Function", head_, name_String] := (
                 )
             ]
         ),
-        AstPattern["Function"][{functionName_, arguments_}]
-        /; (functionName == "List") :> (
+        AstPattern["Function"][functionName:"List", arguments_] :> (
             FirstCase[
                 arguments,
-                AstPattern["Symbol"][{symbolName_, data_}]
-                /; (symbolName == name) :> (
+                AstPattern["Symbol"][symbolName:name, data_] :> (
                     data[CodeParser`Source]
                     // Replace[
                         _?MissingQ :> (
@@ -1279,13 +1270,11 @@ ScopeHeadSymbolSource["Function", head_, name_String] := (
 
 ScopeHeadSymbolSource["Block"|"Module"|"DynamicModule", head_, name_String] :=(
     Replace[head, {
-        AstPattern["Function"][{functionName_, arguments_}]
-        /; (functionName == "List") :> (
+        AstPattern["Function"][functionName:"List", arguments_] :> (
             FirstCase[
                 arguments,
-                AstPattern["InscopeSet"][{symbolName_, symbolData_}] |
-                AstPattern["Symbol"][<|"symbolName" -> symbolName_, "data" -> symbolData_|>]
-                /; (symbolName == name) :> (
+                AstPattern["InscopeSet"][symbolName:name, symbolData_] |
+                AstPattern["Symbol"][<|"symbolName" -> symbolName:name, "data" -> symbolData_|>] :> (
                     symbolData[CodeParser`Source]
                     // Replace[
                         _?MissingQ :> (
@@ -1307,8 +1296,7 @@ DelayedHeadPatternNameSource[head_, name_String] := (
     Join[
         Cases[
             Part[head, 2],
-            AstPattern["DelayedPattern"][{patternName_, patternData_}]
-            /; (patternName == name) :> (
+            AstPattern["DelayedPattern"][patternName:name, patternData_] :> (
                 patternData[CodeParser`Source]
                 // Replace[
                     _?MissingQ :> (
@@ -1321,8 +1309,7 @@ DelayedHeadPatternNameSource[head_, name_String] := (
             {0, Infinity}
         ],
         Replace[head, {
-            AstPattern["Function"][{functionName_, arguments_}]
-            /; (functionName == "Condition") :> (
+            AstPattern["Function"][functionName:"Condition", arguments_] :> (
                 arguments
                 // Last
                 // Curry[StaticLocalSource][name]
@@ -1336,8 +1323,7 @@ DelayedHeadPatternNameSource[head_, name_String] := (
 StaticLocalSource[node_, name_String] := (
     Cases[
         node,
-        AstPattern["Symbol"][{symbolName_, data_}]
-        /; (symbolName == name) :> (
+        AstPattern["Symbol"][symbolName:name, data_] :> (
             data[CodeParser`Source]
             (* happens when an operator is parsed as a symbol *)
             // Replace[_?MissingQ -> Nothing]
@@ -1353,8 +1339,8 @@ DynamicLocalSource[node_, name_String] := (
         StaticLocalSource[node, name],
         Cases[
             node,
-            AstPattern["Scope"][{head_, body_, op_}] |
-            AstPattern["Delayed"][{head_, body_, op_}] :> Block[
+            AstPattern["Scope"][head_, body_, op_] |
+            AstPattern["Delayed"][head_, body_, op_] :> Block[
                 {
                     headSource
                 },
@@ -1385,31 +1371,27 @@ DynamicLocalSource[node_, name_String] := (
 FindTopLevelSymbols[node_, name_String] := (
     node
     // Replace[{
-        AstPattern["Set"][{head_, op_}] :> Block[
+        AstPattern["Set"][head_, op:"Set"] :> Block[
             {
                 symbolSource
             },
 
             {symbolSource}
             /; (
-                op == "Set"
-                && (
-                    head
-                    // GetSymbolList
-                    // FirstCase[
-                        AstPattern["Symbol"][{symbolName_, data_}]
-                        /; (functionName == name) :> (
-                            data[CodeParser`Source]
-                        )
-                    ]
-                    // ((symbolSource = #)&)
-                    // MissingQ
-                    // Not
-                )
+                head
+                // GetSymbolList
+                // FirstCase[
+                    AstPattern["Symbol"][symbolName:name, data_] :> (
+                        data[CodeParser`Source]
+                    )
+                ]
+                // ((symbolSource = #)&)
+                // MissingQ
+                // Not
             )
         ],
 
-        AstPattern["Set"][{head_}] :> Block[
+        AstPattern["Set"][head_] :> Block[
             {
                 symbolSource
             },
@@ -1418,13 +1400,12 @@ FindTopLevelSymbols[node_, name_String] := (
             /; (
                 FirstCase[
                     head,
-                    AstPattern["Symbol"][{}],
+                    AstPattern["Symbol"][],
                     Missing["NotFound"],
                     AstLevelspec["LeafNodeWithSource"]
                 ]
                 // Replace[{
-                    AstPattern["Symbol"][{symbolName_, data_}]
-                    /; (symbolName == name) :> (
+                    AstPattern["Symbol"][symbolName:name, data_] :> (
                         data[CodeParser`Source]
                         // Replace[{
                             source_ :> (
@@ -1442,7 +1423,7 @@ FindTopLevelSymbols[node_, name_String] := (
             )
         ],
 
-        AstPattern["CompoundExpression"][{exprs_}] :> (
+        AstPattern["CompoundExpression"][exprs_] :> (
             exprs
             // Map[Curry[FindTopLevelSymbols][name]]
             // Catenate
@@ -1465,7 +1446,7 @@ FindDocumentColor[doc_TextDocument] := With[
     Join[
         Cases[
             ast,
-            AstPattern["NamedColor"][{color_, data_}] :> (
+            AstPattern["NamedColor"][color_, data_] :> (
                 ColorInformation[<|
                     "range" -> (
                         data
@@ -1483,7 +1464,7 @@ FindDocumentColor[doc_TextDocument] := With[
         ],
         Cases[
             ast,
-            AstPattern["ColorModel"][{model_, params_, data_}] :> With[
+            AstPattern["ColorModel"][model_, params_, data_] :> With[
                 {
                     color = (
                         params

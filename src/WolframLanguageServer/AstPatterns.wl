@@ -6,7 +6,7 @@
 *)
 
 BeginPackage["WolframLanguageServer`AstPatterns`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
 FunctionPattern::usage = "A set of function head patterns."
@@ -16,6 +16,7 @@ AstLevelspec::usage = "A set of levelspec that is useful to specify when using C
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
+Needs["PatternTemplate`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`ColorTable`"]
 
@@ -90,64 +91,6 @@ FunctionPattern = <|
         "With" | "Block" | "Module" | "DynamicModule"
     )
 |>
-
-
-Options[ExportPattern] = {
-    "OverwritePostfix" -> True
-}
-
-ExportPattern[pattern_, o:OptionsPattern[]] := With[
-    {
-        exportedPattern = pattern /. {Verbatim[Pattern] -> ExportedPattern}
-    },
-
-    Hold[patternNewNameAssocOrList \[Function] Block[
-        {
-            patternNewNamesAssoc = (
-                patternNewNameAssocOrList
-                //Replace[{
-                    _Association :> patternNewNameAssocOrList,
-                    (*
-                        convert list of patterns to association where pattern
-                        names point to their pattern
-                    *)
-                    {Verbatim[Pattern][_Symbol, _]...} :> (
-                        patternNewNameAssocOrList
-                        // Map[(
-                            #
-                            // First
-                            // SymbolName
-                            // (patternName \[Function] {
-                                patternName -> #,
-                                If[OptionValue["OverwritePostfix"] && StringEndsQ[patternName, "$"],
-                                    StringDrop[patternName, -1] -> #,
-                                    Nothing
-                                ]
-                            })
-                        )&]
-                        // Flatten
-                        // Apply[Association]
-                    ),
-                    (* otherwise, use empty association *)
-                    _ -> <||>
-                }]
-            )
-        },
-        exportedPattern
-    ]]
-    //. {ExportedPattern[patternName_Symbol, patternObject_] :> (
-        (* Renamed function parameter *)
-        patternNewNamesAssoc
-        // Key[SymbolName[patternName]]
-        // (patternObject
-            // If[MissingQ[#],
-                Identity,
-                Curry[Pattern, 2][# // First]
-            ]
-        )&
-    )}
-    // ReleaseHold
-]
 
 
 AstPattern = <|
@@ -273,7 +216,7 @@ AstPattern = <|
         ]
     )
 
-|> // Map[ExportPattern]
+|> // Map[PatternTemplate]
 
 
 AstLevelspec = <|
