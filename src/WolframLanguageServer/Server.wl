@@ -1,7 +1,7 @@
 (* ::Package:: *)
 
 (* Wolfram Language Server *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
+(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
            huxianglong <hxianglong_at_gmail.com>
 *)
 
@@ -1294,7 +1294,7 @@ handleNotification["initialized", msg_, state_] := (
 		state
 		// ReplaceKey["initialized" -> True]
 		// Curry[addScheduledTask][ServerTask[<|
-			"type" -> "CheckUpgrades",
+			"type" -> "InitialCheck",
 			"scheduledTime" -> Now
 		|>]]
 	}
@@ -1634,9 +1634,9 @@ doNextScheduledTask[state_WorkState] := (
 						/* (task["callback"][#, task["params"]]&)
 					]
 				),
-				"CheckUpgrades" :> (
+				"InitialCheck" :> (
 					newState
-					// checkUpgrades
+					// initialCheck
 				),
 				"JustContinue" :> {"Continue", newState},
 				_ :> (
@@ -1735,7 +1735,8 @@ defaultConfig = <|
 (*check upgrades*)
 
 
-checkUpgrades[state_WorkState] := (
+initialCheck[state_WorkState] := (
+	checkDependencies[state];
 	If[
 		DateDifference[
 			DateObject[state["config"]["configFileConfig"]["lastCheckForUpgrade"]],
@@ -1748,7 +1749,6 @@ checkUpgrades[state_WorkState] := (
 		],
 		(* check for upgrade if not checked for more than checkInterval days *)
 		checkGitRepo[state];
-		checkDependencies[state];
 		(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
 		// saveConfig *)
 	];
@@ -1795,6 +1795,19 @@ checkGitRepo[state_WorkState] := (
 	];
 )
 
+If[$VersionNumber >= 12.1,
+	pacletInstalledQ[{name_String, version_String}] := (
+		PacletObject[name -> version]
+		// LogDebug
+		// FailureQ // Not
+	),
+	pacletInstalledQ[{name_String, version_String}] := (
+		PacletManager`PacletInformation[{name, version}]
+		// LogDebug
+		// MatchQ[{}] // Not
+	)
+]
+
 checkDependencies[state_WorkState] := With[
 	{
 		dependencies = {
@@ -1812,24 +1825,16 @@ checkDependencies[state_WorkState] := With[
 		Return[]
 	];
 
-	Table[
-		PacletManager`PacletInformation[depinfo]
-		// Replace[{
-			{} :> (StringRiffle[depinfo, "-"]),
-			_ :> (Nothing)
-		}],
-		{depinfo, dependencies}
-	] // Replace[{depInstalls__} :> (
-		showMessage[
-			StringJoin["These dependencies with correct versions need to be installed or upgraded: ",
-				StringRiffle[{depInstalls}, ", "], ", ",
-				"otherwise the server may malfunction. ",
-				"Please see the [Installation section](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) for details."
-			],
-			"Warning",
-			state
-		]
-	)];
+	dependencies
+	// Select[pacletInstalledQ /* Not]
+	// StringRiffle[#, ", ", "-"]&
+	// LogDebug
+	// StringTemplate[StringJoin[
+		"These dependencies with correct versions need to be installed or upgraded: ``, ",
+		"otherwise the server may malfunction. ",
+		"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
+	]]
+	// showMessage[#, "Warning", state]&
 ]
 
 
