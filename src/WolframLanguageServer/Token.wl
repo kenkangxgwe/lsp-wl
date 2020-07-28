@@ -64,7 +64,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                         ],
                         GenOptions[token, "Format" -> OptionValue["Format"]]
                     } // Flatten
-                    // Curry[StringRiffle]["\n\n"]
+                    // StringRiffle[#, "\n\n"]&
                 ),
                 _(* other messages *) :> (
                     {
@@ -78,7 +78,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             GenPlainText
                         ]
                     } // Flatten
-                    // Curry[StringRiffle]["\n"]
+                    // StringRiffle[#, "\n"]&
                 )
             }]
         )
@@ -159,7 +159,7 @@ GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
             token
             // {
                 Identity,
-                Curry[GetUri][tag],
+                GetUri[#, tag]&,
                 GenAttributes
             } // Through
             // Apply[
@@ -204,7 +204,7 @@ Options[GenAttributes] = {
 GenAttributes[token_String, o:OptionsPattern[]] := (
     Attributes[token]
     // Replace[_Attributes -> {}]
-    // Curry[StringRiffle][", "]
+    // StringRiffle[#, ", "]&
 )
 
 Options[GenOptions] = {
@@ -215,7 +215,7 @@ GenOptions[token_String, o:OptionsPattern[]] := (
     // StringTemplate["Options[``]"]
     // ToExpression
     // Replace[_Options -> {}]
-    // Map[Curry[ToString][InputForm]]
+    // Map[ToString[#, InputForm]&]
     // Replace[{options__} :> (
         If[OptionValue["Format"] == MarkupKind["Markdown"],
             {
@@ -230,7 +230,7 @@ GenOptions[token_String, o:OptionsPattern[]] := (
             }
         ]
     )]
-    // Curry[StringRiffle]["\n"]
+    // StringRiffle[#, "\n"]&
 )
 
 

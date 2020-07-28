@@ -5,7 +5,6 @@ ClearAll[Evaluate[Context[] <> "*"]]
 
 
 TestContexts = {
-    "MyCurryTest`",
     "PatternTemplateTest`",
 	"DataTypeTest`",
 	"WolframLanguageServer`TextDocumentTest`",

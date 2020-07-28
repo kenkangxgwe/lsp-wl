@@ -767,8 +767,8 @@ sendCachedResult[method_String, msg_, state_WorkState] := Block[
 scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 	{
 		"Continue",
-		state
-		// Curry[addScheduledTask][ServerTask[<|
+		
+		addScheduledTask[state, ServerTask[<|
 			"type" -> method,
 			"scheduledTime" -> DatePlus[Now, {
 				ServerConfig["requestDelays"][method],
@@ -1021,7 +1021,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 		markupKind = (
 			state["clientCapabilities"]["textDocument"]["completion"]["completionItem"]["documentationFormat"]
 			// First
-			// Replace[Except[_?(Curry[MemberQ, 2][Values[MarkupKind]])] -> MarkupKind["PlainText"]]
+			// Replace[Except[_?(MemberQ[Values[MarkupKind], #]&)] -> MarkupKind["PlainText"]]
 		)
 	},
 
@@ -1051,8 +1051,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 		)
 	}];
 
-	state
-	// Curry[addScheduledTask][ServerTask[<|
+	addScheduledTask[state, ServerTask[<|
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
 	|>]]
@@ -1252,8 +1251,7 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 
 	{
 		"Continue",
-		state
-		// Curry[addScheduledTask][ServerTask[<|
+		addScheduledTask[state, ServerTask[<|
 			"type" -> "JustContinue",
 			"scheduledTime" -> Now
 		|>]]
@@ -1293,10 +1291,10 @@ handleNotification["initialized", msg_, state_] := (
 		"Continue",
 		state
 		// ReplaceKey["initialized" -> True]
-		// Curry[addScheduledTask][ServerTask[<|
+		// addScheduledTask[#, ServerTask[<|
 			"type" -> "InitialCheck",
 			"scheduledTime" -> Now
-		|>]]
+		|>]]&
 	}
 )
 
@@ -1333,7 +1331,7 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 	// Replace[{
 		{pos_} :> (
 			Part[state["scheduledTasks"], pos]["type"]
-			// Curry[StringJoin][" request is cancelled."]
+			// StringJoin[#, " request is cancelled."]&
 			// LogDebug;
 			sendResponse[state["client"], <|
 				"id" -> id,
@@ -1454,10 +1452,10 @@ handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 		]
 		// ReplaceKey["version" -> doc["version"]]
 	)]
-	// Curry[addScheduledTask][ServerTask[<|
+	// addScheduledTask[#, ServerTask[<|
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
-	|>]]
+	|>]]&
 	// If[diagScheduledQ,
 		List
 		/* Prepend["Continue"],

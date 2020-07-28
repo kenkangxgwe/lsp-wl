@@ -571,7 +571,7 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
         cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
         {}, {0, Infinity}
     ]
-    // SelectFirst[Curry[Between, 2][line]]
+    // SelectFirst[Between[line, #]&]
 ]
 
 
@@ -634,7 +634,7 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
 ToDocumentSymbol[doc_TextDocument] := (
     doc
     // divideCells
-    // Curry[ToDocumentSymbolImpl, 2][doc]
+    // ToDocumentSymbolImpl[doc, #]&
     // Flatten
 )
 
@@ -655,14 +655,14 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := (
                 Join[
                     If[!MissingQ[node["codeRange"]],
                         node["codeRange"]
-                        // Map[Curry[CellToAST, 2][doc]]
+                        // Map[CellToAST[doc ,#]&]
                         // Flatten
                         // Map[ToDocumentSymbolImpl],
                         {}
                     ],
                     If[!MissingQ[node["children"]],
                         node["children"]
-                        // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                        // Map[ToDocumentSymbolImpl[doc, #]&],
                         {}
                     ]
                 ] // Flatten
@@ -672,14 +672,14 @@ ToDocumentSymbolImpl[doc_TextDocument, node_] := (
             Join[
                 If[!MissingQ[node["codeRange"]],
                     node["codeRange"]
-                    // Map[Curry[CellToAST, 2][doc]]
+                    // Map[CellToAST[doc, #]&]
                     // Flatten
                     // Map[ToDocumentSymbolImpl],
                     {}
                 ],
                 If[!MissingQ[node["children"]],
                     node["children"]
-                    // Map[Curry[ToDocumentSymbolImpl, 2][doc]],
+                    // Map[ToDocumentSymbolImpl[doc, #]&],
                     {}
                 ]
             ] // Flatten
@@ -988,7 +988,7 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
     // Replace[lineRange:{rangeStartLine_Integer, _Integer} :> (
         (* get token list *)
         Take[doc["text"], lineRange]
-        // Curry[StringRiffle]["\n"]
+        // StringRiffle[#, "\n"]&
         // CodeParser`CodeTokenize
         // SelectFirst[NodeContainsPosition[{
             line - rangeStartLine + 1,
@@ -1014,7 +1014,7 @@ DiagnoseDoc[doc_TextDocument] := (
 
     doc["text"]
     // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
-    // Curry[StringRiffle]["\n"]
+    // StringRiffle[#, "\n"]&
     // Replace[err:Except[_String] :> (LogError[doc]; "")]
     // CodeInspector`CodeInspect
     // Replace[_?FailureQ -> {}]
@@ -1206,7 +1206,7 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Blo
                 ],
                 "TopLevelOnly" :> (
                     CellToAST[doc, {1, doc["text"] // Length}]
-                    // Map[Curry[FindTopLevelSymbols][name]]
+                    // Map[FindTopLevelSymbols[#, name]&]
                     // Catenate
                 ),
                 _ -> {}
@@ -1312,7 +1312,7 @@ DelayedHeadPatternNameSource[head_, name_String] := (
             AstPattern["Function"][functionName:"Condition", arguments_] :> (
                 arguments
                 // Last
-                // Curry[StaticLocalSource][name]
+                // StaticLocalSource[#, name]&
             ),
             _ :> {}
         }]
@@ -1425,7 +1425,7 @@ FindTopLevelSymbols[node_, name_String] := (
 
         AstPattern["CompoundExpression"][exprs_] :> (
             exprs
-            // Map[Curry[FindTopLevelSymbols][name]]
+            // Map[FindTopLevelSymbols[#, name]&]
             // Catenate
         ),
 
@@ -1512,7 +1512,7 @@ GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] := With[
             ColorPresentation[<|
                 "label" -> (
                     rgbColor
-                    // Curry[ColorConvert][colorSpace]
+                    // ColorConvert[#, colorSpace]&
                     // InputForm
                     // ToString
                 )
