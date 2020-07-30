@@ -1796,12 +1796,10 @@ checkGitRepo[state_WorkState] := (
 If[$VersionNumber >= 12.1,
 	pacletInstalledQ[{name_String, version_String}] := (
 		PacletObject[name -> version]
-		// LogDebug
 		// FailureQ // Not
 	),
 	pacletInstalledQ[{name_String, version_String}] := (
 		PacletManager`PacletInformation[{name, version}]
-		// LogDebug
 		// MatchQ[{}] // Not
 	)
 ]
@@ -1825,14 +1823,17 @@ checkDependencies[state_WorkState] := With[
 
 	dependencies
 	// Select[pacletInstalledQ /* Not]
-	// StringRiffle[#, ", ", "-"]&
-	// LogDebug
-	// StringTemplate[StringJoin[
-		"These dependencies with correct versions need to be installed or upgraded: ``, ",
-		"otherwise the server may malfunction. ",
-		"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
-	]]
-	// showMessage[#, "Warning", state]&
+	// Replace[
+		missingDeps:Except[{}] :> (
+			StringRiffle[missingDeps, ", ", "-"]
+			// StringTemplate[StringJoin[
+				"These dependencies with correct versions need to be installed or upgraded: ``, ",
+				"otherwise the server may malfunction. ",
+				"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
+			]]
+			// showMessage[#, "Warning", state]&
+		)
+	]
 ]
 
 
