@@ -1,7 +1,7 @@
 (* ::Package:: *)
 
 (* Wolfram Language Server TextDocument *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
+(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
            huxianglong <hxianglong_at_gmail.com>
 *)
 
@@ -63,7 +63,7 @@ CodeParser`Abstract`Private`abstractTopLevel = (
 
 DeclareType[TextDocument, <|
     "uri" -> _DocumentUri,
-    "text" -> {__String},
+    "text" -> {___String},
     "version" -> _Integer,
     "lastUpdate" -> _DateObject
 |>]
@@ -164,362 +164,145 @@ DeclareType[CellNode, <|
     "children" -> {___CellNode}
 |>]
 
-divideCells[doc_TextDocument] := Block[
-    {
-        styleLineNo, titleLineNo, emptyLineNo
-    },
-
-    styleLineNo = Position[
+divideCells[doc_TextDocument] := (
+    Position[
         doc["text"],
+        (* matches style line *)
         _?(StringContainsQ["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]),
         {1}, Heads -> False
     ]
-    // Flatten;
-
-    titleLineNo = styleLineNo
-    (* selects style cells w/o a name *)
-    // Select[
-        (Part[doc["text"], #]&)
-        /* StringCases["(* "~~"::"~~Shortest[style___]~~"::"~~" *)" :> style]
-        /* First
-        /* MemberQ[{"Package"}]
-    ]
-    (* excludes them when finding names *)
-    // (Complement[styleLineNo, #] + 1&)
-    // Select[(Part[doc["text"], #]&)
-        /* And[
-            (* no style declared on name line *)
-            (Not @* StringContainsQ["(* " ~~ "::" ~~ style___ ~~ "::" ~~ " *)"]),
-            (* match a name *)
-            StringMatchQ[
-                StartOfString ~~ (Whitespace | "") ~~
-                "(*" ~~ Longest[title___] ~~ "*)" ~~
-                (Whitespace | "") ~~ EndOfString
-            ]
-        ]
-        /* Through
-    ];
-
-    emptyLineNo = Position[doc["text"], "", {1}, Heads -> False] // Flatten;
-
-    Join[
-        (* styleLines *)
-        Thread[{
-            "label" -> "style",
-            Thread["line" -> styleLineNo],
-            Thread["data" -> Block[
-                {
-                    styleLines = Part[doc["text"], styleLineNo]
-                },
-
-                styleLines
-                (* selectionRange *)
-                // StringPosition["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]
-                // Part[#, All, 1]&
-                // Apply[{#1 + 5, #2 - 5}&, #, {1}]&
-                // {
-                    (* {("selectionRange" -> selectionRange)..} *)
-                    Thread["selectionRange" -> #]&,
-                    (* {("style" -> style)..} *)
-                    Thread["style" -> (
-                        StringTake @@@
-                        Thread[{styleLines, #}]
-                    )]&
-                } // Through
-                // Thread
-                // Map[Association]
-            ]]
-        }],
-
-        (* titleLines *)
-        Thread[{
-            "label" -> "title",
-            Thread["line" -> titleLineNo],
-            Thread["data" -> Block[
-                {
-                    titleLines = Part[doc["text"], titleLineNo]
-                },
-
-                titleLines
-                // StringPosition["(*" ~~ Longest[title___] ~~ "*)"]
-                // Part[#, All, 1]&
-                // Apply[{#1 + 2, #2 - 2}&, #, {1}]&
-                // {
-                    Thread["selectionRange" -> #]&, 
-                    Thread["title" -> (
-                        StringTake @@@ 
-                        Thread[{titleLines, #}]
-                    )]&
-                } // Through
-                // Thread
-                // Map[Association]
-            ]]
-        }],
-
-        (* emptyLines *)
-        Thread[{
-            "label" -> "empty",
-            Thread["line" -> emptyLineNo]
-        }]
-    ]
-    // Map[Association]
-    // SortBy[Key["line"]]
-    // Append[<|"label" -> "end", "line" -> (Length[doc["text"]] + 1)|>]
-    // (divideCellImpl[#,
-        If[doc["text"] // First // StringStartsQ["#!"], 1, 0]
-        // <|"label" -> "start", "startLine" -> #, "endLine" -> #|>&
-    ] // Reap)&
-    (* Get the sown List if there is one. *)
-    // Last // Replace[{} :> {{}}] // First
-    // Prepend[CellNode[<|
-        "style" -> AdditionalStyle["File"],
-        "name" -> "",
-        "range" -> {1, 1},
-        "codeRange" -> {},
-        "children" -> {}
-    |>]]
+    // Flatten
+    // Append[Length[doc["text"]] + 1]
+    // Prepend[0]
+    // BlockMap[Apply[constructCellNode[doc, #1, #2]&], #, 2, 1]&
     // Fold[InsertCell]
     // TerminateCell
-]
-
-
-divideCellImpl[{}, state_Association] := Null
-divideCellImpl[{lineState_Association, lineStates___}, state_Association] := divideCellImpl[{lineStates}, (
-    Which[
-        state["endLine"] + 1 == lineState["line"],
-        lineState["label"]
-        // Replace[{
-            "empty" :> (
-                state
-                // ReplacePart["endLine" -> lineState["line"]]
-            ),
-            "style" :> (
-                state["label"]
-                // Replace[{
-                    "empty" :> (
-                        Sow[{
-                            "codeEnd",
-                            If[state["startLine"] < state["endLine"],
-                                state["startLine"] - 1,
-                                state["endLine"]
-                            ]
-                        }]
-                    ),
-                    "style" :> (
-                        Sow[{"untitledStyle", state["startLine"], state["data"]}]
-                    )
-                    (* do nothing: {"start"} | {"title",_,_} *)
-                }];
-                <|
-                    "label" -> "style",
-                    "startLine" -> lineState["line"],
-                    "endLine" -> lineState["line"],
-                    "data" -> lineState["data"]
-                |>
-            ),
-            If[
-                state["label"] == "style" &&
-                state["startLine"] + 1 == lineState["line"] &&
-                !MemberQ[{"Package"}, state["data"]["style"]],
-                "title" :> (
-                    Sow[{
-                        "titledStyle",
-                        state["startLine"],
-                        Join[state["data"], lineState["data"]]
-                    }];
-                    <|
-                        "label" -> "title",
-                        "startLine" -> lineState["line"],
-                        "endLine" -> lineState["line"],
-                        "data" -> lineState["data"]
-                    |>
-                ),
-                "title" :> (
-                    state
-                )
-            ],
-            "end" :> (
-                state["label"]
-                // Replace[{
-                    "empty" :> (
-                        Sow[{"codeEnd", lineState["line"] - 2}]
-                    )
-                }];
-                <|
-                    "label" -> "end",
-                    "startLine" -> lineState["line"],
-                    "endLine" -> lineState["line"]
-                |>
-            )
-        }],
-
-        state["endLine"] + 1 < lineState["line"],
-        (* any -> normal *)
-        state["label"]
-        // Replace[{
-            "empty" :> (
-                If[state["startLine"] < state["endLine"],
-                    Sow[{"codeEnd", state["endLine"] - 2}];
-                    Sow[{"codeStart", state["endLine"] + 1}]
-                ]
-            ),
-            "style" :> (
-                Sow[{"untitledStyle", state["startLine"], state["data"]}];
-                Sow[{"codeStart", state["endLine"] + 1}]
-            ),
-            "title" | "start" :> (
-                Sow[{"codeStart", state["endLine"] + 1}]
-            )
-        }];
-        (* normal -> any *)
-        lineState["label"]
-        // Replace[{
-            "empty" :> (
-                <|
-                    "label" -> "empty",
-                    "startLine" -> lineState["line"],
-                    "endLine" -> lineState["line"]
-                |>
-            ),
-            "style" :> (
-                Sow[{"codeEnd", lineState["line"] - 1}];
-                <|
-                    "label" -> "style",
-                    "startLine" -> lineState["line"],
-                    "endLine" -> lineState["line"],
-                    "data" -> lineState["data"]
-                |>
-            ),
-            "end" :> (
-                Sow[{"codeEnd", lineState["line"] - 1}];
-                <|
-                    "label" -> "end",
-                    "startLine" -> lineState["line"],
-                    "endLine" -> lineState["line"]
-                |>
-            )
-        }],
-
-        (* state["endLine"] + 1 > lineState["line"], *)
-        True,
-        (* do nothing *)
-        state
-    ]
-)]
-
-
-InsertCell[rootCell_CellNode, directive:{"titledStyle"|"untitledStyle", line_Integer, data_Association}] := (
-    If[!HeadingQ[data["style"]],
-        Return[rootCell]
-    ];
-
-    rootCell["children"]
-    // Replace[{
-        _?MissingQ|{} :> (
-            rootCell
-            // ReplaceKey["children" -> {cellDirectiveToCellNode[directive]}]
-        ),
-        {preCells___, lastCell_CellNode} :> (
-            If[HeadingLevel[lastCell["style"]] < HeadingLevel[data["style"]],
-                (* includes the new cell in the last child *)
-                rootCell
-                // ReplaceKey["children" -> {preCells, InsertCell[lastCell, directive]}],
-                (* append the new cell after the last child *)
-                rootCell
-                // ReplaceKey["children" -> {
-                    preCells,
-                    TerminateCell[lastCell],
-                    cellDirectiveToCellNode[directive]
-                }]
-            ]
-        )
-    }]
-)
-
-cellDirectiveToCellNode[{label:("titledStyle"|"untitledStyle"), line_Integer, data_Association}] := (
-    CellNode[<|
-        "style" -> data["style"],
-        "name" -> If[label == "titledStyle" && data["title"] != "", data["title"], "[untitled]"],
-        "range" -> {
-            line,
-            line + If[label == "titledStyle", 1, 0]
-        },
-        "selectionRange" -> LspRange[<|
-            "start" -> LspPosition[<|
-                "line" -> line - 1,
-                "character" -> Part[data["selectionRange"], 1] - 1
-            |>],
-            "end" -> LspPosition[<|
-                "line" -> line - 1,
-                "character" -> Part[data["selectionRange"], 2]
-            |>]
-        |>],
-        "codeRange" -> {}
-    |>]
-)
-
-InsertCell[rootCell_CellNode, directive:{label:("codeStart"|"codeEnd"), line_Integer}] := (
-    rootCell["children"]
-    // Replace[{
-        _?MissingQ|{} :> (
-            rootCell
-            // If[label == "codeStart",
-                ReplaceKeyBy[
-                    "codeRange" -> Append[{line, line}]
-                ],
-                ReplaceKey[
-                    {"codeRange", -1, -1} -> line
-                ]
-            ]
-        ),
-        {preCells___, lastCell_CellNode} :> (
-            rootCell
-            // ReplaceKey["children" -> {preCells, InsertCell[lastCell, directive]}]
-        )
-    }]
+    // Replace[err:Except[_CellNode] :> (
+        LogError["The result of devideCells is not a CellNode " <> ToString[err]]
+    )]
+    // LogDebug
 )
 
 
-TerminateCell[cell_CellNode] := Block[
+constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block[
     {
-        newLastChild = cell["children"]
-            // Replace[{
-                _?MissingQ|{} :> Nothing,
-                {___, lastChild_CellNode} :> (
-                    TerminateCell[lastChild]
-                )
-            }]
+        style, title = Missing["Untitled"], codeStart
     },
 
-    cell
-    // ReplaceKey[{"range", -1} -> Max[{
-        cell["range"] // Last,
-        If[Length[cell["codeRange"]] > 0,
-            cell["codeRange"]
-            // Last
-            // Last,
-            Nothing
-        ],
-        newLastChild
-        // Replace[
-            _CellNode :> (
-                newLastChild["range"] // Last
-            )
+    style = If[styleLine == 0,
+        AdditionalStyle["File"],
+        Part[doc["text"], styleLine]
+        // StringCases["(* "~~"::"~~Shortest[style___]~~"::"~~" *)" :> style]
+        // First
+        // Replace["" -> "[empty]"]
+    ];
+
+    If[!AnonymousStyleQ[style] &&
+        (styleLine + 1 != endLine),
+        (Part[doc["text"], styleLine + 1]
+        // StringCases[
+            StartOfString ~~ (Whitespace | "") ~~
+            "(*" ~~ Longest[t___] ~~ "*)" ~~
+            (Whitespace | "") ~~ EndOfString :> t
         ]
-    }]]
-    // ReplaceKeyBy["children" -> (
-        Replace[{
-            _?MissingQ -> {},
-            {children___, _CellNode} :> {
-                children,
-                newLastChild
-            }
-        }]
-    )]
+        // Replace[
+            {t_, ___} :> (title = t)
+        ]);
+        codeStart = findCodeLine[doc, styleLine + 2],
+        codeStart = findCodeLine[doc, styleLine + 1]
+    ];
+
+    CellNode[<|
+        "level" -> If[HeadingQ[style], HeadingLevel[style], Infinity],
+        "style" -> style,
+        "name" -> (title // Replace[(_?MissingQ|"") :> "<anonymous>"]),
+        "range" -> {styleLine, endLine},
+        "selectionRange" -> If[!MissingQ[title],
+            Part[doc["text"], styleLine + 1]
+            // StringPosition[title]
+            // First
+            // Apply[{startPos, endPos} \[Function] (
+                LspRange[<|
+                    "start" -> LspPosition[<|
+                        "line" -> styleLine,
+                        "character" -> startPos - 1
+                    |>],
+                    "end" -> LspPosition[<|
+                        "line" -> styleLine,
+                        "character" -> endPos
+                    |>]
+                |>]
+            )],
+            LspRange[<|
+                "start" -> LspPosition[<|
+                    "line" -> styleLine - 1,
+                    "character" -> 0
+                |>],
+                "end" -> LspPosition[<|
+                    "line" -> styleLine,
+                    "character" -> 0
+                |>]
+            |>]
+        ],
+        "codeRange" -> If[codeStart < endLine, {{codeStart, endLine - 1}}, {}],
+        "children" -> {}
+    |>]
+
 ]
 
+findCodeLine[doc_TextDocument, currentLine_Integer] := (
+    If[currentLine <= Length[doc["text"]] &&
+        Part[doc["text"], currentLine] === "",
+        findCodeLine[doc, currentLine + 1],
+        currentLine
+    ]
+)
 
-HeadingCellQ[cellNode_CellNode] := HeadingQ[cellNode["style"]]
+
+InsertCell[rootCell_CellNode, nextCell_CellNode] := (
+    If[Length[rootCell["children"]] > 0 &&
+        Last[rootCell["children"]]["level"] < nextCell["level"],
+        (* includes the new cell in the last child *)
+        rootCell
+        // ReplaceKeyBy[{"children", -1} -> (InsertCell[#, nextCell]&)],
+        rootCell
+        // If[nextCell["level"] == Infinity,
+            (* Joins the codeRange with root *)
+            ReplaceKeyBy["codeRange" -> (Join[#, nextCell["codeRange"]]&)],
+            Identity
+        ]
+        // If[Length[rootCell["children"]] > 0,
+            ReplaceKeyBy[{"children", -1} -> TerminateCell],
+            Identity
+        ]
+        (* appends the new cell in the children list *)
+        // ReplaceKeyBy["children" -> Append[
+            nextCell
+            // If[nextCell["level"] == Infinity,
+                (* removes codeRange *)
+                ReplaceKey["codeRange" -> {}],
+                Identity
+            ]
+        ]]
+    ]
+)
+
+TerminateCell[rootcell_CellNode] := (
+    If[Length[rootcell["children"]] > 0,
+        rootcell
+        // ReplaceKeyBy[{"children", -1} -> TerminateCell]
+        // (newRootCell \[Function] (
+            newRootCell
+            // ReplaceKey[{"range", -1} -> (
+                Last[Last[newRootCell["children"]]["range"]]
+            )]
+        )),
+        rootcell
+    ]
+)
+
+
+AnonymousStyleQ[style:(_String|_AdditionalStyle)] := MatchQ[style, "Package" | _AdditionalStyle]
 HeadingQ[style:(_String|_AdditionalStyle)] := KeyMemberQ[HeadingLevel, style]
 HeadingLevel = <|
     "Title" -> 1,
@@ -642,32 +425,34 @@ ToDocumentSymbol[doc_TextDocument] := (
 ToDocumentSymbolImpl[doc_TextDocument, node_] := (
     node
     // Replace[{
-        _CellNode?HeadingCellQ :> (DocumentSymbol[<|
-            "name" -> node["name"],
-            "detail" -> node["style"],
-            "kind" -> If[node["style"] == "Package",
-                SymbolKind["Package"],
-                SymbolKind["String"]
-            ],
-            "range" -> ToLspRange[doc, node["range"]],
-            "selectionRange" -> node["selectionRange"],
-            "children" -> (
-                Join[
-                    If[!MissingQ[node["codeRange"]],
-                        node["codeRange"]
-                        // Map[CellToAST[doc ,#]&]
-                        // Flatten
-                        // Map[ToDocumentSymbolImpl],
-                        {}
-                    ],
-                    If[!MissingQ[node["children"]],
-                        node["children"]
-                        // Map[ToDocumentSymbolImpl[doc, #]&],
-                        {}
-                    ]
-                ] // Flatten
-            )
-        |>]),
+        _CellNode?(Key["style"] /* AnonymousStyleQ /* Not) :> (
+            DocumentSymbol[<|
+                "name" -> node["name"],
+                "detail" -> node["style"],
+                "kind" -> If[node["style"] == "Package",
+                    SymbolKind["Package"],
+                    SymbolKind["String"]
+                ],
+                "range" -> ToLspRange[doc, node["range"]],
+                "selectionRange" -> node["selectionRange"],
+                "children" -> (
+                    Join[
+                        If[!MissingQ[node["codeRange"]],
+                            node["codeRange"]
+                            // Map[CellToAST[doc ,#]&]
+                            // Flatten
+                            // Map[ToDocumentSymbolImpl],
+                            {}
+                        ],
+                        If[!MissingQ[node["children"]],
+                            node["children"]
+                            // Map[ToDocumentSymbolImpl[doc, #]&],
+                            {}
+                        ]
+                    ] // Flatten
+                )
+            |>]
+        ),
         _CellNode :> (
             Join[
                 If[!MissingQ[node["codeRange"]],
@@ -762,7 +547,7 @@ ToDocumentSymbolImpl[node_] := (
                     FirstCase[
                         head,
                         AstPattern["Symbol"][<|"symbolName" -> rootSymbol_|>] :> rootSymbol,
-                        "[unnamed]",
+                        "<anonymous>",
                         AstLevelspec["LeafNodeWithSource"]
                     ]
                 ),
@@ -852,7 +637,7 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
     {
         line = pos["line"] + 1, character = pos["character"] + 1
     },
-    
+
     GetCodeRangeAtPosition[doc, pos]
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
@@ -935,7 +720,7 @@ GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
     {
         line = pos["line"] + 1, character = pos["character"] + 1
     },
-    
+
     GetCodeRangeAtPosition[doc, pos]
     // Replace[lineRange:{_Integer, _Integer} :> (
         CellToAST[doc, lineRange]
@@ -994,11 +779,12 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
             line - rangeStartLine + 1,
             pos["character"]
         }]]
-        // Replace[
+        // Replace[{
             AstPattern["Token"][tokenString_, data_] :> (
                 StringTake[tokenString, pos["character"] - Part[data[CodeParser`Source], 1, 2] + 1]
-            )
-        ]
+            ),
+            err_ :> (LogError["Unknown token node " <> ToString[err]]; "")
+        }]
     )] // Replace[
         (* this happens when line is not in codeRange or character == 0 *)
         _?MissingQ -> ""
@@ -1129,7 +915,7 @@ FindDocumentHighlight[doc_TextDocument, pos_LspPosition] := (
 
 
 Options[FindScopeOccurence] = {
-    (* only document-wide search, not pooject-wide currently *)
+    (* only document-wide search, not project-wide currently *)
     "GlobalSearch" -> True,
     "BodySearch" -> True
 }
