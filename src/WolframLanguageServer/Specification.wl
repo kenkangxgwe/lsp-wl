@@ -37,6 +37,7 @@ DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
 DocumentHighlight ::usage = "is the type of Location interface in LSP."
 LspCodeAction::usage = "is the type of CodeAction interface in LSP."
+CodeLens::usage = "is type of CodeLens Interface in LSP."
 ColorInformation::usage = "is the type of ColorInformation interface in LSP."
 LspColor::usage = "is the type of Color interface in LSP."
 ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
@@ -344,6 +345,12 @@ DeclareType[LspCodeAction, <|
     "title" -> _String,
     "kind" -> _?(MemberQ[CodeActionKind, #]&),
     "command" -> _Command
+|>]
+
+DeclareType[CodeLens, <|
+    "range" -> _LspRange,
+    "command" -> _Command,
+    "data" -> _
 |>]
 
 DeclareType[ColorInformation, <|
