@@ -269,20 +269,19 @@ DeclareType[CompletionItem, <|
     "commitCharacters" -> {___String}
 |>]
 
-
 DeclareType[Location, <|
     "uri" -> DocumentUri,
-    "range" -> LspRange
+    "range" -> _LspRange
 |>]
 
 DeclareType[DocumentHighlight, <|
-    "range" -> LspRange,
+    "range" -> _LspRange,
     "kind" -> _Integer
 |>]
 
 DeclareType[ColorInformation, <|
-    "range" -> LspRange,
-    "color" -> LspColor
+    "range" -> _LspRange,
+    "color" -> _LspColor
 |>]
 
 DeclareType[LspColor, <|
