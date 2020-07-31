@@ -95,7 +95,7 @@ FunctionPattern = <|
 
 AstPattern = <|
     "Token" -> (
-        CodeParser`LeafNode[kind_Symbol, tokenString_String, data_Association]
+        (CodeParser`LeafNode|CodeParser`ErrorNode)[kind_Symbol, tokenString_String, data_Association]
     ),
 
     "Symbol" -> (
