@@ -1081,7 +1081,7 @@ ScopeHeadSymbolSource["Block"|"Module"|"DynamicModule", head_, name_String] :=(
 DelayedHeadPatternNameSource[head_, name_String] := (
     Join[
         Cases[
-            Part[head, 2],
+            head,
             AstPattern["DelayedPattern"][patternName:name, patternData_] :> (
                 patternData[CodeParser`Source]
                 // Replace[
