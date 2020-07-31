@@ -390,13 +390,12 @@ VerificationTest[
 	],
 	{
 		{
-			HoverInfo["Operator", {"MessageName"}],
 			HoverInfo["Message", {"General", "obspkg"}]
 		},
 		LspRange[<|
 			"start" -> LspPosition[<|
 				"line" -> 0,
-				"character" -> 0
+				"character" -> 9
 			|>],
 			"end" -> LspPosition[<|
 				"line" -> 0,
@@ -432,7 +431,35 @@ VerificationTest[
 			|>]
 		|>]
 	},
-	TestID -> "HoverOperator"
+	TestID -> "HoverOperator 1"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"{##&@@#}&"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	{
+		{HoverInfo["Operator", {"SlotSequence"}]},
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 1
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 0,
+				"character" -> 3
+			|>]
+		|>]
+	},
+	TestID -> "HoverOperator 2"
 ]
 
 } // Map[Sow[#, CurrentContext]&]

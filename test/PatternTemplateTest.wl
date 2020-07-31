@@ -54,7 +54,19 @@ VerificationTest[
 VerificationTest[
     PatternTemplate[{{oldName:_List|_Association}}][oldName:_?((Length[#] == 3)&)],
 	{{oldName:Except[Except[_?((Length[#] == 3)&)], _List|_Association]}},
-	TestID -> "PatternWithListNewPattern"
+	TestID -> "PatternWithListNewPattern 1"
+],
+
+VerificationTest[
+    PatternTemplate[{{oldName_?((Length[#] == 3)&)}}][oldName:_List|_Association],
+	{{(oldName:_List|_Association)?((Length[#] == 3)&)}},
+	TestID -> "PatternWithListNewPattern 2"
+],
+
+VerificationTest[
+    PatternTemplate[{{oldName_:0}}][oldName:_List],
+	{{oldName:_List:0}},
+	TestID -> "PatternWithOptional"
 ],
 
 VerificationTest[

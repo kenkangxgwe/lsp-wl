@@ -59,6 +59,12 @@ VerificationTest[
 ],
 
 VerificationTest[
+	TokenDocumentation["SlotSequence", "usage"],
+	StringJoin[""],
+	TestID -> "KnownSymbolUsage 3"
+],
+
+VerificationTest[
 	TokenDocumentation["Syntax", "stresc"],
 	StringJoin[
 		"```mathematica\n",
