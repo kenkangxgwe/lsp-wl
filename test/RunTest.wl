@@ -18,7 +18,14 @@ Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TestRunAll[] := Column[TestRunContext /@ TestContexts]
+TestRunAll[] := (
+	TestContexts
+	// Map[TestRunContext]
+	// Transpose
+	// MapAt[Apply[And], 1]
+	// MapAt[Column, 2]
+)
+
 
 
 TestRunContext[context_String] := (
@@ -27,15 +34,17 @@ TestRunContext[context_String] := (
 )
 
 
-ShowTestReport[report_TestReportObject, context_String] :=
-Column[{
-	TableForm[{
-		{"Test: ", context},
-		{"Test passed: ", {{report["TestsSucceededCount"], "/", report["TestsSucceededCount"] + report["TestsFailedCount"]}}},
-		{"Time Elapsed: ", report["TimeElapsed"]}
-	}],
-	Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
-}]
+ShowTestReport[report_TestReportObject, context_String] := {
+	report["AllTestsSucceeded"],
+	Column[{
+		Grid[{
+			{"Test: ", context},
+			{"Test passed: ", {{report["TestsSucceededCount"], "/", report["TestsSucceededCount"] + report["TestsFailedCount"]}}},
+			{"Time Elapsed: ", report["TimeElapsed"]}
+		}],
+		Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
+	}]
+}
 
 
 ShowTestResult[result_TestResultObject] := (

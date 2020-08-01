@@ -14,6 +14,8 @@ Please see the help info below.
 
 *)
 
+(* For windows, this should be set for Print to correctly format outputs. *)
+SetOptions[$Output, FormatType -> OutputForm]
 
 (* ::Subsection:: *)
 (*RootDirectory*)
@@ -127,14 +129,16 @@ Wolfram Language " <> $Version <> "\n"];
 
 
 If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
-    Print["
-Running tests for all.
-"];
+    Print["\nRunning tests for all.\n"];
+
     Off[General::shdw];
     << RunTest`;
-    Print[RunTest`TestRunAll[]];
-    Quit[];
-];
+    RunTest`TestRunAll[]
+    // Replace[{testAllPass_, testResult_} :> (
+        Print[testResult];
+        Exit[If[testAllPass, 0, 1]]
+    )]
+]
 
 
 (* ::Subsection:: *)
