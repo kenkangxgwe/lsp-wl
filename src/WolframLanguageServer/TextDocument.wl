@@ -180,7 +180,6 @@ divideCells[doc_TextDocument] := (
     // Replace[err:Except[_CellNode] :> (
         LogError["The result of devideCells is not a CellNode " <> ToString[err]]
     )]
-    // LogDebug
 )
 
 
@@ -216,7 +215,7 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
         "level" -> If[HeadingQ[style], HeadingLevel[style], Infinity],
         "style" -> style,
         "name" -> (title // Replace[(_?MissingQ|"") :> "<anonymous>"]),
-        "range" -> {styleLine, endLine},
+        "range" -> {styleLine, endLine - 1},
         "selectionRange" -> If[!MissingQ[title],
             Part[doc["text"], styleLine + 1]
             // StringPosition[title]
@@ -280,7 +279,10 @@ InsertCell[rootCell_CellNode, nextCell_CellNode] := (
             nextCell
             // If[nextCell["level"] == Infinity,
                 (* removes codeRange *)
-                ReplaceKey["codeRange" -> {}],
+                ReplaceKey[{"range", -1} -> (
+                    First[First[nextCell["codeRange"]]] - 1
+                )]
+                /* ReplaceKey["codeRange" -> {}],
                 Identity
             ]
         ]]
@@ -288,17 +290,29 @@ InsertCell[rootCell_CellNode, nextCell_CellNode] := (
 )
 
 TerminateCell[rootcell_CellNode] := (
-    If[Length[rootcell["children"]] > 0,
-        rootcell
-        // ReplaceKeyBy[{"children", -1} -> TerminateCell]
-        // (newRootCell \[Function] (
-            newRootCell
-            // ReplaceKey[{"range", -1} -> (
-                Last[Last[newRootCell["children"]]["range"]]
-            )]
-        )),
-        rootcell
+    rootcell
+    // If[Length[rootcell["children"]] > 0,
+        ReplaceKeyBy[{"children", -1} -> TerminateCell],
+        Identity
     ]
+    // (newRootCell \[Function] (
+        newRootCell
+        // ReplaceKey[{"range", -1} -> (
+            Max[
+                Last[newRootCell["range"]],
+                newRootCell["children"]
+                // Replace[{
+                    {___, lastChild_} :> Last[lastChild["range"]],
+                    _ -> -Infinity
+                }],
+                newRootCell["codeRange"]
+                // Replace[{
+                    {___, {_, last_}} :> last,
+                    _ -> -Infinity
+                }]
+            ]
+        )]
+    ))
 )
 
 
