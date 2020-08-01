@@ -38,8 +38,15 @@ ShowTestReport[report_TestReportObject, context_String] := {
 	report["AllTestsSucceeded"],
 	Column[{
 		Grid[{
-			{"Test: ", context},
-			{"Test passed: ", {{report["TestsSucceededCount"], "/", report["TestsSucceededCount"] + report["TestsFailedCount"]}}},
+			{"Test Context: ", context},
+			{
+				"Tests Passed: ",
+				{
+					report["TestsSucceededCount"],
+					" / ",
+					report["TestsSucceededCount"] + report["TestsFailedCount"]
+				} // Map[ToString] // StringJoin
+			},
 			{"Time Elapsed: ", report["TimeElapsed"]}
 		}],
 		Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
