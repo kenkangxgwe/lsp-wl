@@ -58,10 +58,28 @@ VerificationTest[
 	TestID -> "KnownSymbolUsage 2"
 ],
 
-VerificationTest[
-	TokenDocumentation["SlotSequence", "usage"],
-	StringJoin[""],
-	TestID -> "KnownSymbolUsage 3"
+If[$VersionNumber >= 12.0,
+	VerificationTest[
+		TokenDocumentation["SlotSequence", "usage"],
+		StringJoin[
+			"**SlotSequence**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/SlotSequence.html)&emsp;(NHoldAll, Protected)\n\n\n",
+			"```mathematica\n",
+			"## \n",
+			"```\n\n",
+			"represents the sequence of arguments supplied to a pure function. \n\n",
+			"```mathematica\n",
+			"##n \n",
+			"```\n\n",
+			"represents the sequence of arguments supplied to a pure function, starting with the *n*-th argument. \n\n"
+		],
+		TestID -> "KnownSymbolUsage 3"
+	],
+	(* before 12.0, SlotSequence::usage is empty *)
+	VerificationTest[
+		TokenDocumentation["SlotSequence", "usage"],
+		"",
+		TestID -> "KnownSymbolUsage 3"
+	]
 ],
 
 VerificationTest[

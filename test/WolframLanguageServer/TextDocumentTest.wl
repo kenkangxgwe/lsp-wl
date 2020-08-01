@@ -382,7 +382,12 @@ VerificationTest[
 	TestID -> "HoverMessageName 2"
 ],
 
-VerificationTest[
+(*
+	TODO: There's an unreleased commit on CodeParser's master to reveal the
+	source of the message name in Symbol::name form. Enable this test after
+	that is release.
+*)
+(* VerificationTest[
 	GetHoverInfo[
 		TextDocument[<|
 			"text" -> {
@@ -410,7 +415,7 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "HoverMessageName 3"
-],
+], *)
 
 VerificationTest[
 	GetHoverInfo[
