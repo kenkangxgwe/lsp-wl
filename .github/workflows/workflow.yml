@@ -40,7 +40,6 @@ jobs:
         /usr/bin/wolframscript -activate
     - name: Install Paclets
       run: |
-        ls build
         /usr/bin/wolframscript -code 'PacletInstall["CodeParser"];PacletInstall["CodeInspector"];Exit[]'
     - name: Run Tests
       run: |
