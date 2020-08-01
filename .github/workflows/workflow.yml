@@ -21,7 +21,7 @@ env:
 jobs:
   # This workflow contains a single job called "build"
   build:
-    name: "Build Code Parser"
+    name: "Run lsp-wl tests"
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -29,10 +29,6 @@ jobs:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
     - uses: actions/checkout@v2
 
-    - name: Install Dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y wget cmake
     - name: Install Wolfram Engine
       run: |
         wget https://account.wolfram.com/download/public/wolfram-engine/desktop/LINUX
@@ -42,19 +38,10 @@ jobs:
       run: |
         /usr/bin/wolframscript -authenticate $WOLFRAM_ID $WOLFRAM_PW
         /usr/bin/wolframscript -activate
-    - name: Build CodeParser
-      run: |
-        mkdir build
-        cd build
-        cmake .. -DMATHEMATICA_INSTALL_DIR="/usr/local/Wolfram/WolframEngine/12.1"
-        cmake --build . --target paclet
-    - name: Install Paclet
-      # TODO: find a way to specify the name of the paclet file instead of hardcoding.
+    - name: Install Paclets
       run: |
         ls build
-        /usr/bin/wolframscript -code 'PacletInstall["./build/paclet/CodeParser-1.1.paclet"];Exit[]'
-
+        /usr/bin/wolframscript -code 'PacletInstall["CodeParser"];PacletInstall["CodeInspector"];Exit[]'
     - name: Run Tests
       run: |
-        pwd
         /usr/bin/wolframscript -file init.wls --test
