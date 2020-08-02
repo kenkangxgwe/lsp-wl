@@ -12,6 +12,7 @@ on:
   pull_request:
     branches:
       - master
+      - develop
 
 env:
   WOLFRAM_ID: ${{ secrets.WOLFRAM_ID }}
