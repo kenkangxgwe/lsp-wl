@@ -6,7 +6,7 @@
 *)
 
 BeginPackage["WolframLanguageServer`ColorTable`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 WolframLanguageServer`ColorTable`Colorspace = {
     "RGB", "CMYK", "HSB", "XYZ", "LAB", "LCH", "LUV", "GrayScale"

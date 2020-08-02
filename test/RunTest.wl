@@ -5,9 +5,10 @@ ClearAll[Evaluate[Context[] <> "*"]]
 
 
 TestContexts = {
-    "MyCurryTest`",
+    "PatternTemplateTest`",
 	"DataTypeTest`",
-	"WolframLanguageServer`TextDocumentTest`"
+	"WolframLanguageServer`TextDocumentTest`",
+	"WolframLanguageServer`TokenTest`"
 }
 TestRunContext::usage = "Run tests for given context."
 TestRunAll::usage = "Run tests for all the contexts below:\n\t" <> StringRiffle[TestContexts, "\n\t"]
@@ -17,7 +18,14 @@ Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TestRunAll[] := Column[TestRunContext /@ TestContexts]
+TestRunAll[] := (
+	TestContexts
+	// Map[TestRunContext]
+	// Transpose
+	// MapAt[Apply[And], 1]
+	// MapAt[Column, 2]
+)
+
 
 
 TestRunContext[context_String] := (
@@ -26,15 +34,24 @@ TestRunContext[context_String] := (
 )
 
 
-ShowTestReport[report_TestReportObject, context_String] := 
-Column[{
-	TableForm[{
-		{"Test: ", context},
-		{"Test passed: ", {{report["TestsSucceededCount"], "/", report["TestsSucceededCount"] + report["TestsFailedCount"]}}},
-		{"Time Elapsed: ", report["TimeElapsed"]}
-	}],
-	Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
-}]
+ShowTestReport[report_TestReportObject, context_String] := {
+	report["AllTestsSucceeded"],
+	Column[{
+		Grid[{
+			{"Test Context: ", context},
+			{
+				"Tests Passed: ",
+				{
+					report["TestsSucceededCount"],
+					" / ",
+					report["TestsSucceededCount"] + report["TestsFailedCount"]
+				} // Map[ToString] // StringJoin
+			},
+			{"Time Elapsed: ", report["TimeElapsed"]}
+		}],
+		Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
+	}]
+}
 
 
 ShowTestResult[result_TestResultObject] := (

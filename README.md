@@ -47,16 +47,20 @@ client would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions (currently 0.15)
+2. Install the dependent paclets with the correct versions (currently 1.0)
 from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
-    PacletInstall["AST", "UpdateSites" -> True]
-    PacletInstall["Lint", "UpdateSites" -> True]
+    PacletInstall["CodeParser"]
+    PacletInstall["CodeInspector"]
     ```
 
 3. Install the client. Currently, we provide the VS Code extension on [Visual
 Studio Marketplace: Wolfram Language Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
+
+4. You may also want to install
+[GitLink](https://github.com/WolframResearch/GitLink) packet in order to
+check for updates.
 
 ## Run the Server
 
@@ -130,9 +134,10 @@ This is a good way to see the results from the unit tests.
 
   ![completion](images/completion.png)
 
-- **Diagnostics:** Syntax error would be underlined. This feature is powered by
-  Brenton's `AST` and `Lint` paclets, thank you
-  [@bostick](https://github.com/bostick).
+- **Diagnostics:** Syntax error would be underlined. This feature is powered
+  by [CodeParser](https://github.com/WolframResearch/codeparser) and
+  [CodeInspector](https://github.com/WolframResearch/codeinspector) paclets,
+  thank you [@bostick](https://github.com/bostick).
 
   ![diagnostics](images/diagnostics.png)
 
@@ -191,10 +196,11 @@ It will be nice if you want to make a contribution to the following topic.
   create a pull request to add the clients in README.md once your client is
   released.
 
-* Thanks to Brenton's `AST` and `Lint` paclets, we are able to parse the code
-  and extract useful information. If you have an idea about how to use these
-  fantastic syntax tools to help the language server add more features, please
-  send us issues or pull requests.
+* Thanks to [CodeParser](https://github.com/WolframResearch/codeparser) and
+  [CodeInspector](https://github.com/WolframResearch/codeinspector) paclets,
+  we are able to parse the code and extract useful information. If you have
+  an idea about how to use these fantastic syntax tools to help the language
+  server add more features, please send us issues or pull requests.
 
 If you want to help us with this project, feel free to fork and create a pull
 request. Do not forget to add unit tests if possible.

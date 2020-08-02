@@ -14,6 +14,8 @@ Please see the help info below.
 
 *)
 
+(* For windows, this should be set for Print to correctly format outputs. *)
+SetOptions[$Output, FormatType -> OutputForm]
 
 (* ::Subsection:: *)
 (*RootDirectory*)
@@ -113,7 +115,7 @@ Options:
 (*Version*)
 
 
-WolframLanguageServer`Version = "0.2.1";
+WolframLanguageServer`Version = "0.2.2"
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
     Print["
 Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
@@ -127,14 +129,16 @@ Wolfram Language " <> $Version <> "\n"];
 
 
 If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
-    Print["
-Running tests for all.
-"];
+    Print["\nRunning tests for all.\n"];
+
     Off[General::shdw];
     << RunTest`;
-    Print[RunTest`TestRunAll[]];
-    Quit[];
-];
+    RunTest`TestRunAll[]
+    // Replace[{testAllPass_, testResult_} :> (
+        Print[testResult];
+        Exit[If[testAllPass, 0, 1]]
+    )]
+]
 
 
 (* ::Subsection:: *)
@@ -142,12 +146,6 @@ Running tests for all.
 
 
 Needs["WolframLanguageServer`Logger`"];
-
-If[$VersionNumber < 11.3,
-    (* load myCurry *)
-    Needs["MyCurry`"];
-    System`Curry = MyCurry`MyCurry
-]
 
 Module[
     {
@@ -212,6 +210,7 @@ Module[
     DeclarePackage["WolframLanguageServer`Server`", {"WLServerStart", "WLServerVersion", "WLServerDebug"}];
 *)
     << WolframLanguageServer`Server`;
+    WolframLanguageServer`CheckReturnTypeQ = True;
     LogDebug @ WolframLanguageServer`Server`WLServerStart[
         "Stream" -> stream,
         "ClientPid" -> clientPid,

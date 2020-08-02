@@ -339,4 +339,14 @@ TypeUsage[typename_Symbol, usage_String] := (
 End[]
 
 
+Begin["`Test`"]
+
+
+AssociationSameQ::usage = "AssociationSameQ[assoc1_Association, assoc2_Association] returns True if two associations are same except for key order."
+AssociationSameQ = DataType`Private`AssociationSameQ
+
+
+End[]
+
+
 EndPackage[]

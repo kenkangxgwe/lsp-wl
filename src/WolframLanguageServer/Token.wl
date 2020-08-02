@@ -1,6 +1,6 @@
 (* ::Package:: *)
 
-(* Wolfram Language Server Documentation *)
+(* Wolfram Language Server Token *)
 (* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
            huxianglong <hxianglong_at_gmail.com>
 *)
@@ -15,8 +15,8 @@ TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] ret
   \"Format\" -> \"plaintext\" | \"markdown\"
 "
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
+GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] gives the signature help at the position."
 GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
-GetTriggerKeys::usage = "GetTriggerKeys[] returns a list of characters that trigger a completion request when input."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
 GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
 
@@ -35,7 +35,8 @@ Needs["WolframLanguageServer`TextDocument`"]
 
 
 Options[TokenDocumentation] = {
-    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *),
+    "Header" -> True
 }
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
@@ -49,7 +50,10 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
             tag // Replace[{
                 "usage" :> (
                     {
-                        GenHeader[token, tag],
+                        If[OptionValue["Header"],
+                            GenHeader[token, tag, "Format" -> OptionValue["Format"]],
+                            Nothing
+                        ],
                         boxText
                         // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
@@ -58,20 +62,23 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             /* Flatten /* DeleteCases[""],
                             GenPlainText
                         ],
-                        GenFooter[token]
+                        GenOptions[token, "Format" -> OptionValue["Format"]]
                     } // Flatten
-                    // Curry[StringRiffle]["\n\n"]
+                    // StringRiffle[#, "\n\n"]&
                 ),
                 _(* other messages *) :> (
                     {
-                        GenHeader[token, tag],
+                        If[OptionValue["Header"],
+                            GenHeader[token, tag, "Format" -> OptionValue["Format"]],
+                            Nothing
+                        ],
                         boxText
                         // If[OptionValue["Format"] === MarkupKind["Markdown"],
                             GenMarkdownText,
                             GenPlainText
                         ]
                     } // Flatten
-                    // Curry[StringRiffle]["\n"]
+                    // StringRiffle[#, "\n"]&
                 )
             }]
         )
@@ -91,12 +98,23 @@ splitUsage[usageText_String] := (
     ))]
     (* split header and content *)
     // Map[{
-        StringCases[StartOfString ~~ (header:Shortest["\!\(\*"~~box__~~"\)"]) ~~ content__ ~~ EndOfString :> {header, content}],
+        StringCases[StartOfString ~~
+            (header:(
+                Shortest[(* box: *) "\!\(\*"~~__~~"\)"] ~~ ((
+                    (Whitespace|"") ~~
+                    (","|"or"|("," ~~ Whitespace ~~ "or")) ~~
+                    Whitespace ~~
+                    Shortest[(* box: *) "\!\(\*"~~__~~"\)"]
+                )...))
+            ) ~~
+            content__ ~~
+            EndOfString :> {header, content}
+        ],
         Identity
     } /* Through
     /* Replace[{
         {{{header_, content_}}, _} :> (
-            {header, content} 
+            {header, content}
         ),
         {{(* no matches *)}, origin_} :> (
             (* use fallback method *)
@@ -130,23 +148,37 @@ groupBalanceQ[text_String] := And[
 
 
 
-GenHeader[token_String, tag_String] := (
+
+Options[GenHeader] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
     tag
     // Replace[{
         "usage" :> (
             token
             // {
                 Identity,
-                Curry[GetUri][tag],
+                GetUri[#, tag]&,
                 GenAttributes
             } // Through
-            // Apply[StringTemplate["**`1`**&nbsp;`2`&emsp;(_`3`_)\n"]]
+            // Apply[
+                If[OptionValue["Format"] == MarkupKind["Markdown"],
+                    StringTemplate["**`1`**&nbsp;`2`&emsp;(`3`)\n"],
+                    StringTemplate["`1`\t(`3`)\n"]
+                ]
+            ]
         ),
         _ :> (
-            StringJoin[
-                "```mathematica\n",
-                token, "::", tag, "\n",
-                "```"
+            If[OptionValue["Format"] == MarkupKind["Markdown"],
+                StringJoin[
+                    "```mathematica\n",
+                    token, "::", tag, "\n",
+                    "```"
+                ],
+                StringJoin[
+                    token, "::", tag, "\n"
+                ]
             ]
         )
     }]
@@ -166,28 +198,40 @@ GetUri[token_String, tag_String] := (
     }]
 )
 
-
-GenAttributes[token_String] := (
+Options[GenAttributes] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenAttributes[token_String, o:OptionsPattern[]] := (
     Attributes[token]
     // Replace[_Attributes -> {}]
-    // Curry[StringRiffle][", "]
+    // StringRiffle[#, ", "]&
 )
 
-GenFooter[token_String] := ({
+Options[GenOptions] = {
+    "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
+}
+GenOptions[token_String, o:OptionsPattern[]] := (
     token
     // StringTemplate["Options[``]"]
     // ToExpression
     // Replace[_Options -> {}]
-    // Map[Curry[ToString][InputForm]]
+    // Map[ToString[#, InputForm]&]
     // Replace[{options__} :> (
-        {
-            "__Options:__",
-            "``` mathematica",
-            options,
-            "```"
-        } // Curry[StringRiffle]["\n"]
+        If[OptionValue["Format"] == MarkupKind["Markdown"],
+            {
+                "__Options:__",
+                "``` mathematica",
+                options,
+                "```"
+            },
+            {
+                "Options:",
+                options
+            }
+        ]
     )]
-})
+    // StringRiffle[#, "\n"]&
+)
 
 
 GenPlainText[boxText_String] := (
@@ -278,7 +322,8 @@ BoxToText[input_, o:OptionsPattern[]] := Block[
                 StringReplace[{
                     "~" -> "\\~",
                     "`" -> "\\`",
-                    "*" -> "\\*"
+                    "*" -> "\\*",
+                    "\\" -> "\\\\"
                 }],
                 Identity
             ]
@@ -303,8 +348,10 @@ PUACharactersReplaceRule = {
     "\[LeftAssociation]" -> "<|",
     "\[RightAssociation]" -> "|>",
     "\[InvisibleSpace]" -> " ",
-    "\[Null]" -> ""
+    "\[Null]" -> "",
+    "\[ExponentialE]" -> "\[ScriptE]"
 }
+
 
 (* ::Section:: *)
 (*Hover*)
@@ -313,15 +360,14 @@ PUACharactersReplaceRule = {
 GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := (
     GetHoverInfo[doc, pos]
     // Apply[printHoverText]
-
 )
 
 
 printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
 
     hoverInfo
-    // Map[printHoverTextImpl]
-    // Curry[StringRiffle]["\n\n---\n\n"]
+    // printHoverTextImpl
+    // StringRiffle[#, "\n\n---\n\n"]&
     // Replace[{
         "" -> Null,
         text_String :> (
@@ -338,9 +384,10 @@ printHoverText[hoverInfo_List, range_LspRange:Automatic] := (
         )
     }]
 )
-printHoverTextImpl[hoverInfo_HoverInfo] := (
-    hoverInfo
-    // Replace[{
+
+
+printHoverTextImpl[hoverInfo_List] := (
+    Replace[hoverInfo, {
         HoverInfo["Operator", {symbolName_String}] :> (
             TokenDocumentation[symbolName, "usage"]
         ),
@@ -358,7 +405,50 @@ printHoverTextImpl[hoverInfo_HoverInfo] := (
                 ]
             }]
         )
+    }, {1}]
+)
+
+
+(* ::Section:: *)
+(*SignatureHelp*)
+
+
+GetSignatureHelp[doc_TextDocument, pos_LspPosition] := (
+    GetFunctionName[doc, pos]
+    // Replace[{
+        _?MissingQ -> Null,
+        functionName_ :> (
+            printSignatureHelp[functionName]
+        )
     }]
+)
+
+
+printSignatureHelp[functionName_String] := (
+
+    If[Names["System`"<>functionName] === {}, Return[Null]];
+
+    ToExpression[functionName<>"::"<>"usage"]
+    // Replace[{
+        _MessageName -> {},
+        usageText_String :> (
+            splitUsage[usageText]
+            // MapAt[GenPlainText, {All, 1}]
+            // MapAt[GenMarkdownText, {All, 2}]
+        )
+    }]
+    // Map[Apply[{label, documentation} \[Function] (
+        SignatureInformation[<|
+            "label" -> label,
+            "documentation" -> MarkupContent[<|
+                "kind" -> MarkupKind["Markdown"],
+                "value" -> documentation
+            |>],
+            "parameters" -> {}
+        |>]
+    )]]
+    // SignatureHelp[<|"signatures" -> #|>]&
+
 )
 
 
@@ -419,36 +509,58 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-GetTriggerKeys[] := UnicodeLeaders
+(* SetDelayed is not needed. Cache it when define it. *)
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
+    If[GetTokenPrefix[doc, pos] == "\\\\",
+        (* double-triggered *)
+        GetAliasCompletion["\\", pos],
+        NonLetterAliasCompletionItems
+    ]
+)
 
 
-GetTriggerKeyCompletion[] := (
-    AliasToLongName
-    // KeySelect[StringStartsQ[UnicodeLeaders]]
-    // KeyValueMap[{alias, longName} \[Function] With[
-        {
-            unicode = LongNameToUnicode[longName]
-        },
+NonLetterAliasCompletionItems = (
+    Join[
+        AliasToLongName
+        // KeyTake[NonLetterAliases]
+        // KeyValueMap[{alias, longName} \[Function] With[
+            {
+                unicode = LongNameToUnicode[longName]
+            },
 
-        CompletionItem[<|
-            "label" -> StringJoin[
-                If[unicode < 16^^E000,
-                    FromCharacterCode[unicode],
-                    ""
-                ], "\t",
-                alias , "\t\t",
-                "\\[", longName, "]"
-            ],
-            "kind" -> CompletionItemKind["Text"],
-            "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
-            "filterText" -> alias,
-            "sortText" -> alias,
-            "insertText" -> "[" <> longName <> "]",
-            "data" -> <|
-                "type" -> "Alias"
-            |>
-        |>]
-    ]]
+            CompletionItem[<|
+                "label" -> StringJoin[
+                    If[unicode < 16^^E000,
+                        FromCharacterCode[unicode],
+                        ""
+                    ], "\t",
+                    alias // StringReplace[" " -> "\[SpaceIndicator]"] , "\t\t",
+                    "\\[", longName, "]"
+                ],
+                "kind" -> CompletionItemKind["Text"],
+                "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
+                "filterText" -> alias,
+                "sortText" -> alias,
+                "insertText" -> "[" <> longName <> "]",
+                "data" -> <|
+                    "type" -> "Alias"
+                |>
+            |>]
+        ]],
+        Table[
+            CompletionItem[<|
+                "label" -> leader <> "...",
+                "kind" -> CompletionItemKind["Text"],
+                "detail" -> "More input needed to show the completion.",
+                "filterText" -> leader,
+                "sortText" -> leader <> "...",
+                "insertText" -> leader,
+                "data" -> <|
+                    "type" -> "Alias"
+                |>
+            |>], {leader, NonLetterLeaders}
+        ]
+    ]
 )
 
 
@@ -472,8 +584,8 @@ GetAliasCompletion[prefix_String, pos_LspPosition] := (
             "kind" -> CompletionItemKind["Text"],
             "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
             (* label has some extra information, thus cannot be used to sort, filter or insert *)
-            "sortText" -> StringDrop[alias, StringLength[prefix] - 1],
-            "filterText" -> StringDrop[alias, StringLength[prefix] - 1],
+            "sortText" -> alias (*StringDrop[alias, StringLength[prefix] - 1]*),
+            "filterText" -> alias (*StringDrop[alias, StringLength[prefix] - 1]*),
             "textEdit" -> TextEdit[<|
                 "range" -> LspRange[<|
                     "start" -> LspPosition[<|
@@ -535,8 +647,7 @@ GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
         ),
         (* other aliases *)
         prefix_ :> (
-            prefix
-            // Curry[GetAliasCompletion][pos]
+            GetAliasCompletion[prefix, pos]
         )
     }]
 

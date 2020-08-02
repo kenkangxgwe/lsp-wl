@@ -6,7 +6,7 @@
 *)
 
 BeginPackage["WolframLanguageServer`AstPatterns`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
 FunctionPattern::usage = "A set of function head patterns."
@@ -16,6 +16,7 @@ AstLevelspec::usage = "A set of levelspec that is useful to specify when using C
 
 Begin["`Private`"]
 ClearAll[Evaluate[Context[] <> "*"]]
+Needs["PatternTemplate`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`ColorTable`"]
 
@@ -80,106 +81,56 @@ FunctionPattern = <|
 
     "ColorDirective" -> (
         "Opacity" | "Lighter" | "Darker" | "ColorNegate"
+    ),
+
+    "NoSignatureHelp" -> (
+        "List" | "Association" | "CompoundExpression" |
+        "Rule" | "RuleDelayed" |
+        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" |
+        "TagSet" | "TagSetDelayed" |
+        "With" | "Block" | "Module" | "DynamicModule"
     )
 |>
 
 
-Options[ExportPattern] = {
-    "OverwritePostfix" -> True
-}
-
-ExportPattern[pattern_, o:OptionsPattern[]] := With[
-    {
-        exportedPattern = pattern /. {Verbatim[Pattern] -> ExportedPattern}
-    },
-
-    Hold[patternNewNameAssocOrList \[Function] Block[
-        {
-            patternNewNamesAssoc = (
-                patternNewNameAssocOrList
-                //Replace[{
-                    _Association :> patternNewNameAssocOrList,
-                    (*
-                        convert list of patterns to association where pattern
-                        names point to their pattern
-                    *)
-                    {Verbatim[Pattern][_Symbol, _]...} :> (
-                        patternNewNameAssocOrList
-                        // Map[(
-                            #
-                            // First
-                            // SymbolName
-                            // (patternName \[Function] {
-                                patternName -> #,
-                                If[OptionValue["OverwritePostfix"] && StringEndsQ[patternName, "$"],
-                                    StringDrop[patternName, -1] -> #,
-                                    Nothing
-                                ]
-                            })
-                        )&]
-                        // Flatten
-                        // Apply[Association]
-                    ),
-                    (* otherwise, use empty association *)
-                    _ -> <||>
-                }]
-            )
-        },
-        exportedPattern
-    ]]
-    //. {ExportedPattern[patternName_Symbol, patternObject_] :> (
-        (* Renamed function parameter *)
-        patternNewNamesAssoc
-        // Key[SymbolName[patternName]]
-        // (patternObject
-            // If[MissingQ[#],
-                Identity,
-                Curry[Pattern, 2][# // First]
-            ]
-        )&
-    )}
-    // ReleaseHold
-]
-
-
 AstPattern = <|
     "Token" -> (
-        AST`LeafNode[kind_Symbol, tokenString_String, data_Association]
+        (CodeParser`LeafNode|CodeParser`ErrorNode)[kind_Symbol, tokenString_String, data_Association]
     ),
 
     "Symbol" -> (
-        AST`LeafNode[Symbol, symbolName_String, data_Association]
+        CodeParser`LeafNode[Symbol, symbolName_String, data_Association]
     ),
 
     "Integer" -> (
-        AST`LeafNode[Integer, integerLiteral_String, data_Association]
+        CodeParser`LeafNode[Integer, integerLiteral_String, data_Association]
     ),
 
     "Real" -> (
-        AST`LeafNode[Real, realLiteral_String, data_Association]
+        CodeParser`LeafNode[Real, realLiteral_String, data_Association]
     ),
 
     "Function" -> (
-        AST`CallNode[AST`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
+        CodeParser`CallNode[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
     ),
 
     "MessageName" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, "MessageName", _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, "MessageName", _],
             {
-                AST`LeafNode[Symbol, symbolName_String, _],
-                message:AST`LeafNode[String, messageLiteral_String, _]
+                CodeParser`LeafNode[Symbol, symbolName_String, _],
+                message:CodeParser`LeafNode[String, messageLiteral_String, _]
             },
             data_Association
         ]
     ),
 
     "Definable" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:(FunctionPattern["BinarySet"]), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:(FunctionPattern["BinarySet"]), _],
             {
-                head:AST`CallNode[AST`LeafNode[Symbol, func:FunctionPattern["Definable"], _], {
-                    AST`LeafNode[Symbol, (key_), _],
+                head:CodeParser`CallNode[CodeParser`LeafNode[Symbol, func:FunctionPattern["Definable"], _], {
+                    CodeParser`LeafNode[Symbol, (key_), _],
                     ___
                 }, _],
                 body_
@@ -189,10 +140,10 @@ AstPattern = <|
     ),
 
     "Set" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:(FunctionPattern["BinarySet"] | FunctionPattern["TenarySet"]), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:(FunctionPattern["BinarySet"] | FunctionPattern["TenarySet"]), _],
             {
-                Repeated[AST`LeafNode[Symbol, tag_String, _], {0, 1}],
+                Repeated[CodeParser`LeafNode[Symbol, tag_String, _], {0, 1}],
                 head_?lhsQ,
                 body_
             },
@@ -201,8 +152,8 @@ AstPattern = <|
     ),
 
     "Scope" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:(FunctionPattern["Scope"]), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:(FunctionPattern["Scope"]), _],
             {
                 head_,
                 body_,
@@ -214,10 +165,10 @@ AstPattern = <|
     ),
 
     "InscopeSet" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:("Set" | "SetDelayed"), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:("Set" | "SetDelayed"), _],
             {
-                AST`LeafNode[Symbol, symbolName_String, symbolData_Association],
+                CodeParser`LeafNode[Symbol, symbolName_String, symbolData_Association],
                 value_
             },
             data_Association
@@ -225,18 +176,18 @@ AstPattern = <|
     ),
 
     "Delayed" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:(FunctionPattern["Delayed"]), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:(FunctionPattern["Delayed"]), _],
             { (* Optional Tag: *) _:Null, head_, body_},
             data_Association
         ]
     ),
 
     "DelayedPattern" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, "Pattern", _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, "Pattern", _],
             {
-                AST`LeafNode[Symbol, patternName_String, patternData_Association],
+                CodeParser`LeafNode[Symbol, patternName_String, patternData_Association],
                 patternObject_
             },
             data_Association
@@ -244,28 +195,28 @@ AstPattern = <|
     ),
 
     "CompoundExpression" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, op:("CompoundExpression"), _],
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, op:("CompoundExpression"), _],
             exprs_List,
             data_Association
         ]
     ),
 
     "NamedColor" -> (
-        AST`LeafNode[Symbol, color:FunctionPattern["NamedColor"], data_Association]
+        CodeParser`LeafNode[Symbol, color:FunctionPattern["NamedColor"], data_Association]
     ),
 
     "ColorModel" -> (
-        AST`CallNode[
-            AST`LeafNode[Symbol, model:FunctionPattern["ColorModel"], _], 
+        CodeParser`CallNode[
+            CodeParser`LeafNode[Symbol, model:FunctionPattern["ColorModel"], _], 
             params: {
-                (AST`LeafNode[Integer | Real | String, _, _])..
+                (CodeParser`LeafNode[Integer | Real | String, _, _])..
             },
             data_Association
         ]
     )
 
-|> // Map[ExportPattern]
+|> // Map[PatternTemplate]
 
 
 AstLevelspec = <|
@@ -280,7 +231,7 @@ AstLevelspec = <|
 
 
 lhsQ[node_] := (
-    FreeQ[node, _AST`AbstractSyntaxErrorNode] &&
+    FreeQ[node, _CodeParser`AbstractSyntaxErrorNode] &&
     MatchQ[FirstPosition[node, Symbol], {(1)...}]
 )
 

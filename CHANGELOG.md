@@ -4,14 +4,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2020-08-01 🐱‍🏍
+
+### Added
+
+- SignatureHelp is available for functions when `[` and `,` is input.
+
+### Changed
+
+- Change the dependencies from `AST` and `Lint` to `CodeParser` and
+`CodeInspector`.
+- The alias completion has been improved by reducing the number of
+`completionItem`s, and returning `\`-prefixed aliases when triggered twice.
+
+### Fixed
+
+- `triggerCharacters` should be a list (thanks to
+[@dalanicolai](https://github.com/dalanicolai)).
+- The `duplicate requests`
+error will not popup in Output window in VSCode (reported by
+[@GiovanniBordiga](https://github.com/GiovanniBordiga)).
+- MessageName should be shown when hovered
+
 ## [0.2.1] - 2020-01-24 🏮🐀
 
 ### Added
 
 - Definition / References are available to show in scopes / the whole file.
-
 - DocumentHighlight is available to show the scoped variables.
-
 - DocumentColor / ColorRepresentation are available to show the color names and models.
 
 ### Changed
