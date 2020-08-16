@@ -10,7 +10,7 @@ BeginPackage["WolframLanguageServer`Token`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in Markdown format.
+TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in specified format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\"
 "

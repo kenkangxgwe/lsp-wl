@@ -12,22 +12,23 @@ ClearAll[Evaluate[Context[] <> "*"]];
 
 LspPosition::usage = "is type of Position interface in LSP."
 LspRange::usage = "is type of Range interface in LSP."
-LspLocation::usage = "is type of Location Interface in LSP."
-TextEdit::usage = "is type of TextEdit Interface in LSP."
-TextDocumentItem::usage = "is type of TextDocumentItem in LSP."
+Location::usage = "is type of Location interface in LSP."
+Command::usage = "is type of Command interface in LSP."
+TextEdit::usage = "is type of TextEdit interface in LSP."
+TextDocumentItem::usage = "is type of TextDocumentItem interface in LSP."
+MarkupContent::usage = "is the type of MarkupContent interface in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
  the new text is considered to be the full content of the document."
-MarkupContent::usage = "is the type of MarkupContent interface in LSP."
+Diagnostic::usage = "is the type of Diagnostic interface in LSP."
+DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformation interface in LSP."
 Hover::usage = "is the type of Hover interface in LSP."
 SignatureHelp::usage = "is the type of SignatureHelp interface in LSP."
 SignatureInformation::usage = "is the type of SignatureInformation interface in LSP."
 ParameterInformation::usage = "is the type of ParameterInformation interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
-Diagnostic::usage = "is the type of Diagnostic interface in LSP."
-DiagnosticRelatedInformation::usage = "is the type of DiagnosticRelatedInformation interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
-Location::usage = "is the type of Location interface in LSP."
 DocumentHighlight ::usage = "is the type of Location interface in LSP."
+LspCodeAction::usage = "is the type of CodeAction interface in LSP."
 ColorInformation::usage = "is the type of ColorInformation interface in LSP."
 LspColor::usage = "is the type of Color interface in LSP."
 ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
@@ -41,20 +42,6 @@ DocumentUri = String
 
 (* ::Section:: *)
 (*Enum Type*)
-
-TextDocumentSyncKind  = <|
-    "None" -> 0,
-    "Full" -> 1,
-    "Incremental" -> 2
-|>
-
-DiagnosticSeverity = <|
-    "Error" -> 1,
-    "Warning" -> 2,
-    "Information" -> 3,
-    "Hint" -> 4
-|>
-
 
 ErrorCodes = <|
     (* Defined by JSON RPC *)
@@ -72,11 +59,23 @@ ErrorCodes = <|
 	"ContentModified" -> -32801
 |>
 
-InsertTextFormat = <|
-    "PlainText" -> 1,
-    "Snippet" -> 2
+MarkupKind = <|
+    "PlainText" -> "plaintext",
+    "Markdown" -> "markdown"
 |>
 
+TextDocumentSyncKind  = <|
+    "None" -> 0,
+    "Full" -> 1,
+    "Incremental" -> 2
+|>
+
+DiagnosticSeverity = <|
+    "Error" -> 1,
+    "Warning" -> 2,
+    "Information" -> 3,
+    "Hint" -> 4
+|>
 
 CompletionTriggerKind = <|
     "Invoked" -> 1,
@@ -84,6 +83,10 @@ CompletionTriggerKind = <|
     "TriggerForIncompleteCompletions" -> 3
 |>
 
+InsertTextFormat = <|
+    "PlainText" -> 1,
+    "Snippet" -> 2
+|>
 
 CompletionItemKind = <|
     "Text" -> 1,
@@ -112,7 +115,6 @@ CompletionItemKind = <|
     "Operator" -> 24,
     "TypeParameter" -> 25
 |>
-
 
 SymbolKind = <|
     "File" -> 1,
@@ -143,18 +145,22 @@ SymbolKind = <|
     "TypeParameter" -> 26
 |>
 
-
-MarkupKind = <|
-    "PlainText" -> "plaintext",
-    "Markdown" -> "markdown"
-|>
-
 DocumentHighlightKind = <|
     "Text" -> 1,
     "Read" -> 2,
     "Write" -> 3
 |>
 
+CodeActionKind = <|
+    "Empty" -> "",
+    "QuickFix" -> "quickfix",
+    "Refactor" -> "refactor",
+    "RefactorExtract" -> "refactor.extract",
+    "RefactorInline" -> "refactor.inline",
+    "RefactorRewrite" -> "refactor.rewrite",
+    "Source" -> "source",
+    "SourceOrganizeImports" -> "source.orgainizeImports"
+|>
 
 (* ::Section:: *)
 (*Constants*)
@@ -171,6 +177,11 @@ Needs["DataType`"]
 (* ::Section:: *)
 (*Server Communication Related Type*)
 
+
+(* ::Subsection:: *)
+(*Basic Structures*)
+
+
 DeclareType[LspPosition, <|
     "line" -> _Integer,
     "character" -> _Integer
@@ -181,9 +192,15 @@ DeclareType[LspRange, <|
     "end" -> _LspPosition
 |>]
 
-DeclareType[LspLocation, <|
+DeclareType[Location, <|
     "uri" -> _DocumentUri,
     "range" -> _LspRange
+|>]
+
+DeclareType[Command, <|
+    "title" -> _String,
+    "command" -> _String,
+    "arguments" -> _List
 |>]
 
 DeclareType[TextEdit, <|
@@ -198,15 +215,57 @@ DeclareType[TextDocumentItem, <|
     "text" -> _String
 |>]
 
+DeclareType[MarkupContent, <|
+    "kind" -> _?(MemberQ[MarkupKind, #]&),
+    "value" -> _String
+|>]
+
+
+(* ::Subsection:: *)
+(*Text Synchronization*)
+
+
 DeclareType[TextDocumentContentChangeEvent, <|
     "range" -> _LspRange,
     "rangeLength" -> _Integer,
     "text" -> _String
 |>]
 
-DeclareType[MarkupContent, <|
-    "kind" -> _String,
-    "value" -> _String
+
+(* ::Subsection:: *)
+(*Diagnostics*)
+
+
+DeclareType[Diagnostic, <|
+    "range" -> _LspRange,
+    "severity" -> _?(MemberQ[DiagnosticSeverity, #]&),
+    "code" -> _Integer|_String,
+    "source" -> _String,
+    "message" -> _String,
+    "relatedInformation" -> {___DiagnosticRelatedInformation}
+|>]
+
+DeclareType[DiagnosticRelatedInformation, <|
+    "location" -> _Location,
+    "message" -> _String
+|>]
+
+
+(* ::Subsection:: *)
+(*Language Features*)
+
+
+DeclareType[CompletionItem, <|
+    "label" -> _String,
+    "kind" -> _Integer,
+    "detail" -> _String,
+    "documentation" -> _String | _MarkupContent,
+    "preselect" -> _?BooleanQ,
+    "filterText" -> _String,
+    "insertText" -> _String,
+    "insertTextFormat" -> _?(MemberQ[InsertTextFormat, #]&),
+    "textEdit" -> _TextEdit,
+    "commitCharacters" -> {___String}
 |>]
 
 DeclareType[Hover, <|
@@ -234,49 +293,22 @@ DeclareType[ParameterInformation, <|
 DeclareType[DocumentSymbol, <|
     "name" -> _String,
     "detail" -> _String,
-    "kind" -> _Integer,
+    "kind" -> _?(MemberQ[SymbolKind, #]&),
     "deprecated" -> _?BooleanQ,
     "range" -> _LspRange,
     "selectionRange" -> _LspRange,
     "children" -> {___DocumentSymbol}
 |>]
 
-DeclareType[Diagnostic, <|
-    "range" -> _LspRange,
-    "severity" -> _Integer,
-    "code" -> _Integer|_String,
-    "source" -> _String,
-    "message" -> _String,
-    "relatedInformation" -> {___DiagnosticRelatedInformation}
-|>]
-
-DeclareType[DiagnosticRelatedInformation, <|
-    "location" -> _LspLocation,
-    "message" -> _String
-|>]
-
-
-DeclareType[CompletionItem, <|
-    "label" -> _String,
-    "kind" -> _Integer,
-    "detail" -> _String,
-    "documentation" -> _String | _MarkupContent,
-    "preselect" -> _?BooleanQ,
-    "filterText" -> _String,
-    "insertText" -> _String,
-    "insertTextFormat" -> _Integer,
-    "textEdit" -> _TextEdit,
-    "commitCharacters" -> {___String}
-|>]
-
-DeclareType[Location, <|
-    "uri" -> DocumentUri,
-    "range" -> _LspRange
-|>]
-
 DeclareType[DocumentHighlight, <|
     "range" -> _LspRange,
     "kind" -> _Integer
+|>]
+
+DeclareType[LspCodeAction, <|
+    "title" -> _String,
+    "kind" -> _?(MemberQ[CodeActionKind, #]&),
+    "command" -> _Command
 |>]
 
 DeclareType[ColorInformation, <|

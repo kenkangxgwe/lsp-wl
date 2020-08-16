@@ -89,13 +89,14 @@ ServerCapabilities = <|
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
+	"codeActionProvider" -> True,
 	"documentHighlightProvider" -> True,
 	"colorProvider" -> True,
-	(* "executeCommandProvider" -> <|
+	"executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef"
 		}
-	|>, *)
+	|>,
 	Nothing
 |>
 
@@ -847,6 +848,12 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 	Replace[command, {
 		"dap-wl.runfile" -> (
 			LogInfo[StringJoin["executing ", command, "with arguments: ", ToString[args]]]
+		),
+		"openRef" -> (
+			args
+			// First
+			// SystemOpen
+			// UsingFrontEnd
 		)
 	}];
 
@@ -1179,6 +1186,32 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 
 
 (* ::Subsection:: *)
+(*textDocument/codeAction*)
+
+
+handleRequest["textDocument/codeAction", msg_, state_] := With[
+	{
+		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		range = ConstructType[msg["params"]["range"], LspRange]
+	},
+
+	sendResponse[state["client"], <|
+		"id" -> msg["id"],
+		"result" -> ToAssociation[
+			(* Command[<|
+				"title" -> "Open Documentation",
+				"command" -> "openRef",
+				"arguments" -> {"C:/Program Files/Wolfram Research/Mathematica/12.1/Documentation/English/System/ReferencePages/Symbols/List.nb"}
+			|>] *)
+			GetCodeActionsInRange[doc, range]
+		]
+	|>];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
 (*textDocument/documentColor*)
 
 
@@ -1237,8 +1270,8 @@ getScheduleTaskParameter[method:"textDocument/documentColor", msg_, state_WorkSt
 handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 	{
 		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
-		color = msg["params"]["color"] // LspColor,
-		range = msg["params"]["range"] // LspRange
+		color = ConstructType[msg["params"]["color"], LspColor],
+		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
 	sendResponse[state["client"], <|

@@ -23,6 +23,7 @@ FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] giv
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
+GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
 FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
 GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
 
@@ -1247,7 +1248,56 @@ FindTopLevelSymbols[node_, name_String] := (
 )
 
 
-(* ::Subsection:: *)
+(* ::Section:: *)
+(*CodeAction*)
+
+
+SymbolDocumentationPath = FileNameJoin[{$InstallationDirectory, "Documentation", "English", "System", "ReferencePages", "Symbols"}]
+
+
+GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
+    {
+        startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
+        endPos = {range["end"]["line"] + 1, range["end"]["character"]}
+    },
+
+    GetCodeRangeAtPosition[doc, range["start"]]
+    // Replace[lineRange:{_Integer, _Integer} :> (
+        CellToAST[doc, lineRange]
+        // (ast \[Function] (
+            FirstCase[
+               ast,
+                AstPattern["Token"][tokenString_]?((
+                    (* The token node overlaps the range *)
+                    CompareNodePosition[#, startPos, -1] >= 0 &&
+                    CompareNodePosition[#, endPos, 1] <= 0
+                )&) :> (
+                    FileNameJoin[{SymbolDocumentationPath, tokenString <> ".nb"}]
+                    // If[FileExistsQ[#],
+                        LspCodeAction[<|
+                            "title" -> "Documentation: " <> tokenString,
+                            "kind" -> CodeActionKind["Empty"],
+                            "command" -> <|
+                                "title" -> "Documentation: " <> tokenString,
+                                "command" -> "openRef",
+                                "arguments" -> {#}
+                            |>
+                        |>],
+                        Missing["NotFound"]
+                    ]&
+                ),
+                Missing["NotFound"],
+                AstLevelspec["DataWithSource"],
+                Heads -> False
+            ]
+        ))
+    )]
+    // List
+    // DeleteMissing
+]
+
+
+(* ::Section:: *)
 (*DocumentColor*)
 
 
