@@ -190,7 +190,10 @@ GetUri[token_String, tag_String] := (
     tag
     // Replace[{
         "usage" :> (
-            StringJoin["[*reference*](https://reference.wolfram.com/language/ref/", token, ".html)"]
+            StringJoin[
+                "[*reference*](https://reference.wolfram.com/language/ref/", token, ".html) "
+                (* "[*document*](command:editor.action.addCommentLine)" *)
+            ]
         ),
         _ :> (
             StringJoin["[*reference*](https://reference.wolfram.com/language/ref/message/", token, "/", tag,".html)"]

@@ -450,7 +450,7 @@ StreamPattern = ("stdio"|_SocketObject);
 
 
 SelectClient[connection_SocketObject] := (	
-	SelectFirst[connection["ConnectedClients"], SocketReadyQ] (* SocketWaitNext does not work in 11.3 *)
+  SelectFirst[connection["ConnectedClients"], SocketReadyQ] (* SocketWaitNext does not work in 11.3 *)
 	// (If[MissingQ[#],
 		Pause[1];
 		Return[SelectClient[connection]],
@@ -746,7 +746,7 @@ cacheResponse[method_String, msg_][state_WorkState] =
 	cacheResponse[method, msg, state]
 
 
-sendCachedResult[method_String, msg_, state_WorkState] := Block[
+sendCachedResult[method_String, msg_, state_WorkState] := With[
 	{
 		cache = getCache[method, msg, state]
 	},
@@ -950,7 +950,7 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 ]
 
 
-cacheAvailableQ[method:"textDocument/signatureHelp", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/signatureHelp", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
@@ -1164,7 +1164,7 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 ]
 
 
-cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
@@ -1241,7 +1241,7 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 ]
 
 
-cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
@@ -1639,7 +1639,7 @@ doNextScheduledTask[state_WorkState] := (
 			Pause[0.001];
 			{"Continue", state}
 		),
-		task_ServerTask :> Block[
+		task_ServerTask :> With[
 			{
 				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
 			},

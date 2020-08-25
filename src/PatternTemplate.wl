@@ -57,7 +57,7 @@ PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns___] := 
     // PatternTemplateObject[templatedPattern]
 )
 
-PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns_Association] := Block[
+PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns_Association] := With[
     {
         newPatternTuples = Replace[
             newPatterns,
