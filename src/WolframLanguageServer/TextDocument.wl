@@ -1252,7 +1252,7 @@ FindTopLevelSymbols[node_, name_String] := (
 (*CodeAction*)
 
 
-SymbolDocumentationPath = FileNameJoin[{$InstallationDirectory, "Documentation", "English", "System", "ReferencePages", "Symbols"}]
+SymbolDocumentationPath = FileNameJoin[{$InstallationDirectory, "Documentation", $Language, "System", "ReferencePages", "Symbols"}]
 
 
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
