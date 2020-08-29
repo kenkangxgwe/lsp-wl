@@ -1252,9 +1252,6 @@ FindTopLevelSymbols[node_, name_String] := (
 (*CodeAction*)
 
 
-SymbolDocumentationPath = FileNameJoin[{$InstallationDirectory, "Documentation", $Language, "System", "ReferencePages", "Symbols"}]
-
-
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
     {
         startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
@@ -1272,8 +1269,9 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
                     CompareNodePosition[#, startPos, -1] >= 0 &&
                     CompareNodePosition[#, endPos, 1] <= 0
                 )&) :> (
-                    FileNameJoin[{SymbolDocumentationPath, tokenString <> ".nb"}]
-                    // If[FileExistsQ[#],
+                    FindFile[FileNameJoin[{"ReferencePages", "Symbols", tokenString <> ".nb"}]]
+                    // If[FailureQ[#],
+                        Missing["NotFound"],
                         LspCodeAction[<|
                             "title" -> "Documentation: " <> tokenString,
                             "kind" -> CodeActionKind["Empty"],
@@ -1282,8 +1280,7 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
                                 "command" -> "openRef",
                                 "arguments" -> {#}
                             |>
-                        |>],
-                        Missing["NotFound"]
+                        |>]
                     ]&
                 ),
                 Missing["NotFound"],
