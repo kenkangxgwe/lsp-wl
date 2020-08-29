@@ -863,7 +863,7 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 				ServerConfig["requestDelays"][method],
 				"Second"
 			}],
-			"id" -> msg["id"],
+			"id" -> (msg["id"] // Replace[Except[_Integer] -> Missing["NoIdNeeded"]]),
 			"params" -> getScheduleTaskParameter[method, msg, state],
 			"callback" -> (handleRequest[method, msg, #1]&)
 		|>]]

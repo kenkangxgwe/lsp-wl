@@ -111,7 +111,9 @@ Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[N
 ];
 ```
 
-This is a good way to see the results from the unit tests.
+To use the debugger adapter (current in a very early stage), you need to include
+`debuggerPort` in the `initializationOptions`. And attach the frontend to that
+port. For VS Code, it is automatically done by the extension.
 
 ## Language Server Features
 
