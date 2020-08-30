@@ -756,9 +756,13 @@ sendCachedResult[method_String, msg_, state_WorkState] := With[
 	sendMessage[state["client"],
 		ResponseMessage[<|"id" -> msg["id"]|>]
 		// ReplaceKey[
-			If[!MissingQ[cache["result"]],
-				"result" -> cache["result"],
-				"error" -> cache["error"]
+			If[MissingQ[cache],
+				(* File closed, sends Null. *)
+				"result" -> Null,
+				If[!MissingQ[cache["result"]],
+					"result" -> cache["result"],
+					"error" -> cache["error"]
+				]
 			]
 		]
 	];
@@ -942,13 +946,16 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				GetSignatureHelp[state["openedDocs"][uri], pos]
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> (
+					GetSignatureHelp[state["openedDocs"][uri], pos]
+				)
+			|>]
+		]
 	]
 ]
 
@@ -1149,14 +1156,17 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				state["openedDocs"][uri]
-				// ToDocumentSymbol
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> (
+					state["openedDocs"][uri]
+					// ToDocumentSymbol
+				)
+			|>]
+		]
 	]
 ]
 
@@ -1218,14 +1228,17 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				state["openedDocs"][uri]
-				// FindDocumentColor
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> (
+					state["openedDocs"][uri]
+					// FindDocumentColor
+				)
+			|>]
+		]
 	]
 ]
 
@@ -1416,7 +1429,8 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
 		"textDocument/documentSymbol" -> KeyDrop[uri],
 		"textDocument/documentColor" -> KeyDrop[uri],
-		"textDocument/codeLens" -> KeyDrop[uri]
+		"textDocument/codeLens" -> KeyDrop[uri],
+		"textDocument/publishDiagnostics" -> KeyDrop[uri]
 	}]&)]
 	// handleRequest["textDocument/clearDiagnostics", uri, #]&
 ]
@@ -1634,22 +1648,28 @@ doNextScheduledTask[state_WorkState] := (
 			task["type"]
 			// Replace[{
 				method:"textDocument/publishDiagnostics" :> (
-					newState
-					// If[DatePlus[
-						newState["openedDocs"][task["params"]]["lastUpdate"],
-						{5, "Second"}] > Now,
-						(* Reschedule the task *)
-						scheduleDelayedRequest[method, task["params"], #]&,
-						ReplaceKey[
-							{
-								"caches",
-								"textDocument/publishDiagnostics",
-								task["params"],
-								"scheduledQ"
-							} -> False
-						]
-						/* (task["callback"][#, task["params"]]&)
-					]
+					newState["openedDocs"][task["params"]]
+					// Replace[{
+						(* File closed, does nothing *)
+						_?MissingQ -> {"Continue", newState},
+						_?((DatePlus[#["lastUpdate"], {5, "Second"}] > Now)&) :> (
+							(* Reschedule the task *)
+							newState
+							// scheduleDelayedRequest[method, task["params"], #]&
+						),
+						_ :> (
+							newState
+							// ReplaceKey[
+								{
+									"caches",
+									"textDocument/publishDiagnostics",
+									task["params"],
+									"scheduledQ"
+								} -> False
+							]
+							// task["callback"][#, task["params"]]&
+						)
+					}]
 				),
 				"InitialCheck" :> (
 					newState
