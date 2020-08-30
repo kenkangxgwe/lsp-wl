@@ -1,9 +1,10 @@
 (* ::Package:: *)
 
+(* Copyright 2018 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
-           huxianglong <hxianglong_at_gmail.com>
-*)
 
 
 BeginPackage["WolframLanguageServer`Server`"];

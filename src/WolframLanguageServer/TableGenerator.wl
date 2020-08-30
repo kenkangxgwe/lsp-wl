@@ -1,5 +1,12 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
+(* Wolfram Language Server Table Generator *)
+
+
 BeginPackage["WolframLanguageServer`TableGenerator`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 

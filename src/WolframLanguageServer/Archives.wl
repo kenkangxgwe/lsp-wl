@@ -1,10 +1,10 @@
 (* ::Package:: *)
-(*Archives*)
+
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
 
 (* Wolfram Language Server Archived Functions *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
-           huxianglong <hxianglong_at_gmail.com>
-*)
 
 
 BeginPackage["WolframLanguageServer`Archives`"]

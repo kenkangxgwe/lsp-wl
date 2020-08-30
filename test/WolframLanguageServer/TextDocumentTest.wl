@@ -1,5 +1,12 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
+(* Wolfram Language Server TextDocument Test *)
+
+
 BeginPackage["WolframLanguageServer`TextDocumentTest`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 

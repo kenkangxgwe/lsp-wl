@@ -1,5 +1,12 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
+(* Wolfram Language Server Pattern Template Test *)
+
+
 BeginPackage["PatternTemplateTest`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 

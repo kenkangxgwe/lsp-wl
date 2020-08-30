@@ -1,9 +1,11 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server Color Table *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
-           huxianglong <hxianglong_at_gmail.com>
-*)
+
 
 BeginPackage["WolframLanguageServer`ColorTable`"]
 ClearAll[Evaluate[Context[] <> "*"]]

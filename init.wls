@@ -1,18 +1,17 @@
 #!/usr/bin/env wolframscript
 (* ::Package:: *)
 
-(* Wolfram Language Server *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
-           huxianglong <hxianglong_at_gmail.com>
-*)
+(* Copyright 2018 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
 
 
-(* init.wl
+(* init.wls
 
 This is a script file to initialize the Wolfram Language Server.
 Please see the help info below.
 
 *)
+
 
 (* For windows, this should be set for Print to correctly format outputs. *)
 SetOptions[$Output, FormatType -> OutputForm]

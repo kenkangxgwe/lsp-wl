@@ -1,7 +1,10 @@
 (* ::Package:: *)
 
+(* Copyright 2020 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Pattern Template *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com> *)
 
 
 BeginPackage["PatternTemplate`"]
