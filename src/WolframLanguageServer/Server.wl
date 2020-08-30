@@ -27,6 +27,7 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
+Needs["WolframLanguageServer`Debugger`"]
 
 
 (* ::Section:: *)
@@ -1009,28 +1010,75 @@ executeCommand["dap-wl.run-file", msg_, state_WorkState] := With[
 executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 	{
 		args = msg["params"]["arguments"] // First,
-		text, res
+		text
 	},
 
 	text = GetDocumentText[
 		state["openedDocs"][args["uri"]],
 		ConstructType[args["range"], _LspRange]
-	];
-
-	res = With[{text = text},
-		ParallelEvaluate[
-			ToExpression[text],
-			state["debugSession"]["subKernel"]
-		]
-	] // ToString;
+	] // StringTrim;
 
 	sendMessage[state["debugSession"]["client"], DapEvent[<|
 		"type" -> "event",
 		"event" -> "output",
 		"body" -> <|
 			"category" -> "stdout",
-			"output" -> StringJoin[text, "\n", res],
+			"output" -> "Input:",
+			"group" -> "start"
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			"category" -> "stdout",
+			"output" -> StringJoin[text],
 			"variableReference" -> 1
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			"category" -> "stdout",
+			"output" -> "",
+			"group" -> "end"
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			"category" -> "stdout",
+			"output" -> "Output:",
+			"group" -> "start"
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			"category" -> "stdout",
+			"output" -> StringJoin[DebuggerEvaluate[
+				<|"expression" -> text|>,
+				state["debugSession"]["subKernel"]
+				]
+			],
+			"variableReference" -> 1
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			"category" -> "stdout",
+			"output" -> "",
+			"group" -> "end"
 		|>
 	|>]];
 
@@ -1040,7 +1088,12 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		"body" -> <|
 			"reason" -> "pause",
 			"description" -> "Cell Evaluated Successfully",
-			"threadId" -> state["debugSession"]["thread"]["id"]
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
 		|>
 	|>]];
 
@@ -1888,9 +1941,7 @@ handleResponse["workspace/applyEdit", msg_, state_WorkState] := (
 
 handleDapRequest["initialize", msg_, state_WorkState] := Block[
 	{
-		subKernel = LaunchKernels[1] // First,
-		context = ToString[Unique["debug"]] <> "`",
-		newSymbolTable
+		subKernel = CreateDebuggerKernel[]
 	},
 
 	LogInfo["Initializing Wolfram Language Debugger"];
@@ -1906,23 +1957,6 @@ handleDapRequest["initialize", msg_, state_WorkState] := Block[
         |>
     |>]];
 
-	$DistributedContexts = None;
-	newSymbolTable = (Begin[context]; SymbolTable; End[]);
-	(* StringJoin[
-		context, "`SymbolTable = <||>;",
-		"$NewSymbol = ((", context, "`SymbolTable =
-			Merge[{", context, "`SymbolTable, <|#2 -> #1|>}, Flatten]
-		)&);",
-		"$Epilog := "
-	] //  *)
-	ParallelEvaluate[
-		newSymbolTable = <||>;
-		$NewSymbol = ((newSymbolTable =
-			Merge[{newSymbolTable, <|#2 -> #1|>}, Flatten]
-		)&),
-		subKernel
-	];
-
 	sendMessage[state["debugSession"]["client"], DapEvent[<|
 		"type" -> "event",
 		"event" -> "initialized"
@@ -1935,10 +1969,10 @@ handleDapRequest["initialize", msg_, state_WorkState] := Block[
 			"subKernel" -> subKernel,
 			"context" -> context,
 			"thread" -> DapThread[<|
-				"id" -> ParallelEvaluate[$ProcessID, subKernel],
+				"id" -> GetKernelId[subKernel],
 				"name" -> StringJoin[
 					"SubKernel ",
-					ParallelEvaluate[$KernelID, subKernel]
+					GetProcessId[subKernel]
 					// ToString
 				]
 			|>],
@@ -1981,9 +2015,7 @@ handleDapRequest["attach", msg_, state_WorkState] := (
 		"request_seq" -> msg["seq"],
 		"success" -> True,
 		"command" -> msg["command"],
-		"body" -> <|
-			Nothing
-		|>
+		"body" -> <||>
 	|>]];
 
 	sendMessage[state["debugSession"]["client"], DapEvent[<|
@@ -2061,9 +2093,75 @@ handleDapRequest["threads", msg_, state_WorkState] := (
 		"success" -> True,
 		"command" -> msg["command"],
 		"body" -> <|
-			"threads" -> {
-				state["debugSession"]["thread"]
-			}
+			"threads" -> GetThreads[
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*stackTrace*)
+
+
+handleDapRequest["stackTrace", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"stackFrames" -> GetStackFrames[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*scopes*)
+
+
+handleDapRequest["scopes", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"scopes" -> GetScopes[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*variables*)
+
+
+handleDapRequest["variables", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"variables" -> GetVariables[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
 		|>
 	|>]];
 
@@ -2075,18 +2173,7 @@ handleDapRequest["threads", msg_, state_WorkState] := (
 (*evaluate*)
 
 
-handleDapRequest["evaluate", msg_, state_WorkState] := Block[
-	{
-		text
-	},
-
-	text = msg["arguments"]["expression"];
-	res = With[{text = text},
-		ParallelEvaluate[
-			ToExpression[text],
-			state["debugSession"]["subKernel"]
-		]
-	] // ToString;
+handleDapRequest["evaluate", msg_, state_WorkState] := (
 
 	sendMessage[state["debugSession"]["client"], DapResponse[<|
 		"type" -> "response",
@@ -2094,12 +2181,15 @@ handleDapRequest["evaluate", msg_, state_WorkState] := Block[
 		"success" -> True,
 		"command" -> msg["command"],
 		"body" -> <|
-			"result" -> res
+			"result" -> DebuggerEvaluate[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
 		|>
 	|>]];
 
 	{"Continue", state}
- ]
+ )
 
 
 (* ::Subsection:: *)
