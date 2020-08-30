@@ -10,6 +10,13 @@ BeginPackage["WolframLanguageServer`Specification`"]
 ClearAll[Evaluate[Context[] <> "*"]];
 
 
+(* ::Section:: *)
+(* Language Server Protocol*)
+
+
+ResponseMessage::usage = "is type of RequestMessage interface in LSP."
+ResponseError::usage = "is type of RequestError interface in LSP."
+NotificationMessage::usage = "is type of Notification interface in LSP."
 LspPosition::usage = "is type of Position interface in LSP."
 LspRange::usage = "is type of Range interface in LSP."
 Location::usage = "is type of Location interface in LSP."
@@ -33,6 +40,7 @@ ColorInformation::usage = "is the type of ColorInformation interface in LSP."
 LspColor::usage = "is the type of Color interface in LSP."
 ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 
+
 (* ::Section:: *)
 (*Type Aliases*)
 
@@ -45,18 +53,18 @@ DocumentUri = String
 
 ErrorCodes = <|
     (* Defined by JSON RPC *)
-	"ParseError" -> -32700,
-	"InvalidRequest" -> -32600,
-	"MethodNotFound" -> -32601,
-	"InvalidParams" -> -32602,
-	"InternalError" -> -32603,
-	"serverErrorStart" -> -32099,
-	"serverErrorEnd" -> -32000,
-	"ServerNotInitialized" -> -32002,
-	"UnknownErrorCode" -> -32001,
-	(* Defined by the protocol *)
-	"RequestCancelled" -> -32800,
-	"ContentModified" -> -32801
+    "ParseError" -> -32700,
+    "InvalidRequest" -> -32600,
+    "MethodNotFound" -> -32601,
+    "InvalidParams" -> -32602,
+    "InternalError" -> -32603,
+    "serverErrorStart" -> -32099,
+    "serverErrorEnd" -> -32000,
+    "ServerNotInitialized" -> -32002,
+    "UnknownErrorCode" -> -32001,
+    (* Defined by the protocol *)
+    "RequestCancelled" -> -32800,
+    "ContentModified" -> -32801
 |>
 
 MarkupKind = <|
@@ -176,6 +184,32 @@ Needs["DataType`"]
 
 (* ::Section:: *)
 (*Server Communication Related Type*)
+
+
+(* ::Subsection:: *)
+(*Basic Protocol*)
+
+
+DeclareType[ResponseMessage, <|
+    "jsonrpc" -> _String,
+    "id" -> _Integer | _String,
+    "result" -> _,
+    "error" -> _
+|>]
+
+
+DeclareType[ResponseError, <|
+    "code" -> _Integer,
+    "message" -> _String,
+    "data" -> _
+|>]
+
+
+DeclareType[NotificationMessage, <|
+    "jsonrpc" -> _String,
+    "method" -> _String,
+    "params" -> _
+|>]
 
 
 (* ::Subsection:: *)

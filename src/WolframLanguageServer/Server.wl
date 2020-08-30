@@ -649,7 +649,9 @@ constructRPCBytes[msg_Association] := (
 				"InternalError",
 				"The request is not handled correctly."
 			]],
-		"RawJSON"]
+			"RawJSON",
+			"Compact" -> True
+		]
 	] // {
 		(* header *)
 		Length
@@ -707,13 +709,13 @@ handleMessage[msg_Association, state_WorkState] := With[
 		(* wrong message before initialization *)
 		!state["initialized"] && !MemberQ[{"initialize", "initialized", "exit"}, method],
 		If[!NotificationQ[msg],
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"error" -> ServerError[
 					"ServerNotInitialized",
 					"The server is not initialized."
 				]
-			|>]
+			|>]]
 			(* otherwise, dropped the notification *)
 		];
 		{"Continue", state},
@@ -751,9 +753,9 @@ sendCachedResult[method_String, msg_, state_WorkState] := With[
 		cache = getCache[method, msg, state]
 	},
 
-	sendResponse[state["client"],
-		<|"id" -> msg["id"]|>
-		// Append[
+	sendMessage[state["client"],
+		ResponseMessage[<|"id" -> msg["id"]|>]
+		// ReplaceKey[
 			If[!MissingQ[cache["result"]],
 				"result" -> cache["result"],
 				"error" -> cache["error"]
@@ -784,8 +786,10 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 
 
 (* response, notification and request will call this function *)
-sendResponse[client_, res_Association] := (
-	Prepend[res, <|"jsonrpc" -> "2.0"|>]
+sendMessage[client_, res:(_ResponseMessage|_NotificationMessage)] := (
+	res
+	// ReplaceKey["jsonrpc" -> "2.0"]
+	// ToAssociation
 	// constructRPCBytes
 	// WriteMessage[client]
 )
@@ -807,12 +811,12 @@ handleRequest["initialize", msg_, state_WorkState] := Module[
 		"clientCapabilities" -> msg["params"]["capabilities"]
 	];
 	
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> <|
 			"capabilities" -> ServerCapabilities
 		|>
-	|>];
+	|>]];
 	
 	{"Continue", newState}
 ];
@@ -826,10 +830,10 @@ handleRequest["shutdown", msg_, state_] := Module[
 	{
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> Null
-	|>];
+	|>]];
 
 	{"Continue", state}
 ];
@@ -857,10 +861,10 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 		)
 	}];
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> Null
-	|>];
+	|>]];
 
 	{"Continue", state}
 
@@ -872,25 +876,25 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 
 
 handleRequest["textDocument/publishDiagnostics", uri_String, state_WorkState] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
 			"uri" -> uri,
-			"diagnostics" -> ToAssociation[DiagnoseDoc[state["openedDocs"][uri]]]
+			"diagnostics" -> DiagnoseDoc[state["openedDocs"][uri]]
 		|>
-	|>];
+	|>]];
 	{"Continue", state}
 )
 
 
 handleRequest["textDocument/clearDiagnostics", uri_String, state_WorkState] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
 			"uri" -> uri,
 			"diagnostics"  -> {}
 		|>
-	|>];
+	|>]];
 	{"Continue", state}
 )
 
@@ -910,10 +914,10 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation[GetHoverAtPosition[doc, pos]]
-	|>];
+		"result" -> GetHoverAtPosition[doc, pos]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -943,7 +947,6 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 		 	"cachedTime" -> Now,
 			"result" -> (
 				GetSignatureHelp[state["openedDocs"][uri], pos]
-				// ToAssociation
 			)
 		|>]
 	]
@@ -980,37 +983,35 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 	msg["params"]["context"]["triggerKind"]
 	// Replace[{
 		CompletionTriggerKind["Invoked"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
-					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
+					"items" -> GetTokenCompletionAtPostion[doc, pos]
 				|>
-			|>]
+			|>]]
 		),
 		CompletionTriggerKind["TriggerCharacter"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> True,
 					"items" -> (
 						GetTriggerKeyCompletion[doc, pos]
-						// ToAssociation
 					)
 				|>
-			|>]
+			|>]]
 		),
 		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
 					"items" -> (
 						GetIncompleteCompletionAtPosition[doc, pos]
-						// ToAssociation
 					) 
 				|>
-			|>];
+			|>]];
 		)
 	}];
 
@@ -1037,13 +1038,13 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 	msg["params"]["data"]["type"]
 	// Replace[{
 		"Alias" | "LongName" :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> msg["params"]
-			|>] 
+			|>]] 
 		),
 		"Token" :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					msg["params"]
@@ -1054,7 +1055,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 						|>
 					]
 				|>
-			|>]
+			|>]]
 		)
 	}];
 
@@ -1077,10 +1078,10 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation@FindDefinitions[doc, pos]
-	|>] // AbsoluteTiming // First // LogDebug;
+		"result" -> FindDefinitions[doc, pos]
+	|>]] // AbsoluteTiming // First // LogDebug;
 
 	{"Continue", state}
 ]
@@ -1097,10 +1098,10 @@ handleRequest["textDocument/references", msg_, state_] := With[
 		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation@FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
-	|>] // AbsoluteTiming // First // LogDebug;
+		"result" -> FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
+	|>]] // AbsoluteTiming // First // LogDebug;
 
 	{"Continue", state}
 ]
@@ -1117,13 +1118,10 @@ handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] :=
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> id,
-		"result" -> (
-			FindDocumentHighlight[state["openedDocs"][uri], pos]
-			// ToAssociation
-		)
-	|>];
+		"result" -> FindDocumentHighlight[state["openedDocs"][uri], pos]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1157,7 +1155,6 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 			"result" -> (
 				state["openedDocs"][uri]
 				// ToDocumentSymbol
-				// ToAssociation
 			)
 		|>]
 	]
@@ -1195,17 +1192,10 @@ handleRequest["textDocument/codeAction", msg_, state_] := With[
 		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation[
-			(* Command[<|
-				"title" -> "Open Documentation",
-				"command" -> "openRef",
-				"arguments" -> {"C:/Program Files/Wolfram Research/Mathematica/12.1/Documentation/English/System/ReferencePages/Symbols/List.nb"}
-			|>] *)
-			GetCodeActionsInRange[doc, range]
-		]
-	|>];
+		"result" -> GetCodeActionsInRange[doc, range]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1234,7 +1224,6 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 			"result" -> (
 				state["openedDocs"][uri]
 				// FindDocumentColor
-				// ToAssociation
 			)
 		|>]
 	]
@@ -1274,13 +1263,10 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> (
-			GetColorPresentation[doc, color, range]
-			// ToAssociation
-		)
-	|>];
+		"result" -> GetColorPresentation[doc, color, range]
+	|>]];
 
 	{
 		"Continue",
@@ -1298,14 +1284,14 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 
 
 handleRequest[_, msg_, state_] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"error" -> ServerError["MethodNotFound",
 			msg
 			// ErrorMessageTemplates["MethodNotFound"]
 			// LogError
 		]
-	|>];
+	|>]];
 
 	{"Continue", state}
 )
@@ -1366,13 +1352,13 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 			Part[state["scheduledTasks"], pos]["type"]
 			// StringJoin[#, " request is cancelled."]&
 			// LogDebug;
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> id,
 				"error" -> ServerError[
 					"RequestCancelled",
 					"The request is cancelled."
 				]
-			|>];
+			|>]];
 			state
 			// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
 		),
@@ -1551,13 +1537,13 @@ showMessage[message_String, msgType_String, state_WorkState] := (
 	// Replace[_?MissingQ :> MessageType["Error"]]
 	// LogDebug
 	// (type \[Function] 
-		sendResponse[state["client"], <|
+		sendMessage[state["client"], NotificationMessage[<|
 			"method" -> "window/showMessage", 
 			"params" -> <|
 				"type" -> type,
 				"message" -> message
 			|>
-		|>]
+		|>]]
 	)
 )
 
@@ -1566,13 +1552,13 @@ logMessage[message_String, msgType_String, state_WorkState] := (
 	// Replace[_?MissingQ :> MessageType["Error"]]
 	// LogDebug
 	// (type \[Function] 
-		sendResponse[state["client"], <|
+		sendMessage[state["client"], NotificationMessage[<|
 			"method" -> "window/logMessage", 
 			"params" -> <|
 				"type" -> type,
 				"message" -> message
 			|>
-		|>]
+		|>]]
 	)
 )
 
@@ -1581,7 +1567,7 @@ logMessage[message_String, msgType_String, state_WorkState] := (
 (*Handle Error*)
 
 
-ServerError[errorType_String, msg_String] := (
+ServerError[errorType_String, msg_String] := ResponseError[
 	<|
 		"code" -> (
 			errorType
@@ -1593,7 +1579,7 @@ ServerError[errorType_String, msg_String] := (
 		), 
 		"message" -> msg
 	|>
-)
+]
 
 
 ErrorMessageTemplates = <|
@@ -1684,17 +1670,17 @@ doNextScheduledTask[state_WorkState] := (
 						(* if there will not be a same task in the future, do it now *)
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
-							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendResponse[state["client"], <|"id" -> task["params"]["id"], "result" -> <||>|>]], *)
+							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
 							task["callback"][newState, task["params"]]
 							// AbsoluteTiming
 							// Apply[(LogInfo[{task["type"], #1}];#2)&],
-							sendResponse[newState["client"], <|
+							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
 									"InternalError",
 									"There is no callback function for this scheduled task."
 								]
-							|>];
+							|>]];
 							{"Continue", newState}
 						],
 						(* find a recent duplicate request *)
@@ -1702,13 +1688,13 @@ doNextScheduledTask[state_WorkState] := (
 							(* execute fallback function if applicable *)
 							task["duplicateFallback"][newState, task["params"]],
 							(* otherwise, return ContentModified error *)
-							sendResponse[newState["client"], <|
+							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
 									"RequestCancelled",
 									"There is a more recent duplicate request."
 								]
-							|>];
+							|>]];
 							{"Continue", newState}
 						]
 					}]
