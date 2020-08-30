@@ -1270,8 +1270,9 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
                     CompareNodePosition[#, endPos, 1] <= 0
                 )&) :> (
                     FindFile[FileNameJoin[{"ReferencePages", "Symbols", tokenString <> ".nb"}]]
-                    // If[FailureQ[#],
-                        Missing["NotFound"],
+                    // If[!FailureQ[#] &&
+                        (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
+                        ($OperatingSystem == "Windows" \[Implies] AbsoluteFileName[#] == #),
                         LspCodeAction[<|
                             "title" -> "Documentation: " <> tokenString,
                             "kind" -> CodeActionKind["Empty"],
@@ -1280,7 +1281,8 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
                                 "command" -> "openRef",
                                 "arguments" -> {#}
                             |>
-                        |>]
+                        |>],
+                        Missing["NotFound"]
                     ]&
                 ),
                 Missing["NotFound"],
