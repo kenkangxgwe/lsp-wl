@@ -51,6 +51,9 @@ ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 DapEvent::usage = "is the type of Event interface in DAP."
 DapResponse::usage = "is the type of Response interface in DAP."
 DapThread::usage = "is the type of Thread interface in DAP."
+StackFrame::usage = "is the type of StackFrame interface in DAP."
+Scope::usage = "is the type of Scope interface in DAP."
+DapVariable::usage = "is the type of Variable interface in DAP."
 
 
 (* ::Section:: *)
@@ -402,8 +405,8 @@ DeclareType[DapEvent, <|
 DeclareType[DapResponse, <|
     "seq" -> _Integer,
     "type" -> "response",
-    "request_seq -> _Integer,
-    "success" -> ?BooleanQ,
+    "request_seq" -> _Integer,
+    "success" -> _?BooleanQ,
     "command" -> _String,
     "message" -> _String,
     "body" -> _
@@ -412,6 +415,30 @@ DeclareType[DapResponse, <|
 DeclareType[DapThread, <|
     "id" -> _?NumericQ,
     "name" -> _String
+|>]
+
+DeclareType[StackFrame, <|
+    "id" -> _?NumericQ,
+    "name" -> _String,
+    "line" -> _Integer,
+    "column" -> _Integer
+|>]
+
+DeclareType[Scope, <|
+    "name" -> _String,
+    "variablesReference" -> _Integer,
+    "namedVariables" -> _Integer,
+    "indexedVariables" -> _Integer,
+    "expensive" -> _?BooleanQ
+|>]
+
+DeclareType[DapVariable, <|
+    "name" -> _String,
+    "value" -> _String,
+    "type" -> _String,
+    "variablesReference" -> _Integer,
+    "namedVariables" -> _Integer,
+    "indexedVariables" -> _Integer
 |>]
 
 
