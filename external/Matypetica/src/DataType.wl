@@ -25,8 +25,7 @@ ReplaceKeyBy[replaceRule_Rule] is an operator that can be applied to an object."
 DeleteKey::usage = "DeleteKey[object, key] deletes the key-value pair from object[key].
 DeleteKey[object, {key1, key2}] deletes the key-value pair at object[key1][key2].
 DeleteKey[keys] is an operator that can be applied to an object."
-TypeCheckOn::usage = "TypeCheckOn[] turns on type checking."
-TypeCheckOff::usage = "TypeCheckOff[] turns off type checking."
+TypeCheck::usage = "TypeCheck[toggle_?BooleanQ] turns on/off the type checking."
 
 
 Begin["`Private`"]
@@ -42,10 +41,22 @@ DeclareType[typename_Symbol, typekey:<|(_String -> _)...|>] := Module[
 	},
 
 	(* Getter *)
-	typename[typedict_Association][key_String] := TypeCheck[typedict[key], typekey[key]];
+	typename[typedict_Association][key_String] := (
+        If[$typeCheckQ,
+            Which[
+                MissingQ[typedict[key]],
+                    Null,
+                !KeyMemberQ[typekey, key],
+                    Message[TypeCheck::miskey, typename, key],
+                !MatchQ[typedict[key], typekey[key]],
+                    Message[TypeCheck::mispat, typename, key, typedict[key]]
+            ]
+        ];
+        typedict[key]
+    );
 	typename[typedict_Association][key_String, default_] := With[
 		{value = typename[typedict][key]},
-		If[MissingQ[value], TypeCheck[default, typekey[key]], value]
+		If[MissingQ[value], typename[<|key -> default|>][key], value]
 	];
     
     (* Deserializer*)
@@ -187,14 +198,11 @@ ConstructType[parameters_Association, pattern:Association[(Verbatim[Repeated]|Ve
 (*TypeCheck*)
 
 
-TypeCheckOff[] := (ClearAll[TypeCheck]; TypeCheck[v_, ___] := v)
-TypeCheckOn[] := (
-    ClearAll[TypeCheck];
-    TypeCheck[v_?MissingQ, _] := v;
-    TypeCheck[_, p_?MissingQ] := p;
-    TypeCheck[val_, pat_] := If[MatchQ[val, pat], val, Missing["PatternMismatch", {val, pat}]];
-)
-TypeCheckOn[]
+TypeCheck::miskey = "`1` doesn't contains key `2`."
+TypeCheck::mispat = "`3` doesn't match the pattern of \"`2`\" in `1`."
+
+TypeCheck[toggle_?BooleanQ] := ($typeCheckQ = toggle)
+TypeCheck[True]
 
 
 (* ::Section:: *)
