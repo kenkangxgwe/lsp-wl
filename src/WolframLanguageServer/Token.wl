@@ -215,7 +215,8 @@ GenOptions[token_String, o:OptionsPattern[]] := (
     token
     // StringTemplate["Options[``]"]
     // ToExpression
-    // Replace[_Options -> {}]
+    // Quiet
+    // Replace[_Options|_?FailureQ -> {}]
     // Map[ToString[#, InputForm]&]
     // Replace[{options__} :> (
         If[OptionValue["Format"] == MarkupKind["Markdown"],

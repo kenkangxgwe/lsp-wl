@@ -89,6 +89,21 @@ If[$VersionNumber >= 12.0,
 	]
 ],
 
+If[$FrontEnd === Null,
+VerificationTest[
+	TokenDocumentation["$FrontEndSession", "usage"],
+	StringJoin[
+		"**$FrontEndSession**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/$FrontEndSession.html)&emsp;(Protected, ReadProtected)\n\n\n",
+		"```mathematica\n",
+		"$FrontEndSession \n",
+		"```\n\n",
+		"is a global symbol that represents the current session of the front end from which the kernel is being run.\n\n"
+	],
+	TestID -> "KnownSymbolUsage 4"
+],
+Nothing
+],
+
 VerificationTest[
 	TokenDocumentation["Syntax", "stresc"],
 	StringJoin[
