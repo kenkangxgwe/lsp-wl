@@ -268,19 +268,19 @@ InsertCell[rootCell_CellNode, nextCell_CellNode] := (
         rootCell
         // ReplaceKeyBy[{"children", -1} -> (InsertCell[#, nextCell]&)],
         rootCell
-        // If[nextCell["level"] == Infinity,
+        // If[Length[rootCell["children"]] > 0,
+            ReplaceKeyBy[{"children", -1} -> TerminateCell],
+            If[nextCell["level"] == Infinity,
             (* Joins the codeRange with root *)
             ReplaceKeyBy["codeRange" -> (Join[#, nextCell["codeRange"]]&)],
             Identity
         ]
-        // If[Length[rootCell["children"]] > 0,
-            ReplaceKeyBy[{"children", -1} -> TerminateCell],
-            Identity
         ]
         (* appends the new cell in the children list *)
         // ReplaceKeyBy["children" -> Append[
             nextCell
-            // If[nextCell["level"] == Infinity,
+            // If[nextCell["level"] == Infinity &&
+                Length[nextCell["codeRange"]] > 0,
                 (* removes codeRange *)
                 ReplaceKey[{"range", -1} -> (
                     First[First[nextCell["codeRange"]]] - 1

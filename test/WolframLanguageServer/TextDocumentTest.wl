@@ -112,6 +112,77 @@ VerificationTest[
 ],
 
 VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name*)",
+			"",
+			"",
+			"(* " ~~ "::nostyle::" ~~ " *)",
+			"(*section name*)",
+			"",
+			""
+		}
+	|>]],
+	{
+		DocumentSymbol[<|
+			"name" -> "section name",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 7,
+					"character" -> 0
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 2
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 14
+				|>]
+			|>],
+			"children" -> {
+				DocumentSymbol[<|
+					"name" -> "section name",
+					"detail" -> "nostyle",
+					"kind" -> 15,
+					"range" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 4,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 7,
+							"character" -> 0
+						|>]
+					|>],
+					"selectionRange" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 2
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 14
+						|>]
+					|>],
+					"children"->{}
+				|>]
+			}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolEmptySymbol1"
+],
+
+VerificationTest[
 	FindAllCodeRanges[TextDocument[<|
 		"text" -> {
 			"(* " ~~ "::Package::" ~~ " *)",
