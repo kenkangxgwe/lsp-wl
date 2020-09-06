@@ -637,7 +637,7 @@ RPCPatterns = <|
 
 constructRPCBytes[msg_Association] := (
 	Check[
-		ExportByteArray[msg, "RawJSON"],
+		ExportByteArray[msg, "RawJSON", "Compact" -> True],
 		(*
 			if the result is not able to convert to JSON,
 			returns an error respond

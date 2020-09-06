@@ -14,7 +14,9 @@ Please see the help info below.
 
 
 (* For windows, this should be set for Print to correctly format outputs. *)
-SetOptions[$Output, FormatType -> OutputForm]
+If[$OperatingSystem == "Windows" && $FrontEnd === Null,
+    SetOptions[$Output, FormatType -> OutputForm]
+]
 
 (* ::Subsection:: *)
 (*RootDirectory*)
@@ -94,6 +96,7 @@ Options:
 
     --test, -t                     Run all tests
     --log=loglevel, -l loglevel    Specifiy logging level as debug, info, warn or error (default: info)
+    --no-start                     Do not run the language server. (Useful when running in notebook)
     --socket=port                  Connect to a socket server on port (default: 6536)
     --tcp-server=port              Start a socket server on port (default: 6536)
     --pipe=pipeName                Connect via a named pipe (Windows only)
@@ -210,12 +213,14 @@ Module[
 *)
     << WolframLanguageServer`Server`;
     WolframLanguageServer`CheckReturnTypeQ = True;
-    LogDebug @ WolframLanguageServer`Server`WLServerStart[
-        "Stream" -> stream,
-        "ClientPid" -> clientPid,
-        "Port" -> port,
-        "Pipe" -> pipe,
-        "WorkingDir" -> WolframLanguageServer`RootDirectory
+    If[!MemberQ[WolframLanguageServer`CommandLine, "--no-start"],
+        LogDebug @ WolframLanguageServer`Server`WLServerStart[
+            "Stream" -> stream,
+            "ClientPid" -> clientPid,
+            "Port" -> port,
+            "Pipe" -> pipe,
+            "WorkingDir" -> WolframLanguageServer`RootDirectory
+        ]
     ];
     Quit[0]
 ];
