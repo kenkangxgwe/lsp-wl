@@ -272,10 +272,10 @@ InsertCell[rootCell_CellNode, nextCell_CellNode] := (
         // If[Length[rootCell["children"]] > 0,
             ReplaceKeyBy[{"children", -1} -> TerminateCell],
             If[nextCell["level"] == Infinity,
-            (* Joins the codeRange with root *)
-            ReplaceKeyBy["codeRange" -> (Join[#, nextCell["codeRange"]]&)],
-            Identity
-        ]
+                (* Joins the codeRange with root *)
+                ReplaceKeyBy["codeRange" -> (Join[#, nextCell["codeRange"]]&)],
+                Identity
+            ]
         ]
         (* appends the new cell in the children list *)
         // ReplaceKeyBy["children" -> Append[
@@ -377,7 +377,6 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
 
 
 FindAllCodeRanges[doc_TextDocument] := (
-
     Cases[
         divideCells[doc],
         node_CellNode :> node["codeRange"],
@@ -635,6 +634,7 @@ ToDocumentSymbolImpl[node_] := (
 )
 
 
+(* Convert the line range of the given document to LSP Range. *)
 ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<|
     "start" -> LspPosition[<|
         "line" -> startLine - 1,
@@ -655,8 +655,9 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<
 |>]
 
 
-GetSymbolList[node_] := (
-    node
+(* Get all the symbols in the specified nested list AST node. *)
+GetSymbolList[nestedList_] := (
+    nestedList
     // Replace[{
         AstPattern["Function"][functionName:"List", arguments_] :> (
             arguments
@@ -1267,6 +1268,22 @@ FindTopLevelSymbols[node_, name_String] := (
 (*CodeAction*)
 
 
+$referencePageCache = <||>
+
+hasReferencePage[symbol_String] := (
+    If[$referencePageCache // KeyMemberQ[symbol],
+        $referencePageCache[symbol],
+        $referencePageCache[symbol] =
+            FindFile[FileNameJoin[{"ReferencePages", "Symbols", symbol <> ".nb"}]]
+            // If[!FailureQ[#] &&
+                (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
+                (!$OperatingSystem == "Windows" || AbsoluteFileName[#] == #),
+                #,
+                Missing["NotFound"]
+            ]&
+    ]
+)
+
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
     {
         startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
@@ -1278,27 +1295,24 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
         CellToAST[doc, lineRange]
         // (ast \[Function] (
             FirstCase[
-               ast,
+                ast,
                 AstPattern["Token"][tokenString_]?((
                     (* The token node overlaps the range *)
                     CompareNodePosition[#, startPos, -1] >= 0 &&
                     CompareNodePosition[#, endPos, 1] <= 0
                 )&) :> (
-                    FindFile[FileNameJoin[{"ReferencePages", "Symbols", tokenString <> ".nb"}]]
-                    // If[!FailureQ[#] &&
-                        (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
-                        ($OperatingSystem == "Windows" \[Implies] AbsoluteFileName[#] == #),
+                    hasReferencePage[tokenString]
+                    // Replace[referencePath_?(MissingQ /* Not) :> (
                         LspCodeAction[<|
                             "title" -> "Documentation: " <> tokenString,
                             "kind" -> CodeActionKind["Empty"],
                             "command" -> <|
                                 "title" -> "Documentation: " <> tokenString,
                                 "command" -> "openRef",
-                                "arguments" -> {#}
+                                "arguments" -> {referencePath}
                             |>
-                        |>],
-                        Missing["NotFound"]
-                    ]&
+                        |>]
+                    )]
                 ),
                 Missing["NotFound"],
                 AstLevelspec["DataWithSource"],
