@@ -165,7 +165,7 @@ GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
             } // Through
             // Apply[
                 If[OptionValue["Format"] == MarkupKind["Markdown"],
-                    StringTemplate["**`1`**&nbsp;`2`&emsp;(`3`)\n"],
+                    StringTemplate["**`1`** `2` `3`\n"],
                     StringTemplate["`1`\t(`3`)\n"]
                 ]
             ]
@@ -205,7 +205,8 @@ Options[GenAttributes] = {
 GenAttributes[token_String, o:OptionsPattern[]] := (
     Attributes[token]
     // Replace[_Attributes -> {}]
-    // StringRiffle[#, ", "]&
+    // StringRiffle[#, {"(", ", ", ")"}]&
+    // Replace["()" -> ""]
 )
 
 Options[GenOptions] = {
