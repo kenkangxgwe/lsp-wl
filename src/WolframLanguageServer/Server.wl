@@ -27,7 +27,7 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
-Needs["WolframLanguageServer`Debugger`"]
+Needs["WolframLanguageServer`Adaptor`"]
 
 
 (* ::Section:: *)
@@ -893,6 +893,7 @@ sendMessage[client_, res:(_ResponseMessage|_NotificationMessage)] := (
 (* For DAP: event and response *)
 sendMessage[client_, res:(_DapEvent|_DapResponse)] := (
 	res
+	// LogDebug
 	// ToAssociation
 	// constructRPCBytes
 	// WriteMessage[client]
@@ -1015,6 +1016,19 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		text
 	},
 
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "continued",
+		"body" -> <|
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsContinued" -> True *)
+		|>
+	|>]];
+
 	text = GetDocumentText[
 		state["openedDocs"][args["uri"]],
 		ConstructType[args["range"], _LspRange]
@@ -1024,8 +1038,8 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		"type" -> "event",
 		"event" -> "output",
 		"body" -> <|
-			"category" -> "stdout",
-			"output" -> "Input:",
+			(* "category" -> "stdout", *)
+			"output" -> text,
 			"group" -> "start"
 		|>
 	|>]];
@@ -1034,43 +1048,13 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		"type" -> "event",
 		"event" -> "output",
 		"body" -> <|
-			"category" -> "stdout",
-			"output" -> StringJoin[text],
-			"variableReference" -> 1
-		|>
-	|>]];
-
-	sendMessage[state["debugSession"]["client"], DapEvent[<|
-		"type" -> "event",
-		"event" -> "output",
-		"body" -> <|
-			"category" -> "stdout",
-			"output" -> "",
-			"group" -> "end"
-		|>
-	|>]];
-
-	sendMessage[state["debugSession"]["client"], DapEvent[<|
-		"type" -> "event",
-		"event" -> "output",
-		"body" -> <|
-			"category" -> "stdout",
-			"output" -> "Output:",
-			"group" -> "start"
-		|>
-	|>]];
-
-	sendMessage[state["debugSession"]["client"], DapEvent[<|
-		"type" -> "event",
-		"event" -> "output",
-		"body" -> <|
-			"category" -> "stdout",
-			"output" -> StringJoin[DebuggerEvaluate[
-				<|"expression" -> text|>,
-				state["debugSession"]["subKernel"]
+			(* "category" -> "stdout", *)
+			"output" -> (
+				DebuggerEvaluate[
+					<|"expression" -> text|>,
+					state["debugSession"]["subKernel"]
 				]
-			],
-			"variableReference" -> 1
+			)
 		|>
 	|>]];
 
@@ -1078,9 +1062,10 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		"type" -> "event",
 		"event" -> "output",
 		"body" -> <|
-			"category" -> "stdout",
+			(* "category" -> "stdout", *)
 			"output" -> "",
-			"group" -> "end"
+			"group" -> "end",
+			"variablesReference" -> 2
 		|>
 	|>]];
 
@@ -2014,6 +1999,21 @@ handleDapRequest["configurationDone", msg_, state_WorkState] := (
 		"body" -> <||>
 	|>]];
 
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "stopped",
+		"body" -> <|
+			"reason" -> "pause",
+			"description" -> "Cell Evaluated Successfully",
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
+		|>
+	|>]];
+
 	{"Continue", state}
 )
 
@@ -2200,7 +2200,8 @@ handleDapRequest["evaluate", msg_, state_WorkState] := (
 			"result" -> DebuggerEvaluate[
 				msg["arguments"],
 				state["debugSession"]["subKernel"]
-			]
+			],
+			"variablesReference" -> 0
 		|>
 	|>]];
 
