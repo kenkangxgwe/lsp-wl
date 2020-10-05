@@ -28,7 +28,7 @@ Needs["WolframLanguageServer`TextDocument`"]
 VerificationTest[
 	TokenDocumentation["BeginPackage", "usage"],
 	StringJoin[
-		"**BeginPackage**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/BeginPackage.html)&emsp;(Protected)\n\n\n",
+		"**BeginPackage** [*reference*](https://reference.wolfram.com/language/ref/BeginPackage.html) (Protected)\n\n\n",
 		"```mathematica\n",
 		"BeginPackage[\"context`\"]\n",
 		"```\n\n",
@@ -44,7 +44,7 @@ VerificationTest[
 VerificationTest[
 	TokenDocumentation["Replace", "usage"],
 	StringJoin[
-		"**Replace**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/Replace.html)&emsp;(Protected)\n\n\n",
+		"**Replace** [*reference*](https://reference.wolfram.com/language/ref/Replace.html) (Protected)\n\n\n",
 		"```mathematica\n",
 		"Replace[expr,rules]\n",
 		"```\n\n",
@@ -69,7 +69,7 @@ If[$VersionNumber >= 12.0,
 	VerificationTest[
 		TokenDocumentation["SlotSequence", "usage"],
 		StringJoin[
-			"**SlotSequence**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/SlotSequence.html)&emsp;(NHoldAll, Protected)\n\n\n",
+			"**SlotSequence** [*reference*](https://reference.wolfram.com/language/ref/SlotSequence.html) (NHoldAll, Protected)\n\n\n",
 			"```mathematica\n",
 			"## \n",
 			"```\n\n",
@@ -93,7 +93,7 @@ If[$FrontEnd === Null,
 VerificationTest[
 	TokenDocumentation["$FrontEndSession", "usage"],
 	StringJoin[
-		"**$FrontEndSession**&nbsp;[*reference*](https://reference.wolfram.com/language/ref/$FrontEndSession.html)&emsp;(Protected, ReadProtected)\n\n\n",
+		"**$FrontEndSession** [*reference*](https://reference.wolfram.com/language/ref/$FrontEndSession.html) (Protected, ReadProtected)\n\n\n",
 		"```mathematica\n",
 		"$FrontEndSession \n",
 		"```\n\n",
