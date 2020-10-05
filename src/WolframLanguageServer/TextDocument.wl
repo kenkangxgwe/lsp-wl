@@ -25,6 +25,7 @@ FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:Opt
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
 GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
+GetDocumentText::usage = "GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
 FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
 GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
 
@@ -194,7 +195,9 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
     style = If[styleLine == 0,
         AdditionalStyle["File"],
         Part[doc["text"], styleLine]
-        // StringCases["(* "~~"::"~~Shortest[style___]~~"::"~~" *)" :> style]
+        // StringCases["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)" :> style]
+        // First
+        // StringSplit[#, "::"]&
         // First
         // Replace["" -> "[empty]"]
     ];
@@ -270,11 +273,12 @@ InsertCell[rootCell_CellNode, nextCell_CellNode] := (
         rootCell
         // If[Length[rootCell["children"]] > 0,
             ReplaceKeyBy[{"children", -1} -> TerminateCell],
-            If[nextCell["level"] == Infinity,
+            Identity
+        ]
+        // If[nextCell["level"] == Infinity,
             (* Joins the codeRange with root *)
             ReplaceKeyBy["codeRange" -> (Join[#, nextCell["codeRange"]]&)],
             Identity
-        ]
         ]
         (* appends the new cell in the children list *)
         // ReplaceKeyBy["children" -> Append[
@@ -304,15 +308,11 @@ TerminateCell[rootcell_CellNode] := (
             Max[
                 Last[newRootCell["range"]],
                 newRootCell["children"]
-                // Replace[{
-                    {___, lastChild_} :> Last[lastChild["range"]],
-                    _ -> -Infinity
-                }],
+                // Last[#, <|"range" -> -Infinity|>]&
+                // Key["range"],
                 newRootCell["codeRange"]
-                // Replace[{
-                    {___, {_, last_}} :> last,
-                    _ -> -Infinity
-                }]
+                // Last[#, {-Infinity}]&
+                // Last
             ]
         )]
     ))
@@ -376,7 +376,6 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
 
 
 FindAllCodeRanges[doc_TextDocument] := (
-
     Cases[
         divideCells[doc],
         node_CellNode :> node["codeRange"],
@@ -384,6 +383,19 @@ FindAllCodeRanges[doc_TextDocument] := (
     ]
     // Catenate
     // Map[ToLspRange[doc, #]&]
+)
+
+GetDocumentText[doc_TextDocument, range_LspRange] := (
+    doc["text"]
+    // Take[#, {
+        range["start"]["line"] + 1,
+        range["end"]["line"] + 1
+    }]&
+    // ReplacePart[#, 1 ->
+        StringDrop[First[#], range["start"]["character"]]]&
+    // ReplacePart[#, -1 ->
+        StringTake[Last[#], range["end"]["character"]]]&
+    // StringRiffle[#, "\n"]&
 )
 
 
@@ -451,54 +463,37 @@ ToDocumentSymbol[doc_TextDocument] := (
 )
 
 
-ToDocumentSymbolImpl[doc_TextDocument, node_] := (
-    node
-    // Replace[{
-        _CellNode?(Key["style"] /* AnonymousStyleQ /* Not) :> (
-            DocumentSymbol[<|
-                "name" -> node["name"],
-                "detail" -> node["style"],
-                "kind" -> If[node["style"] == "Package",
-                    SymbolKind["Package"],
-                    SymbolKind["String"]
-                ],
-                "range" -> ToLspRange[doc, node["range"]],
-                "selectionRange" -> node["selectionRange"],
-                "children" -> (
-                    Join[
-                        If[!MissingQ[node["codeRange"]],
-                            node["codeRange"]
-                            // Map[CellToAST[doc ,#]&]
-                            // Flatten
-                            // Map[ToDocumentSymbolImpl],
-                            {}
-                        ],
-                        If[!MissingQ[node["children"]],
-                            node["children"]
-                            // Map[ToDocumentSymbolImpl[doc, #]&],
-                            {}
-                        ]
-                    ] // Flatten
-                )
-            |>]
-        ),
-        _CellNode :> (
-            Join[
-                If[!MissingQ[node["codeRange"]],
-                    node["codeRange"]
-                    // Map[CellToAST[doc, #]&]
-                    // Flatten
-                    // Map[ToDocumentSymbolImpl],
-                    {}
-                ],
-                If[!MissingQ[node["children"]],
-                    node["children"]
-                    // Map[ToDocumentSymbolImpl[doc, #]&],
-                    {}
-                ]
-            ] // Flatten
-        )
-    }]
+ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
+    Join[
+        If[!MissingQ[node["codeRange"]],
+            node["codeRange"]
+            // Map[CellToAST[doc, #]&]
+            // Flatten
+            // Map[ToDocumentSymbolImpl],
+            {}
+        ],
+        If[!MissingQ[node["children"]],
+            node["children"]
+            // Map[ToDocumentSymbolImpl[doc, #]&],
+            {}
+        ]
+    ]
+    // Flatten
+    // If[!AnonymousStyleQ[node["style"]],
+        DocumentSymbol[<|
+            "name" -> node["name"],
+            "detail" -> node["style"],
+            "kind" -> If[node["style"] == "Package",
+                (* This shouldn't be reachable if "Package" is an anonymous style. *)
+                SymbolKind["Package"],
+                SymbolKind["String"]
+            ],
+            "range" -> ToLspRange[doc, node["range"]],
+            "selectionRange" -> node["selectionRange"],
+            "children" -> #
+        |>]&,
+        Identity
+    ]
 )
 
 ToDocumentSymbolImpl[node_] := (
@@ -621,6 +616,7 @@ ToDocumentSymbolImpl[node_] := (
 )
 
 
+(* Convert the line range of the given document to LSP Range. *)
 ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<|
     "start" -> LspPosition[<|
         "line" -> startLine - 1,
@@ -641,8 +637,9 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<
 |>]
 
 
-GetSymbolList[node_] := (
-    node
+(* Get all the symbols in the specified nested list AST node. *)
+GetSymbolList[nestedList_] := (
+    nestedList
     // Replace[{
         AstPattern["Function"][functionName:"List", arguments_] :> (
             arguments
@@ -1253,6 +1250,22 @@ FindTopLevelSymbols[node_, name_String] := (
 (*CodeAction*)
 
 
+$referencePageCache = <||>
+
+hasReferencePage[symbol_String] := (
+    If[$referencePageCache // KeyMemberQ[symbol],
+        $referencePageCache[symbol],
+        $referencePageCache[symbol] =
+            FindFile[FileNameJoin[{"ReferencePages", "Symbols", symbol <> ".nb"}]]
+            // If[!FailureQ[#] &&
+                (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
+                (!$OperatingSystem == "Windows" || AbsoluteFileName[#] == #),
+                #,
+                Missing["NotFound"]
+            ]&
+    ]
+)
+
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
     {
         startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
@@ -1264,27 +1277,24 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
         CellToAST[doc, lineRange]
         // (ast \[Function] (
             FirstCase[
-               ast,
+                ast,
                 AstPattern["Token"][tokenString_]?((
                     (* The token node overlaps the range *)
                     CompareNodePosition[#, startPos, -1] >= 0 &&
                     CompareNodePosition[#, endPos, 1] <= 0
                 )&) :> (
-                    FindFile[FileNameJoin[{"ReferencePages", "Symbols", tokenString <> ".nb"}]]
-                    // If[!FailureQ[#] &&
-                        (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
-                        ($OperatingSystem == "Windows" \[Implies] AbsoluteFileName[#] == #),
+                    hasReferencePage[tokenString]
+                    // Replace[referencePath_?(MissingQ /* Not) :> (
                         LspCodeAction[<|
                             "title" -> "Documentation: " <> tokenString,
                             "kind" -> CodeActionKind["Empty"],
                             "command" -> <|
                                 "title" -> "Documentation: " <> tokenString,
                                 "command" -> "openRef",
-                                "arguments" -> {#}
+                                "arguments" -> {referencePath}
                             |>
-                        |>],
-                        Missing["NotFound"]
-                    ]&
+                        |>]
+                    )]
                 ),
                 Missing["NotFound"],
                 AstLevelspec["DataWithSource"],
