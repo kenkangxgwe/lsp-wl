@@ -56,8 +56,8 @@ would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions (currently 1.0) from
-the Wolfram kernel / Mathematica.
+2. Install the dependent paclets with the correct versions (currently 1.0 or
+later) from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
     PacletInstall["CodeParser"]

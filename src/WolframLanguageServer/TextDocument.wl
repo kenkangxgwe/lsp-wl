@@ -351,7 +351,7 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
             {StringRepeat::intp (* before 12.0 *)}
         ] // Quiet,
     #]&
-    // CodeParser`CodeParse
+    // CodeParser`CodeParse[#, "TabWidth" -> 1]&
     // Part[#, 2]&
 )
 
@@ -828,9 +828,9 @@ DiagnoseDoc[doc_TextDocument] := (
     // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
     // StringRiffle[#, "\n"]&
     // Replace[err:Except[_String] :> (LogError[doc]; "")]
-    // CodeInspector`CodeInspect
+    // CodeInspector`CodeInspect[#, "TabWidth" -> 1]&
     // Replace[_?FailureQ -> {}]
-    // ReplaceAll[CodeInspector`InspectionObject[tag_, description_, severity_, data_] :> Diagnostic[<|
+    // Cases[CodeInspector`InspectionObject[tag:Except["BadSymbol"], description_, severity_, data_] :> Diagnostic[<|
         "range" -> (
             data
             // Key[CodeParser`Source]
@@ -844,17 +844,17 @@ DiagnoseDoc[doc_TextDocument] := (
             severity
             // Replace[{
                 "Fatal" -> "Error",
+                "Error" -> "Warning",
+                "Warning" -> "Information",
                 "Formatting"|"Remark" -> "Hint"
             }]
-            // Replace[{
-                "Warning" :> (
-                    tag
-                    // Replace[{
-                        "ExperimentalSymbol" -> "Hint",
-                        _ -> "Warning"
-                    }]
-                )
-            }]
+            // (newSeverity \[Function] (
+                tag
+                // Replace[{
+                    "ExperimentalSymbol" -> "Hint",
+                    _ -> newSeverity
+                }]
+            ))
             // DiagnosticSeverity
         ),
         "source" -> "Wolfram",
@@ -865,7 +865,7 @@ DiagnoseDoc[doc_TextDocument] := (
                 (* // ReplaceAll[{CodeInspector`Format`LintMarkup[content_, ___] :> (
                     ToString[content]
                 )}] *)
-                // StringReplace["``" -> "\""]
+                // StringReplace["``"|"**" -> "\""]
             ]
         )
     |>]]
