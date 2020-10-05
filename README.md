@@ -2,9 +2,9 @@
 
 [![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/kenkangxgwe/lsp-wl/workflows/CI/badge.svg?branch=develop)](https://github.com/kenkangxgwe/lsp-wl/actions?query=workflow%3ACI+branch%3Adevelop)
 
 ![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
-> by [kenkangxgwe](https://github.com/kenkangxgwe) and [hxianglong](https://github.com/huxianglong) 
 
 <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
 **Table of Contents**
