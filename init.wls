@@ -18,6 +18,7 @@ If[$OperatingSystem == "Windows" && $FrontEnd === Null,
     SetOptions[$Output, FormatType -> OutputForm]
 ]
 
+
 (* ::Subsection:: *)
 (*RootDirectory*)
 
@@ -117,10 +118,10 @@ Options:
 (*Version*)
 
 
-WolframLanguageServer`Version = "0.2.2"
+WolframLanguageServer`$Version = "0.2.2"
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
     Print["
-Wolfram Language Server " <> WolframLanguageServer`Version <> " running on
+Wolfram Language Server " <> WolframLanguageServer`$Version <> " running on
 Wolfram Language " <> $Version <> "\n"];
     Quit[];
 ];

@@ -1089,7 +1089,7 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> FindDefinitions[doc, pos]
-	|>]] // AbsoluteTiming // First // LogDebug;
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1109,7 +1109,7 @@ handleRequest["textDocument/references", msg_, state_] := With[
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
-	|>]] // AbsoluteTiming // First // LogDebug;
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1548,33 +1548,29 @@ MessageType = <|
 |>
 
 showMessage[message_String, msgType_String, state_WorkState] := (
-	MessageType[msgType]
-	// Replace[_?MissingQ :> MessageType["Error"]]
-	// LogDebug
-	// (type \[Function] 
-		sendMessage[state["client"], NotificationMessage[<|
-			"method" -> "window/showMessage", 
-			"params" -> <|
-				"type" -> type,
-				"message" -> message
-			|>
-		|>]]
-	)
+	sendMessage[state["client"], NotificationMessage[<|
+		"method" -> "window/showMessage",
+		"params" -> <|
+			"type" -> (
+				MessageType[msgType]
+				// Replace[_?MissingQ :> MessageType["Error"]]
+			),
+			"message" -> message
+		|>
+	|>]]
 )
 
 logMessage[message_String, msgType_String, state_WorkState] := (
-	MessageType[msgType]
-	// Replace[_?MissingQ :> MessageType["Error"]]
-	// LogDebug
-	// (type \[Function] 
-		sendMessage[state["client"], NotificationMessage[<|
-			"method" -> "window/logMessage", 
-			"params" -> <|
-				"type" -> type,
-				"message" -> message
-			|>
-		|>]]
-	)
+	sendMessage[state["client"], NotificationMessage[<|
+		"method" -> "window/logMessage",
+		"params" -> <|
+			"type" -> (
+				MessageType[msgType]
+				// Replace[_?MissingQ :> MessageType["Error"]]
+			),
+			"message" -> message
+		|>
+	|>]]
 )
 
 
@@ -1770,114 +1766,125 @@ defaultConfig = <|
 
 
 (* ::Subsection:: *)
-(*check upgrades*)
+(*initial checks*)
 
 
 initialCheck[state_WorkState] := (
 	checkDependencies[state];
-	If[
-		DateDifference[
-			DateObject[state["config"]["configFileConfig"]["lastCheckForUpgrade"]],
-			Today
-		] < ServerConfig["updateCheckInterval"],
-		logMessage[
-			"Upgrade not checked, only a few days after the last check.",
-			"Log",
-			state
-		],
-		(* check for upgrade if not checked for more than checkInterval days *)
-		checkGitRepo[state];
-		(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
-		// saveConfig *)
-	];
+	checkUpdates[state];
 	{"Continue", state}
 )
 
-checkGitRepo[state_WorkState] := (
-	Check[Needs["GitLink`"],
-		showMessage[
-			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
-			"Info",
-			state
-		];
-		Return[]
-	] // Quiet;
+(* ::Subsubsection:: *)
+(*checkDependencies*)
 
-	If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
-		showMessage[
-			"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
-			"Info",
-			state
-		];
-		Return[]
-	];
 
-	With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
-		If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
-			logMessage[
-				"Upgrade not checked, the current branch is not 'master'.",
-				"Log",
-				state
-			],
-			GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
-			// Replace[
-				{_, _?Positive} :> (
-					showMessage[
-						"A new version detected, please close the server and use 'git pull' to upgrade.",
-						"Info",
-						state
-					]
-				)
-			]
-		]
-	];
-)
-
-If[$VersionNumber >= 12.1,
-	pacletInstalledQ[{name_String, version_String}] := (
-		PacletObject[name -> version]
-		// FailureQ // Not
-	),
-	pacletInstalledQ[{name_String, version_String}] := (
-		PacletManager`PacletInformation[{name, version}]
-		// MatchQ[{}] // Not
-	)
-]
-
-checkDependencies[state_WorkState] := With[
-	{
-		dependencies = {
-			{"CodeParser", "1.0"},
-			{"CodeInspector", "1.0"}
-		}
-	},
-
-	Check[Needs["PacletManager`"],
+If[FindFile["PacletManager`"] // FailureQ,
+	checkDependencies[state_Workstate] := (
 		showMessage[
 			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
 			"Info",
 			state
-		];
-		Return[]
-	];
+		]
+	),
+	Needs["PacletManager`"];
+	checkDependencies[state_WorkState] := With[
+		{
+			dependencies = {
+				{"CodeParser", "1.*"},
+				{"CodeInspector", "1.*"}
+			}
+		},
 
-	dependencies
-	// Select[pacletInstalledQ /* Not]
-	// Replace[
-		missingDeps:Except[{}] :> (
-			StringRiffle[missingDeps, ", ", "-"]
-			// StringTemplate[StringJoin[
-				"These dependencies with correct versions need to be installed or upgraded: ``, ",
-				"otherwise the server may malfunction. ",
-				"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
-			]]
-			// showMessage[#, "Warning", state]&
-		)
+		dependencies
+		// Select[PacletFind /* MatchQ[{}]]
+		// Replace[
+			missingDeps:Except[{}] :> (
+				StringRiffle[missingDeps, ", ", "-"]
+				// StringTemplate[StringJoin[
+					"These dependencies with correct versions need to be installed or upgraded: ``, ",
+					"otherwise the server may malfunction. ",
+					"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
+				]]
+				// showMessage[#, "Warning", state]&
+			)
+		]
 	]
 ]
 
 
-WLServerVersion[] := WolframLanguageServer`Version;
+(* ::Subsubsection:: *)
+(*checkUpdates*)
+
+
+Check[
+	Needs["GitLink`"];
+	checkUpdates[state_WorkState] := (
+		(* check for upgrade if not checked for more than checkInterval days *)
+		If[
+			DateDifference[
+				DateObject[state["config"]["configFileConfig"]["lastCheckForUpgrade"]],
+				Today
+			] < ServerConfig["updateCheckInterval"],
+			logMessage[
+				"Upgrade not checked, only a few days after the last check.",
+				"Log",
+				state
+			];
+			Return[]
+			(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
+			// saveConfig *)
+		];
+
+		If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
+			showMessage[
+				"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
+				"Log",
+				state
+			];
+			Return[]
+		];
+
+		With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
+			If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
+				showMessage[
+					"Upgrade not checked, the current branch is not 'master'.",
+					"Log",
+					state
+				],
+				GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
+				// Replace[
+					{_, _?Positive} :> (
+						showMessage[
+							"A new version detected, please close the server and use 'git pull' to upgrade.",
+							"Info",
+							state
+						]
+					)
+				]
+			]
+		];
+	),
+	checkUpdates[state_WorkState] := (
+		(*
+			GitLink is not a native paclet for Mathematica / Wolfram Engine.
+			Don't show the message by default.
+		*)
+		(* showMessage[
+			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
+			"Info",
+			state
+		]; *)
+		Null
+	)
+] // Quiet;
+
+
+(* ::Subsection:: *)
+(*Constant Functions*)
+
+
+WLServerVersion[] := WolframLanguageServer`$Version;
 
 
 WLServerDebug[] := Print["This is a debug function."];
