@@ -123,7 +123,8 @@ VerificationTest[
 			"",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		DocumentSymbol[<|
 			"name" -> "section name",
@@ -194,7 +195,8 @@ VerificationTest[
 			"",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		DocumentSymbol[<|
 			"name" -> "section name",
@@ -254,12 +256,84 @@ VerificationTest[
 ],
 
 VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name*)",
+			"",
+			"",
+			"(* " ~~ "::nostyle::" ~~ " *)",
+			"(*section name*)",
+			"",
+			""
+		}
+	|>]]
+	// Last,
+	{
+		DocumentSymbol[<|
+			"name" -> "section name",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 7,
+					"character" -> 0
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 2
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 14
+				|>]
+			|>],
+			"children" -> {
+				DocumentSymbol[<|
+					"name" -> "section name",
+					"detail" -> "nostyle",
+					"kind" -> 15,
+					"range" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 4,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 7,
+							"character" -> 0
+						|>]
+					|>],
+					"selectionRange" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 2
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 14
+						|>]
+					|>],
+					"children"->{}
+				|>]
+			}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolSideEffect1"
+],
+
+VerificationTest[
 	FindAllCodeRanges[TextDocument[<|
 		"text" -> {
 			"(* " ~~ "::Package::" ~~ " *)",
 			"(* code range with one line *)"
 		}
-	|>]],
+	|>]] // Last,
 	{LspRange[<|
 		"start" -> LspPosition[<|
 			"line" -> 1,
@@ -280,7 +354,8 @@ VerificationTest[
 			"",
 			"(* code range with one line *)"
 		}
-	|>]],
+	|>]]
+	// Last,
 	{LspRange[<|
 		"start" -> LspPosition[<|
 			"line" -> 2,
@@ -308,7 +383,8 @@ VerificationTest[
 			"",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -336,7 +412,8 @@ VerificationTest[
 			"(* code range with four lines *)",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -362,7 +439,8 @@ VerificationTest[
 			"(* code range with four lines *)",
 			"(* code range with four lines *)"
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -391,7 +469,8 @@ VerificationTest[
 			"",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -426,7 +505,8 @@ VerificationTest[
 			"",
 			""
 		}
-	|>]],
+	|>]]
+	// Last,
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -453,7 +533,7 @@ VerificationTest[
 ],
 
 VerificationTest[
-	FindAllCodeRanges[TextDocument[<|"text" -> {}|>]],
+	FindAllCodeRanges[TextDocument[<|"text" -> {}|>]] // Last,
 	{},
 	TestID -> "FindAllCodeRangeEmptyDoc"
 ],
@@ -469,7 +549,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 3
 		|>]
-	],
+	] // Last,
 	{
 		{HoverInfo["Message", {"Replace", "usage"}]},
 		LspRange[<|
@@ -497,7 +577,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 3
 		|>]
-	],
+	] // Last,
 	{
 		{HoverInfo["Number", {"2^^110", 6}]},
 		LspRange[<|
@@ -525,7 +605,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 3
 		|>]
-	],
+	] // Last,
 	{
 		{
 			HoverInfo["Message", {"General", "obspkg"}],
@@ -556,7 +636,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 8
 		|>]
-	],
+	] // Last,
 	{
 		{
 			HoverInfo["Operator", {"MessageName"}],
@@ -592,7 +672,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 12
 		|>]
-	],
+	] // Last,
 	{
 		{
 			HoverInfo["Message", {"General", "obspkg"}]
@@ -622,7 +702,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 3
 		|>]
-	],
+	] // Last,
 	{
 		{HoverInfo["Operator", {"Apply"}]},
 		LspRange[<|
@@ -650,7 +730,7 @@ VerificationTest[
 			"line" -> 0,
 			"character" -> 2
 		|>]
-	],
+	] // Last,
 	{
 		{HoverInfo["Operator", {"SlotSequence"}]},
 		LspRange[<|

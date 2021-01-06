@@ -362,7 +362,7 @@ PUACharactersReplaceRule = {
 
 GetHoverAtPosition[doc_TextDocument, pos_LspPosition] := (
     GetHoverInfo[doc, pos]
-    // Apply[printHoverText]
+    // MapAt[Apply[printHoverText], 2]
 )
 
 
@@ -476,13 +476,15 @@ TokenKind[token_String] := Module[
 ];
 
 
-GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
+GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := Block[
     {
-        prefix = GetTokenPrefix[doc, pos]
+        newDoc, prefix
     },
 
+    {newDoc, prefix} = GetTokenPrefix[doc, pos];
+
     If[prefix == "",
-        Return[{}]
+        Return[{newDoc, {}}]
     ];
 
     Names[prefix<>"*"]
@@ -509,17 +511,24 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
             |>
         |>]
     )]
+    // {newDoc, #}&
 ]
 
 
-(* SetDelayed is not needed. Cache it when define it. *)
-GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
-    If[GetTokenPrefix[doc, pos] == "\\\\",
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := Block[
+    {
+        newDoc, prefix
+    },
+
+    {newDoc, prefix} = GetTokenPrefix[doc, pos];
+
+    If[prefix == "\\\\",
         (* double-triggered *)
         GetAliasCompletion["\\", pos],
         NonLetterAliasCompletionItems
     ]
-)
+    // {newDoc, #}&
+]
 
 
 NonLetterAliasCompletionItems = (

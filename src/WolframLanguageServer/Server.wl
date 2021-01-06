@@ -915,16 +915,20 @@ getScheduleTaskParameter[method:"textDocument/publishDiagnostics", uri_String, s
 
 handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> GetHoverAtPosition[doc, pos]
-	|>]];
-
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		GetHoverAtPosition[#, pos]&
+		/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+			"id" -> msg["id"],
+			"result" -> #
+		|>]]&, 2]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -949,14 +953,16 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 	state
 	// If[MissingQ[state["openedDocs"][uri]],
 		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
-				"cachedTime" -> Now,
-				"result" -> (
-					GetSignatureHelp[state["openedDocs"][uri], pos]
-				)
-			|>]
-		]
+		GetSignatureHelp[state["openedDocs"][uri], pos]
+		// Apply[{newDoc, result} \[Function] (
+			ReplaceKey[
+				{"caches", method, uri} -> RequestCache[<|
+					"cachedTime" -> Now,
+					"result" -> result
+				|>]
+			]
+			/* ReplaceKey[{"openedDocs", uri} -> newDoc]
+		)]
 	]
 ]
 
@@ -984,47 +990,48 @@ getCache[method:"textDocument/signatureHelp", msg_, state_WorkState] := (
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	msg["params"]["context"]["triggerKind"]
-	// Replace[{
-		CompletionTriggerKind["Invoked"] :> (
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> False,
-					"items" -> GetTokenCompletionAtPostion[doc, pos]
-				|>
-			|>]]
-		),
-		CompletionTriggerKind["TriggerCharacter"] :> (
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> True,
-					"items" -> (
-						GetTriggerKeyCompletion[doc, pos]
-					)
-				|>
-			|>]]
-		),
-		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> False,
-					"items" -> (
-						GetIncompleteCompletionAtPosition[doc, pos]
-					) 
-				|>
-			|>]];
-		)
-	}];
-
-	
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		msg["params"]["context"]["triggerKind"]
+		// Replace[{
+			CompletionTriggerKind["Invoked"] -> (
+				GetTokenCompletionAtPostion[#, pos]&
+				/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+					"id" -> msg["id"],
+					"result" -> <|
+						"isIncomplete" -> False,
+						"items" -> #
+					|>
+				|>]]&, 2]
+			),
+			CompletionTriggerKind["TriggerCharacter"] -> (
+				GetTriggerKeyCompletion[#, pos]&
+				/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+					"id" -> msg["id"],
+					"result" -> <|
+						"isIncomplete" -> True,
+						"items" -> #
+					|>
+				|>]]&, 2]
+			),
+			CompletionTriggerKind["TriggerForIncompleteCompletions"] -> (
+				GetIncompleteCompletionAtPosition[#, pos]&
+				/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+					"id" -> msg["id"],
+					"result" -> <|
+						"isIncomplete" -> False,
+						"items" -> #
+					|>
+				|>]]&, 2]
+			)
+		}]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -1082,16 +1089,20 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 
 handleRequest["textDocument/definition", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> FindDefinitions[doc, pos]
-	|>]];
-
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		FindDefinitions[#, pos]&
+		/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+			"id" -> msg["id"],
+			"result" -> #
+		|>]]&, 2]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -1101,17 +1112,21 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 
 handleRequest["textDocument/references", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]],
 		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
-	|>]];
-
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		FindReferences[#, pos, "IncludeDeclaration" -> includeDeclaration]&
+		/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+			"id" -> msg["id"],
+			"result" -> #
+		|>]]&, 2]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -1121,17 +1136,20 @@ handleRequest["textDocument/references", msg_, state_] := With[
 
 handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] := With[
 	{
-		id = msg["id"],
 		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> id,
-		"result" -> FindDocumentHighlight[state["openedDocs"][uri], pos]
-	|>]];
-
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		FindDocumentHighlight[#, pos]&
+		/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+			"id" -> msg["id"],
+			"result" -> #
+		|>]]&, 2]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -1159,15 +1177,17 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 	state
 	// If[MissingQ[state["openedDocs"][uri]],
 		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
-				"cachedTime" -> Now,
-				"result" -> (
-					state["openedDocs"][uri]
-					// ToDocumentSymbol
-				)
-			|>]
-		]
+		state["openedDocs"][uri]
+		// ToDocumentSymbol
+		// Apply[{newDoc, result} \[Function] (
+			ReplaceKey[
+				{"caches", method, uri} -> RequestCache[<|
+					"cachedTime" -> Now,
+					"result" -> result
+				|>]
+			]
+			/* ReplaceKey[{"openedDocs", uri} -> newDoc]
+		)]
 	]
 ]
 
@@ -1199,16 +1219,20 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 
 handleRequest["textDocument/codeAction", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> GetCodeActionsInRange[doc, range]
-	|>]];
-
-	{"Continue", state}
+	state
+	// ReplaceKeyBy[{"openedDocs", uri} -> (
+		GetCodeActionsInRange[#, range]&
+		/* MapAt[sendMessage[state["client"], ResponseMessage[<|
+			"id" -> msg["id"],
+			"result" -> #
+		|>]]&, 2]
+		/* First
+	)]
+	// {"Continue", #}&
 ]
 
 
@@ -1231,15 +1255,17 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 	state
 	// If[MissingQ[state["openedDocs"][uri]],
 		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
-				"cachedTime" -> Now,
-				"result" -> (
-					state["openedDocs"][uri]
-					// FindDocumentColor
-				)
-			|>]
-		]
+		state["openedDocs"][uri]
+		// FindDocumentColor
+		// Apply[{newDoc, result} \[Function] (
+			ReplaceKey[
+				{"caches", method, uri} -> RequestCache[<|
+					"cachedTime" -> Now,
+					"result" -> result
+				|>]
+			]
+			/* ReplaceKey[{"openedDocs", uri} -> newDoc]
+		)]
 	]
 ]
 
