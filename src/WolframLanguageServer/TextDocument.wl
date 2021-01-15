@@ -42,6 +42,25 @@ Needs["WolframLanguageServer`ColorTable`"]
 
 
 (* ::Section:: *)
+(*Cache*)
+
+(*
+   Idealy, cache is a side-effect that doesn't violate purity and referential
+   transparency. Thus, monad (or something equivalent) is not needed.
+   However, as for now, the cache is indexed by the URIs, so an arbitrary
+   input may results in different output due to the last input.
+*)
+
+
+(* $Cell stores the results from divideCells for each uri *)
+$Cell = <||>
+
+
+(* $CodeRange stores the key-value pairs of codeRange and its AST for each uri *)
+$CodeRange = <||>
+
+
+(* ::Section:: *)
 (*CodeParser Shims*)
 
 
@@ -73,10 +92,10 @@ DeclareType[TextDocument, <|
 |>]
 
 TextDocument /: ToString[textDocument_TextDocument] := StringJoin["TextDocument[<|",
-    "\"uri\" -> ", textDocument["uri"], ", ",
+    "\"uri\" -> ", ToString[textDocument["uri"]], ", ",
     "\"text\" -> ", textDocument["text"] // Shallow // ToString, ", ",
     "\"version\" -> ", ToString[textDocument["version"]], ", ",
-    "\"cell\" -> ", ToString[textDocument["cell"]],
+    "\"lastUpdate\" -> ", ToString[textDocument["lastUpdate"]], ", ",
 "|>]"]
 
 TextDocument /: Format[textDocument_TextDocument] := ToString[textDocument]
@@ -107,6 +126,9 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
         newtext = StringSplit[contextChange["text"], EOL, All]
     },
 
+    
+    KeyDropFrom[$Cell, doc["uri"]];
+    KeyDropFrom[$CodeRange, doc["uri"]];
     ReplaceKey[doc, "text" -> (
         contextChange["range"]
         // Replace[{
@@ -151,7 +173,7 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
 
 
 (* ::Section:: *)
-(*CodeCells*)
+(*Helper Function*)
 
 
 (* ::Subsection:: *)
@@ -168,28 +190,56 @@ DeclareType[CellNode, <|
     "children" -> {___CellNode}
 |>]
 
-divideCells[doc_TextDocument] := (
-    Position[
-        doc["text"],
-        (* matches style line *)
-        _?(StringContainsQ["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]),
-        {1}, Heads -> False
+
+Options[divideCells] = {
+    "CodeRange" -> False
+}
+
+divideCells[doc_TextDocument, o:OptionsPattern[]] := (
+    If[$Cell[doc["uri"]] // MissingQ,
+        LogDebug["NewDivide!"];
+        Position[
+            doc["text"],
+            (* matches style line *)
+            _?(StringContainsQ["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]),
+            {1}, Heads -> False
+        ]
+        // Flatten
+        // Append[Length[doc["text"]] + 1]
+        // Prepend[0]
+        // BlockMap[Apply[constructCellNode[doc, #1, #2]&], #, 2, 1]&
+        // Fold[InsertCell]
+        // TerminateCell
+        // Reap
+        // MapAt[
+            Replace[{codeRange_List} :> codeRange]
+            /* Catenate
+            /* (Thread[# -> Missing["NotParsed"]]&)
+            /* Association,
+            2
+        ]
+        // Apply[{cell, codeRange} \[Function] (
+            If[doc["uri"] // MissingQ // Not,
+                (* cache if the URI is not missing *)
+                AssociateTo[$CodeRange, doc["uri"] -> codeRange];
+                AssociateTo[$Cell, doc["uri"] -> cell]
+            ];
+            If[OptionValue["CodeRange"],
+                {cell, codeRange},
+                cell
+            ]
+        )],
+        If[OptionValue["CodeRange"],
+            {$Cell[doc["uri"]] , $CodeRange[doc["uri"]]},
+            $Cell[doc["uri"]]
+        ]
     ]
-    // Flatten
-    // Append[Length[doc["text"]] + 1]
-    // Prepend[0]
-    // BlockMap[Apply[constructCellNode[doc, #1, #2]&], #, 2, 1]&
-    // Fold[InsertCell]
-    // TerminateCell
-    // Replace[err:Except[_CellNode] :> (
-        LogError["The result of devideCells is not a CellNode " <> ToString[err]]
-    )]
 )
 
 
 constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block[
     {
-        style, title = Missing["Untitled"], codeStart
+        style, title, codeStart
     },
 
     style = If[styleLine == 0,
@@ -202,19 +252,24 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
         // Replace["" -> "[empty]"]
     ];
 
-    If[!AnonymousStyleQ[style] &&
+    {title, codeStart} = If[!AnonymousStyleQ[style] &&
         (styleLine + 1 != endLine),
-        (Part[doc["text"], styleLine + 1]
-        // StringCases[
-            StartOfString ~~ (Whitespace | "") ~~
-            "(*" ~~ Longest[t___] ~~ "*)" ~~
-            (Whitespace | "") ~~ EndOfString :> t
-        ]
-        // Replace[
-            {t_, ___} :> (title = t)
-        ]);
-        codeStart = findCodeLine[doc, styleLine + 2],
-        codeStart = findCodeLine[doc, styleLine + 1]
+        {
+            (Part[doc["text"], styleLine + 1]
+            // StringCases[
+                StartOfString ~~ (Whitespace | "") ~~
+                "(*" ~~ Longest[t___] ~~ "*)" ~~
+                (Whitespace | "") ~~ EndOfString :> t
+            ]
+            // Replace[
+                {t_, ___} :> t
+            ]),
+            findCodeLine[doc, styleLine + 2]
+        },
+        {
+            Missing["Untitled"],
+            findCodeLine[doc, styleLine + 1]
+        }
     ];
 
     CellNode[<|
@@ -249,10 +304,12 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
                 |>]
             |>]
         ],
-        "codeRange" -> If[codeStart < endLine, {{codeStart, endLine - 1}}, {}],
+        "codeRange" -> If[codeStart < endLine,
+            {{codeStart, endLine - 1}} // Sow,
+            {}
+        ],
         "children" -> {}
     |>]
-
 ]
 
 findCodeLine[doc_TextDocument, currentLine_Integer] := (
@@ -336,10 +393,68 @@ HeadingLevel = <|
 ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // EqualTo["wls"]
 
 
-CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
+(* ::Subsection:: *)
+(*Code Range*)
+
+
+getCodeRanges[doc_TextDocument] := (
+    divideCells[doc, "CodeRange" -> True]
+    // Last
+)
+
+
+rangeToAst[doc_TextDocument, All] := (
+    doc
+    // {
+        Identity,
+        getCodeRanges
+        /* Keys
+    }
+    // Through
+    // Apply[rangeToAst]
+    // Catenate
+)
+
+
+rangeToAst[doc_TextDocument, range:{_Integer, _Integer}] := rangeToAst[doc, {range}]
+rangeToAst[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
+    {
+        uri = doc["uri"]
+    },
+
+    ranges
+    // If[doc["uri"] // MissingQ,
+        Identity,
+        (* If cached, get missing ranges only *)
+        Extract[
+            doc
+            // getCodeRanges
+            // Lookup[ranges]
+            // Position[#, _?MissingQ, {1}]&
+        ]
+    ]
+    // Rule[
+        Identity,
+        Map[rangeToCode[doc, #]&]
+        /* (CodeParser`CodeParse[#, "TabWidth" -> 1]&)
+        /* (Part[#, All, 2]&)
+    ]
+    // Through
+    // Thread
+    // If[doc["uri"] // MissingQ,
+        Values,
+        Replace[{} -> <||>]
+        /* (AssociateTo[$CodeRange[uri], #]&)
+        /* Lookup[uri]
+        /* Lookup[ranges]
+    ]
+ ]
+
+
+rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
     If[startLine == 1 &&
         (doc["text"] // First // StringStartsQ["#!"]),
-        Return[CellToAST[doc, {2, endLine}]]
+        Return[rangeToCode[doc, {2, endLine}]]
     ];
 
     Take[doc["text"], {startLine, endLine}]
@@ -351,14 +466,11 @@ CellToAST[doc_TextDocument, {startLine_, endLine_}] := (
             {StringRepeat::intp (* before 12.0 *)}
         ] // Quiet,
     #]&
-    // CodeParser`CodeParse[#, "TabWidth" -> 1]&
-    // Part[#, 2]&
 )
 
 
-CellContainsLine[indexLine_Integer][cell_CellNode] := (
-    indexLine // Between[cell["range"]]
-)
+(* ::Subsection:: *)
+(*GetAtPosition*)
 
 
 GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
@@ -366,22 +478,58 @@ GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
         line = pos["line"] + 1
     },
 
-    FirstCase[
-        doc // divideCells,
-        cell_CellNode?(CellContainsLine[line]) :> cell["codeRange"],
-        {}, {0, Infinity}
-    ]
+    doc
+    // getCodeRanges
+    // Keys
     // SelectFirst[Between[line, #]&]
 ]
 
 
+GetTokenAtPosition[doc_TextDocument, pos_LspPosition] := (
+    GetCodeRangeAtPosition[doc, pos]
+    // Replace[{
+        codeRange: {startLine_Integer, _Integer} :> (
+            Take[doc["text"], codeRange]
+            // StringRiffle[#, "\n"]&
+            // CodeParser`CodeTokenize
+            // SelectFirst[NodeContainsPosition[{
+                (pos["line"] + 1) - startLine + 1,
+                pos["character"]
+            }]]
+        )
+    }]
+)
+
+
+GetAstAtPosition[doc_TextDocument, pos_LspPosition] := (
+    GetCodeRangeAtPosition[doc, pos]
+    // Replace[_?MissingQ -> {}]
+    // rangeToAst[doc, #]&
+)
+
+
+GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1, character = pos["character"] + 1
+    },
+
+    GetAstAtPosition[doc, pos]
+    // FirstCase[
+        #,
+        AstPattern["Symbol"][symbolName_]
+            ?(NodeContainsPosition[{line, character}]) :> (
+            symbolName
+        ),
+        Missing["NotFound"],
+        AstLevelspec["LeafNodeWithSource"]
+    ]&
+]
+
+
 FindAllCodeRanges[doc_TextDocument] := (
-    Cases[
-        divideCells[doc],
-        node_CellNode :> node["codeRange"],
-        {0, Infinity}
-    ]
-    // Catenate
+    doc
+    // getCodeRanges
+    // Keys
     // Map[ToLspRange[doc, #]&]
 )
 
@@ -399,7 +547,7 @@ GetDocumentText[doc_TextDocument, range_LspRange] := (
 )
 
 
-(* ::Section:: *)
+(* ::Subsection:: *)
 (*AST utils*)
 
 
@@ -452,6 +600,68 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
 
 
 (* ::Section:: *)
+(*GetFunctionName*)
+
+
+GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1, character = pos["character"] + 1
+    },
+
+    GetAstAtPosition[doc, pos]
+    // (ast \[Function] (
+        FirstPosition[
+            ast,
+            _Association?(NodeDataContainsPosition[{line, character}]),
+            Missing["NotFound", {}],
+            AstLevelspec["DataWithSource"],
+            Heads -> False
+        ]
+        // Most
+        // Replace[indices_List :> (
+            getFunctionNameImpl[ast, indices]
+        )]
+    ))
+]
+
+getFunctionNameImpl[ast_, indices_] := (
+    Extract[ast, indices // Replace[{} -> {All}]]
+    // Replace[{
+        AstPattern["Function"][functionName_] :> (
+            functionName
+            // Replace[FunctionPattern["NoSignatureHelp"] -> Missing["NotFound"]]
+        ),
+        _ :> (
+            indices
+            // Replace[{
+                {} -> Missing["NotFound"],
+                _ :> (
+                    getFunctionNameImpl[ast, indices // Most]
+                )
+            }]
+        )
+    }]
+)
+
+
+(* ::Section:: *)
+(*GetTokenPrefix*)
+
+
+GetTokenPrefix[doc_TextDocument, pos_LspPosition] := (
+    GetTokenAtPosition[doc, pos]
+    // Replace[{
+        AstPattern["Token"][tokenString_, data_] :> (
+            StringTake[tokenString, pos["character"] - Part[data[CodeParser`Source], 1, 2] + 1]
+        ),
+        (* this happens when line is not in codeRange or character == 0 *)
+        _?MissingQ -> "",
+        err_ :> (LogError["Unknown token node " <> ToString[err]]; "")
+    }]
+)
+
+
+(* ::Section:: *)
 (*documentSymbol*)
 
 
@@ -465,18 +675,14 @@ ToDocumentSymbol[doc_TextDocument] := (
 
 ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
     Join[
-        If[!MissingQ[node["codeRange"]],
-            node["codeRange"]
-            // Map[CellToAST[doc, #]&]
-            // Flatten
-            // Map[ToDocumentSymbolImpl],
-            {}
-        ],
-        If[!MissingQ[node["children"]],
-            node["children"]
-            // Map[ToDocumentSymbolImpl[doc, #]&],
-            {}
-        ]
+        node["codeRange"]
+        // Replace[_?MissingQ -> {}]
+        // rangeToAst[doc, #]&
+        // Flatten
+        // Map[ToDocumentSymbolImpl],
+        node["children"]
+        // Replace[_?MissingQ -> {}]
+        // Map[ToDocumentSymbolImpl[doc, #]&]
     ]
     // Flatten
     // If[!AnonymousStyleQ[node["style"]],
@@ -664,40 +870,35 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
         line = pos["line"] + 1, character = pos["character"] + 1
     },
 
-    GetCodeRangeAtPosition[doc, pos]
-    // Replace[lineRange:{_Integer, _Integer} :> (
-        CellToAST[doc, lineRange]
-        // (ast \[Function] (
-            FirstPosition[
-               ast,
-                _Association?(NodeDataContainsPosition[{line, character}]),
-                Missing["NotFound", {(* Will be Discarded by Most *)}],
-                AstLevelspec["DataWithSource"],
-                Heads -> False
-            ]
-            // Most
-            // Replace[indices_List :> {
-                getHoverInfoImpl[ast, indices]
-                // Reap
-                // Last // Flatten
-                // DeleteDuplicates,
-                (* get range *)
-                ast
-                // Extract[indices]
+    GetAstAtPosition[doc, pos]
+    // (ast \[Function] (
+        FirstPosition[
+            ast,
+            _Association?(NodeDataContainsPosition[{line, character}]),
+            {{(* Will be Discarded by Most *)}},
+            AstLevelspec["DataWithSource"],
+            Heads -> False
+        ]
+        // Most
+        // (indices \[Function] {
+            getHoverInfoImpl[ast, indices]
+            // Reap
+            // Last // Flatten
+            // DeleteDuplicates,
+            (* get range *)
+            ast
+            // Extract[indices]
+            // Replace[node:Except[{}] :> (
+                node
                 // Last
                 // Key[CodeParser`Source]
                 // Replace[{
                     _?MissingQ -> Nothing,
                     source_ :> SourceToRange[source]
                 }]
-            }]
-        ))
-    )]
-    // Replace[
-        (* This happens when line not in codeRange or position not in node *)
-        _?MissingQ :> {{(* empty hover text: *)} (*, no range *)}
-    ]
-
+            )]
+        })
+    ))
 ]
 
 
@@ -736,86 +937,6 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
         getHoverInfoImpl[node, {restIndices}]
     ))
 )
-
-
-(* ::Section:: *)
-(*GetFunctionName*)
-
-
-GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
-    {
-        line = pos["line"] + 1, character = pos["character"] + 1
-    },
-
-    GetCodeRangeAtPosition[doc, pos]
-    // Replace[lineRange:{_Integer, _Integer} :> (
-        CellToAST[doc, lineRange]
-        // (ast \[Function] (
-            FirstPosition[
-                ast,
-                _Association?(NodeDataContainsPosition[{line, character}]),
-                Missing["NotFound", {}],
-                AstLevelspec["DataWithSource"],
-                Heads -> False
-            ]
-            // Most
-            // Replace[indices_List :> (
-                getFunctionNameImpl[ast, indices]
-            )]
-        ))
-    )]
-]
-
-getFunctionNameImpl[ast_, indices_] := (
-    Extract[ast, indices // Replace[{} -> {All}]]
-    // Replace[{
-        AstPattern["Function"][functionName_] :> (
-            functionName
-            // Replace[FunctionPattern["NoSignatureHelp"] -> Missing["NotFound"]]
-        ),
-        _ :> (
-            indices
-            // Replace[{
-                {} -> Missing["NotFound"],
-                _ :> (
-                    getFunctionNameImpl[ast, indices // Most]
-                )
-            }]
-        )
-    }]
-)
-
-
-(* ::Section:: *)
-(*GetTokenPrefix*)
-
-
-GetTokenPrefix[doc_TextDocument, pos_LspPosition] := With[
-    {
-        line = pos["line"] + 1
-    },
-
-    GetCodeRangeAtPosition[doc, pos]
-    // Replace[lineRange:{rangeStartLine_Integer, _Integer} :> (
-        (* get token list *)
-        Take[doc["text"], lineRange]
-        // StringRiffle[#, "\n"]&
-        // CodeParser`CodeTokenize
-        // SelectFirst[NodeContainsPosition[{
-            line - rangeStartLine + 1,
-            pos["character"]
-        }]]
-        // Replace[{
-            AstPattern["Token"][tokenString_, data_] :> (
-                StringTake[tokenString, pos["character"] - Part[data[CodeParser`Source], 1, 2] + 1]
-            ),
-            err_ :> (LogError["Unknown token node " <> ToString[err]]; "")
-        }]
-    )] // Replace[
-        (* this happens when line is not in codeRange or character == 0 *)
-        _?MissingQ -> ""
-    ]
-]
 
 
 (* ::Section:: *)
@@ -946,86 +1067,81 @@ Options[FindScopeOccurence] = {
     "BodySearch" -> True
 }
 
-FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Block[
+FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := With[
     {
-        line = pos["line"] + 1, character = pos["character"] + 1,
-        ast, name
+        line = pos["line"] + 1, character = pos["character"] + 1
     },
 
-    ast = GetCodeRangeAtPosition[doc, pos]
-    // Replace[lineRange:{_Integer, _Integer} :> (
-        CellToAST[doc, lineRange]
-    )]
-    // Replace[_?MissingQ :> Return[{{}, {}}]];
-
-    name = FirstCase[
-        ast,
-        AstPattern["Symbol"][symbolName_]
-            ?(NodeContainsPosition[{line, character}]) :> (
-            symbolName
-        ),
-        Missing["NotFound"],
-        AstLevelspec["LeafNodeWithSource"]
-    ]
-    // Replace[_?MissingQ :> Return[{{}, {}}]];
-
-    LogDebug["Searching for " <> name];
-
-    FirstCase[
-        ast,
-        (
-            AstPattern["Scope"][head_, body_, op_]
-                ?(NodeContainsPosition[{line, character}]) |
-            AstPattern["Delayed"][head_, body_, op_]
-                ?(NodeContainsPosition[{line, character}])
-        ) :> Block[
+    GetSymbolAtPosition[doc, pos]
+    // (LogDebug["FindScopeOccurence: " <> ToString[#]];#)&
+    // Replace[{
+        name_String :> Block[
             {
-                headSource
+                ast = GetAstAtPosition[doc, pos]
             },
 
-            {
-                headSource,
-                If[OptionValue["BodySearch"],
-                    Replace[op, {
-                        FunctionPattern["StaticLocal"] :>
-                            StaticLocalSource[body, name],
-                        FunctionPattern["DynamicLocal"] :>
-                            DynamicLocalSource[body, name]
-                    }],
-                    {}
-                ]
-            }
-            (* a pattern test with inner side effect *)
-            /; (
-                Replace[op, {
-                    FunctionPattern["Scope"] :>
-                        ScopeHeadSymbolSource[op, head, name],
-                    FunctionPattern["Delayed"] :>
-                        DelayedHeadPatternNameSource[head, name]
-                }]
-                // ((headSource = #)&)
-                // MatchQ[Except[{}, _List]]
-            )
-        ],
-        (* search it the whole doc as a dynamic local *)
-        {
-            {},
-            OptionValue["GlobalSearch"]
-            // Replace[{
-                True :> DynamicLocalSource[
-                    CellToAST[doc, {1, doc["text"] // Length}],
-                    name
+            LogDebug["Searching for " <> name];
+            FirstCase[
+                ast,
+                (
+                    AstPattern["Scope"][head_, body_, op_]
+                        ?(NodeContainsPosition[{line, character}]) |
+                    AstPattern["Delayed"][head_, body_, op_]
+                        ?(NodeContainsPosition[{line, character}])
+                ) :> Block[
+                    {
+                        headSource
+                    },
+
+                    {
+                        headSource,
+                        If[OptionValue["BodySearch"],
+                            Replace[op, {
+                                FunctionPattern["StaticLocal"] :>
+                                    StaticLocalSource[body, name],
+                                FunctionPattern["DynamicLocal"] :>
+                                    DynamicLocalSource[body, name]
+                            }],
+                            {}
+                        ]
+                    }
+                    (* a pattern test with inner side effect *)
+                    /; (
+                        Replace[op, {
+                            FunctionPattern["Scope"] :>
+                                ScopeHeadSymbolSource[op, head, name],
+                            FunctionPattern["Delayed"] :>
+                                DelayedHeadPatternNameSource[head, name]
+                        }]
+                        // ((headSource = #)&)
+                        // MatchQ[Except[{}, _List]]
+                    )
                 ],
-                "TopLevelOnly" :> (
-                    CellToAST[doc, {1, doc["text"] // Length}]
-                    // Map[FindTopLevelSymbols[#, name]&]
-                    // Catenate
-                ),
-                _ -> {}
-            }]
-        },
-        {0, Infinity}
-    ]
+                (* search it the whole doc as a dynamic local *)
+                ast = rangeToAst[doc, All];
+                OptionValue["GlobalSearch"]
+                // Replace[{
+                    True :> (
+                        {
+                            {},
+                            DynamicLocalSource[ast, name]
+                        }
+                    ),
+                    "TopLevelOnly" :> (
+                        {
+                            {},
+                            ast
+                            // Map[FindTopLevelSymbols[#, name]&]
+                            // Catenate
+                        }
+                    ),
+                    _ -> {{}, {}}
+                }],
+                {0, Infinity}
+            ]
+         ],
+        _?MissingQ :> {{}, {}}
+    }]
 ]
 
 
@@ -1272,36 +1388,31 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
         endPos = {range["end"]["line"] + 1, range["end"]["character"]}
     },
 
-    GetCodeRangeAtPosition[doc, range["start"]]
-    // Replace[lineRange:{_Integer, _Integer} :> (
-        CellToAST[doc, lineRange]
-        // (ast \[Function] (
-            FirstCase[
-                ast,
-                AstPattern["Token"][tokenString_]?((
-                    (* The token node overlaps the range *)
-                    CompareNodePosition[#, startPos, -1] >= 0 &&
-                    CompareNodePosition[#, endPos, 1] <= 0
-                )&) :> (
-                    hasReferencePage[tokenString]
-                    // Replace[referencePath_?(MissingQ /* Not) :> (
-                        LspCodeAction[<|
-                            "title" -> "Documentation: " <> tokenString,
-                            "kind" -> CodeActionKind["Empty"],
-                            "command" -> <|
-                                "title" -> "Documentation: " <> tokenString,
-                                "command" -> "openRef",
-                                "arguments" -> {referencePath}
-                            |>
-                        |>]
-                    )]
-                ),
-                Missing["NotFound"],
-                AstLevelspec["DataWithSource"],
-                Heads -> False
-            ]
-        ))
-    )]
+    GetAstAtPosition[doc, range["start"]]
+    // FirstCase[
+        #,
+        AstPattern["Token"][tokenString_]?((
+            (* The token node overlaps the range *)
+            CompareNodePosition[#, startPos, -1] >= 0 &&
+            CompareNodePosition[#, endPos, 1] <= 0
+        )&) :> (
+            hasReferencePage[tokenString]
+            // Replace[referencePath_?(MissingQ /* Not) :> (
+                LspCodeAction[<|
+                    "title" -> "Documentation: " <> tokenString,
+                    "kind" -> CodeActionKind["Empty"],
+                    "command" -> <|
+                        "title" -> "Documentation: " <> tokenString,
+                        "command" -> "openRef",
+                        "arguments" -> {referencePath}
+                    |>
+                |>]
+            )]
+        ),
+        Missing["NotFound"],
+        AstLevelspec["DataWithSource"],
+        Heads -> False
+    ]&
     // List
     // DeleteMissing
 ]
@@ -1311,42 +1422,13 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
 (*DocumentColor*)
 
 
-FindDocumentColor[doc_TextDocument] := With[
-    {
-        ast = CellToAST[doc, {1, doc["text"] // Length}]
-    },
-
-    Join[
-        Cases[
-            ast,
-            AstPattern["NamedColor"][color_, data_] :> (
-                ColorInformation[<|
-                    "range" -> (
-                        data
-                        // Key[CodeParser`Source]
-                        // SourceToRange
-                    ),
-                    "color" -> (
-                        ColorConvert[ToExpression[color], "RGB"]
-                        // Apply[List]
-                        // ToLspColor
-                    )
-                |>]
-            ),
-            AstLevelspec["LeafNodeWithSource"]
-        ],
-        Cases[
-            ast,
-            AstPattern["ColorModel"][model_, params_, data_] :> With[
-                {
-                    color = (
-                        params
-                        // Map[CodeParser`FromNode]
-                        // Apply[ToExpression[model]]
-                    )
-                },
-
-                If[ColorQ[color],
+FindDocumentColor[doc_TextDocument] := (
+    rangeToAst[doc, All]
+    // (ast \[Function] (
+        Join[
+            Cases[
+                ast,
+                AstPattern["NamedColor"][color_, data_] :> (
                     ColorInformation[<|
                         "range" -> (
                             data
@@ -1354,18 +1436,46 @@ FindDocumentColor[doc_TextDocument] := With[
                             // SourceToRange
                         ),
                         "color" -> (
-                            ColorConvert[color, "RGB"]
+                            ColorConvert[ToExpression[color], "RGB"]
                             // Apply[List]
                             // ToLspColor
                         )
-                    |>],
-                    Nothing
-                ]
+                    |>]
+                ),
+                AstLevelspec["LeafNodeWithSource"]
             ],
-            AstLevelspec["CallNodeWithArgs"]
+            Cases[
+                ast,
+                AstPattern["ColorModel"][model_, params_, data_] :> With[
+                    {
+                        color = (
+                            params
+                            // Map[CodeParser`FromNode]
+                            // Apply[ToExpression[model]]
+                        )
+                    },
+
+                    If[ColorQ[color],
+                        ColorInformation[<|
+                            "range" -> (
+                                data
+                                // Key[CodeParser`Source]
+                                // SourceToRange
+                            ),
+                            "color" -> (
+                                ColorConvert[color, "RGB"]
+                                // Apply[List]
+                                // ToLspColor
+                            )
+                        |>],
+                        Nothing
+                    ]
+                ],
+                AstLevelspec["CallNodeWithArgs"]
+            ]
         ]
-    ]
-]
+    ))
+)
 
 
 GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] := With[

@@ -512,7 +512,6 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-(* SetDelayed is not needed. Cache it when define it. *)
 GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
     If[GetTokenPrefix[doc, pos] == "\\\\",
         (* double-triggered *)
@@ -522,6 +521,7 @@ GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
 )
 
 
+(* SetDelayed is not needed. Cache it when define it. *)
 NonLetterAliasCompletionItems = (
     Join[
         AliasToLongName

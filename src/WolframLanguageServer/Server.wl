@@ -103,7 +103,7 @@ ServerCapabilities = <|
 
 ServerConfig = <|
 	"updateCheckInterval" -> Quantity[7, "Days"],
-		(* cached results *)
+	(* cached results *)
 	"cachedRequests" -> {
 		"textDocument/signatureHelp",
 		"textDocument/documentSymbol",
@@ -915,15 +915,17 @@ getScheduleTaskParameter[method:"textDocument/publishDiagnostics", uri_String, s
 
 handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> GetHoverAtPosition[doc, pos]
+		"result" -> GetHoverAtPosition[
+			state["openedDocs"][uri],
+			pos
+		]
 	|>]];
-
 	{"Continue", state}
 ]
 
@@ -952,9 +954,10 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 		ReplaceKey[
 			{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> (
-					GetSignatureHelp[state["openedDocs"][uri], pos]
-				)
+				"result" -> GetSignatureHelp[
+					state["openedDocs"][uri],
+					pos
+				]
 			|>]
 		]
 	]
@@ -984,7 +987,7 @@ getCache[method:"textDocument/signatureHelp", msg_, state_WorkState] := (
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
@@ -995,7 +998,10 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
-					"items" -> GetTokenCompletionAtPostion[doc, pos]
+					"items" -> GetTokenCompletionAtPostion[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
 			|>]]
 		),
@@ -1004,9 +1010,10 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> True,
-					"items" -> (
-						GetTriggerKeyCompletion[doc, pos]
-					)
+					"items" -> GetTriggerKeyCompletion[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
 			|>]]
 		),
@@ -1015,9 +1022,10 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
-					"items" -> (
-						GetIncompleteCompletionAtPosition[doc, pos]
-					) 
+					"items" -> GetIncompleteCompletionAtPosition[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
 			|>]];
 		)
@@ -1082,13 +1090,16 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 
 handleRequest["textDocument/definition", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindDefinitions[doc, pos]
+		"result" -> FindDefinitions[
+			state["openedDocs"][uri],
+			pos
+		]
 	|>]];
 
 	{"Continue", state}
@@ -1101,14 +1112,18 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 
 handleRequest["textDocument/references", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]],
 		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
+		"result" -> FindReferences[
+			state["openedDocs"][uri],
+			pos,
+			"IncludeDeclaration" -> includeDeclaration
+		]
 	|>]];
 
 	{"Continue", state}
@@ -1121,14 +1136,16 @@ handleRequest["textDocument/references", msg_, state_] := With[
 
 handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] := With[
 	{
-		id = msg["id"],
 		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> id,
-		"result" -> FindDocumentHighlight[state["openedDocs"][uri], pos]
+		"id" -> msg["id"],
+		"result" -> FindDocumentHighlight[
+			state["openedDocs"][uri],
+			pos
+		]
 	|>]];
 
 	{"Continue", state}
@@ -1162,10 +1179,7 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 		ReplaceKey[
 			{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> (
-					state["openedDocs"][uri]
-					// ToDocumentSymbol
-				)
+				"result" -> ToDocumentSymbol[state["openedDocs"][uri]]
 			|>]
 		]
 	]
@@ -1199,13 +1213,16 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 
 handleRequest["textDocument/codeAction", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> GetCodeActionsInRange[doc, range]
+		"result" -> GetCodeActionsInRange[
+			state["openedDocs"][uri],
+			range
+		]
 	|>]];
 
 	{"Continue", state}
@@ -1234,10 +1251,7 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 		ReplaceKey[
 			{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> (
-					state["openedDocs"][uri]
-					// FindDocumentColor
-				)
+				"result" -> FindDocumentColor[state["openedDocs"][uri]]
 			|>]
 		]
 	]
