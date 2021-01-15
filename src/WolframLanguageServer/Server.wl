@@ -33,8 +33,10 @@ Needs["WolframLanguageServer`Token`"]
 (*Utility*)
 
 
-FoldWhile[f_, x_, list_List, test_] := FoldWhile[f, Prepend[list, x], test];
-FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take[#, 2]]&, list, Length[#] > 1 && test[First[#]]&]];
+If[$VersionNumber < 12.2,
+	FoldWhile[f_, x_, list_List, test_] := FoldWhile[f, Prepend[list, x], test];
+	FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take[#, 2]]&, list, Length[#] > 1 && test[First[#]]&]]
+]
 
 
 (* ::Section:: *)
