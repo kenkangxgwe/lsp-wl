@@ -91,23 +91,27 @@ GetVariables[variablesArguments_Association, kernel_KernelObject] := (
 
 
 DebuggerEvaluate[evaluateArguments_Association, kernel_KernelObject] := (
-    evaluateArguments["expression"]
-    // StringTrim
-    // ParallelEvaluate[
-        (* Keeps Stack[] clean *)
-        ToExpression[#, InputForm, Hold]
-        // ReleaseHold,
-        kernel,
-        (* This will save all the results (per line) into a sequence. *)
-        Hold
-    ]&
-    (* Do not let the results evaluate anymore in the adaptor-side *)
-    // DeleteCases[Null]
-    // Map[Unevaluated]
-    // Apply[List]
-    // Map[ToString]
-    // StringRiffle[#, "\n"]&
-    // (ParallelEvaluate[GetContextsReferences[], kernel]; #)&
+    If[evaluateArguments["context"] === "variables",
+        evaluateArguments["expression"],
+        evaluateArguments["expression"]
+        // StringTrim
+        // ParallelEvaluate[
+            (* Keeps Stack[] clean *)
+            ToExpression[#, InputForm, Hold]
+            // ReleaseHold,
+            kernel,
+            (* This will save all the results (per line) into a sequence. *)
+            Hold
+        ]&
+        // Replace[$Failed -> Hold[]]
+        // DeleteCases[Null]
+        (* Do not let the results evaluate anymore in the adaptor-side *)
+        // Map[Unevaluated]
+        // Apply[List]
+        // Map[ToString]
+        // StringRiffle[#, "\n"]&
+        // (ParallelEvaluate[GetContextsReferences[], kernel]; #)&
+    ]
 )
 
 

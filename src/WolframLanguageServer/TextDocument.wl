@@ -25,7 +25,8 @@ FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:Opt
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
 GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
-GetDocumentText::usage = "GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
+GetDocumentText::usage = "GetDocumentText[doc_TextDocument] returns the text of the whole doc except for the shebang line (if exists).\n\
+GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
 FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
 GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
 
@@ -533,16 +534,20 @@ FindAllCodeRanges[doc_TextDocument] := (
     // Map[ToLspRange[doc, #]&]
 )
 
+GetDocumentText[doc_TextDocument] := (
+    doc["text"]
+    // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
+    // StringRiffle[#, "\n"]&
+)
+
 GetDocumentText[doc_TextDocument, range_LspRange] := (
     doc["text"]
     // Take[#, {
         range["start"]["line"] + 1,
         range["end"]["line"] + 1
     }]&
-    // ReplacePart[#, 1 ->
-        StringDrop[First[#], range["start"]["character"]]]&
-    // ReplacePart[#, -1 ->
-        StringTake[Last[#], range["end"]["character"]]]&
+    // MapAt[StringTake[#, range["end"]["character"]]&, -1]
+    // MapAt[StringDrop[#, range["start"]["character"]]&, 1]
     // StringRiffle[#, "\n"]&
 )
 
@@ -945,9 +950,8 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
 
 DiagnoseDoc[doc_TextDocument] := (
 
-    doc["text"]
-    // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
-    // StringRiffle[#, "\n"]&
+    doc
+    // GetDocumentText
     // Replace[err:Except[_String] :> (LogError[doc]; "")]
     // CodeInspector`CodeInspect[#, "TabWidth" -> 1]&
     // Replace[_?FailureQ -> {}]

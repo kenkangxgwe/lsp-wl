@@ -118,8 +118,8 @@ ServerCapabilities = <|
 	"executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef",
-			"dap-wl.run-file",
-			"dap-wl.run-range"
+			"dap-wl.evaluate-file",
+			"dap-wl.evaluate-range"
 		}
 	|>,
 	Nothing
@@ -789,17 +789,7 @@ handleDapMessage[msg_Association, state_WorkState] := Module[
 		newState = state
 	},
 
-	Replace[msg["type"], {
-		"request" :> (
-			LogDebug @ Iconize[msg["command"], msg["arguments"]]
-		),
-		"event" :> (
-			LogDebug @ Iconize[msg["event"], msg["body"]]
-		),
-		"respond" :> (
-			LogDebug @ Iconize[msg["command"], msg["body"], msg["message"]]
-		)
-	}];
+	LogDebug["handleDapMessage" <> msg];
 
 	Which[
 		(* wrong message before initialization *)
@@ -985,17 +975,60 @@ executeCommand["openRef", msg_, state_WorkState] := (
 
 
 (* ::Subsubsection:: *)
-(*dap-wl.run-file*)
+(*dap-wl.evaluate-file*)
 
 
-executeCommand["dap-wl.run-file", msg_, state_WorkState] := With[
+executeCommand["dap-wl.evaluate-file", msg_, state_WorkState] := With[
 	{
 		args = msg["params"]["arguments"] // First
 	},
 
-	LogDebug[{"Running",
-		args["uri"]
-	}];
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "continued",
+		"body" -> <|
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsContinued" -> True *)
+		|>
+	|>]];
+
+	text = state["openedDocs"][args["uri"]]
+		// GetDocumentText
+		// StringTrim
+		// (LogDebug["Evaluating " <> #]; #)&;
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			(* "category" -> "stdout", *)
+			"output" -> (
+				DebuggerEvaluate[
+					<|"expression" -> text|>,
+					state["debugSession"]["subKernel"]
+				]
+			)
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "stopped",
+		"body" -> <|
+			"reason" -> "pause",
+			"description" -> "Cell Evaluated Successfully",
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
+		|>
+	|>]];
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
@@ -1007,10 +1040,10 @@ executeCommand["dap-wl.run-file", msg_, state_WorkState] := With[
 
 
 (* ::Subsubsection:: *)
-(*dap-wl.run-range*)
+(*dap-wl.evaluate-range*)
 
 
-executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
+executeCommand["dap-wl.evaluate-range", msg_, state_WorkState] := Block[
 	{
 		args = msg["params"]["arguments"] // First,
 		text
@@ -1029,20 +1062,10 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 		|>
 	|>]];
 
-	text = GetDocumentText[
-		state["openedDocs"][args["uri"]],
-		ConstructType[args["range"], _LspRange]
-	] // StringTrim;
-
-	sendMessage[state["debugSession"]["client"], DapEvent[<|
-		"type" -> "event",
-		"event" -> "output",
-		"body" -> <|
-			(* "category" -> "stdout", *)
-			"output" -> text,
-			"group" -> "start"
-		|>
-	|>]];
+	text = state["openedDocs"][args["uri"]]
+		// GetDocumentText[#, ConstructType[args["range"], _LspRange]]&
+		// StringTrim
+		// (LogDebug["Evaluating " <> #]; #)&;
 
 	sendMessage[state["debugSession"]["client"], DapEvent[<|
 		"type" -> "event",
@@ -1054,18 +1077,8 @@ executeCommand["dap-wl.run-range", msg_, state_WorkState] := Block[
 					<|"expression" -> text|>,
 					state["debugSession"]["subKernel"]
 				]
+				// (# <> "\n")&
 			)
-		|>
-	|>]];
-
-	sendMessage[state["debugSession"]["client"], DapEvent[<|
-		"type" -> "event",
-		"event" -> "output",
-		"body" -> <|
-			(* "category" -> "stdout", *)
-			"output" -> "",
-			"group" -> "end",
-			"variablesReference" -> 2
 		|>
 	|>]];
 
@@ -1436,10 +1449,28 @@ handleRequest["textDocument/codeAction", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> GetCodeActionsInRange[
-			state["openedDocs"][uri],
-			range
-		]
+		"result" -> (
+			GetCodeActionsInRange[
+				state["openedDocs"][uri],
+				range
+			] // If[state["debugSession"]["initialized"],
+				Append[
+					LspCodeAction[<|
+						"title" -> "Evaluate in Debug Console",
+						"kind" -> CodeActionKind["Empty"],
+						"command" -> <|
+							"title" -> "Evaluate in Debug Console",
+							"command" -> "dap-wl.evaluate-range",
+							"arguments" -> {<|
+								"uri" -> uri,
+								"range" -> range
+							|>}
+						|>
+					|>]
+				],
+				Identity
+			]
+		)
 	|>]];
 
 	{"Continue", state}
@@ -1474,7 +1505,7 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 						|>,
 						"data" -> <|
 							"title" -> "$(workflow) Evaluate File",
-							"command" -> "dap-wl.run-file",
+							"command" -> "dap-wl.evaluate-file",
 							"arguments" -> {<|
 								"uri" -> uri
 							|>}
@@ -1491,7 +1522,7 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 							),
 							"data" -> <|
 								"title" -> "$(play) Evaluate",
-								"command" -> "dap-wl.run-range",
+								"command" -> "dap-wl.evaluate-range",
 								"arguments" -> {<|
 									"uri" -> uri,
 									"range" -> codeRange
