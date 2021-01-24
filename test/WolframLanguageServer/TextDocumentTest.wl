@@ -665,6 +665,22 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "HoverOperator 2"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"(* this is comment *)"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	{{}},
+	TestID -> "HoverComment 1"
 ]
 
 } // Map[Sow[#, CurrentContext]&]

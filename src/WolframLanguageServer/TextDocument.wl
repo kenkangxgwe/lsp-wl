@@ -893,15 +893,13 @@ GetHoverInfo[doc_TextDocument, pos_LspPosition] := With[
             (* get range *)
             ast
             // Extract[indices]
-            // Replace[node:Except[{}] :> (
-                node
-                // Last
-                // Key[CodeParser`Source]
-                // Replace[{
-                    _?MissingQ -> Nothing,
-                    source_ :> SourceToRange[source]
-                }]
-            )]
+            // Replace[{} -> {<||>}]
+            // Last
+            // Key[CodeParser`Source]
+            // Replace[{
+                _?MissingQ -> Nothing,
+                source_ :> SourceToRange[source]
+            }]
         })
     ))
 ]
