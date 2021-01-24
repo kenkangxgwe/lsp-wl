@@ -882,7 +882,7 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 
 
 (* For LSP: response, notification and request *)
-sendMessage[client_, res:(_ResponseMessage|_NotificationMessage)] := (
+sendMessage[client_, res:(_RequestMessage|_ResponseMessage|_NotificationMessage)] := (
 	res
 	// ReplaceKey["jsonrpc" -> "2.0"]
 	// ToAssociation
@@ -1867,17 +1867,19 @@ getRequestId[] := (
 	"req_" <> ToString[($requestId += 1)]
 )
 
+
 (* ::Subsection:: *)
-(*applyEdit*)
+(*workspace/applyEdit*)
+
 
 sendRequest[method:"workspace/applyEdit", msg_, state_WorkState] := With[
 	{
 		id = getRequestId[]
 	},
 
-	sendMessage[state["client"], NotificationMessage[<|
+	sendMessage[state["client"], RequestMessage[<|
 		"id" -> id,
-		"method" -> "workspace/applyEdit",
+		"method" -> method,
 		"params" -> <|
 			"edit" -> msg["params"]["edit"]
 		|>
@@ -1890,40 +1892,35 @@ sendRequest[method:"workspace/applyEdit", msg_, state_WorkState] := With[
 	}
 ]
 
-applyEdit["dummyAll", state_WorkState] := (
-	sendRequest[
-		"workspace/applyEdit",
-		Table[uri -> {
-			TextEdit[<|
-				"range" -> LspRange[<|
-					"start" -> <|
-						"line" -> 0,
-						"character" -> 0
-					|>,
-					"end" -> <|
-						"line" -> 0,
-						"character" -> 1
-					|>
-				|>],
-				"newText" -> (
-					state["openedDocs"][uri]["text"]
-					// First
-					// StringTake[#, 1]&
-				)
-			|>]
-		}, {uri, Keys[state["openedDocs"]]}]
-		// WorkspaceEdit[<|"changes" -> <|#|>|>]&
-		// <|"params" -> <|"edit" -> #|>|>&,
+
+(* ::Subsection:: *)
+(*workspace/codeLens/refresh*)
+
+
+sendRequest[method:"workspace/codeLens/refresh", state_WorkState] := With[
+	{
+		id = getRequestId[]
+	},
+
+	sendMessage[state["client"], RequestMessage[<|
+		"id" -> id,
+		"method" -> method,
+		"params" -> <||>
+	|>]];
+
+	{
+		"Continue",
 		state
-	]
-)
+		// ReplaceKeyBy["pendingServerRequests" -> Append[id -> method]]
+	}
+]
 
 
 (* ::Section:: *)
 (*Handle Response*)
 
 
-handleResponse["workspace/applyEdit", msg_, state_WorkState] := (
+handleResponse[_, msg_, state_WorkState] := (
 	{
 		"Continue",
 		state
@@ -1979,7 +1976,7 @@ handleDapRequest["initialize", msg_, state_WorkState] := Block[
 			|>],
 			"symbolTable" -> <||>
 		}]&)]
-    // applyEdit["dummyAll", #]&
+    // sendRequest["workspace/codeLens/refresh", #]&
 ]
 
 
@@ -2075,7 +2072,7 @@ handleDapRequest["disconnect", msg_, state_WorkState] := (
 	state
 	// ReplaceKey[{"debugSession", "initialized"} -> False]
 	// ReplaceKey[{"debugSession", "client"} -> Null]
-	// applyEdit["dummyAll", #]&
+    // sendRequest["workspace/codeLens/refresh", #]&
 )
 
 

@@ -15,7 +15,8 @@ ClearAll[Evaluate[Context[] <> "*"]];
 (* Language Server Protocol*)
 
 
-ResponseMessage::usage = "is type of RequestMessage interface in LSP."
+RequestMessage::usage = "is type of RequestMessage interface in LSP."
+ResponseMessage::usage = "is type of ResponseMessage interface in LSP."
 ResponseError::usage = "is type of RequestError interface in LSP."
 NotificationMessage::usage = "is type of Notification interface in LSP."
 LspPosition::usage = "is type of Position interface in LSP."
@@ -205,11 +206,18 @@ Needs["DataType`"]
 (*Basic Protocol*)
 
 
+DeclareType[RequestMessage, <|
+    "jsonrpc" -> _String,
+    "id" -> _Integer | _String,
+    "method" -> _String,
+    "params" -> _
+|>]
+
 DeclareType[ResponseMessage, <|
     "jsonrpc" -> _String,
     "id" -> _Integer | _String,
     "result" -> _,
-    "error" -> _
+    "error" -> _ResponseError
 |>]
 
 
