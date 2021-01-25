@@ -12,7 +12,7 @@
 - [Wolfram Language Server](#wolfram-language-server)
     - [Installation](#installation)
     - [Run the Server](#run-the-server)
-    - [Features](#features)
+    - [Language Server Features](#language-server-features)
         - [DocumentSymbol](#documentsymbol)
         - [Hover](#hover)
         - [Completion](#completion)
@@ -21,6 +21,10 @@
         - [Code Action](#code-action)
         - [Document Color / Color Presentation](#document-color--color-presentation)
         - [Notes](#notes)
+    - [Debug Adapter Features](#debug-adapter-features)
+        - [Evaluate](#evaluate)
+        - [Variables](#variables)
+        - [Notes](#notes-1)
     - [Contribute](#contribute)
         - [Design Principles](#design-principles)
         - [Todo list](#todo-list)
@@ -67,6 +71,8 @@ later) from the Wolfram kernel / Mathematica.
 3. Install the client. Currently, we provide the VS Code extension on [Visual
 Studio Marketplace: Wolfram Language
 Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
+For other editors, please refer to the
+[wiki](https://github.com/kenkangxgwe/lsp-wl/wiki).
 
 4. You may also want to install
 [GitLink](https://github.com/WolframResearch/GitLink) packet in order to check
@@ -107,7 +113,7 @@ Block[{$ScriptCommandLine = Prepend[args, initfile], Quit = Function[{}, Throw[N
 
 This is a good way to see the results from the unit tests.
 
-## Features
+## Language Server Features
 
 ### DocumentSymbol
 
@@ -174,6 +180,7 @@ Code action is now able to,
   Wolfram Engine).  
   ![documentation](images/codeActionSymbolDocumentation.png)
 
+- Evaluate the selected code if debugger is running. See [Evaluate](#evaluate).
 
 ### Document Color / Color Presentation
 
@@ -192,6 +199,38 @@ available for your editor.
 
 Here is a full list of [LSP
 features](https://microsoft.github.io/language-server-protocol/specification).
+
+## Debug Adapter Features
+
+### Evaluate
+
+Code evaluation can be run from the code action of the selection or code lens
+below each section title. The results are usually shown in the debug console on
+the editor side.
+
+![evaluate-code-action](images/evaluate_code_action.png)
+
+Expressions can also be directly input from the debug console.
+
+![evaluate-debug-console](images/evaluate_debug_console.png)
+
+### Variables
+
+After evaluation, the symbol values can be retrieved from the editor. This
+includes the own values of variables and the down/up/sub values of functions
+defined.
+
+![variables](images/variables.png)
+
+The behavior of the variables mimics the workspace in MATLAB, so all the symbols
+defined in the debug console as well as evaluated from the file will be
+recorded. This also includes contexts other than ``Global` ``. The editor can
+also watch on a specific expression after each evaluation if applicable.
+
+### Notes
+
+Here is a full list of [DAP
+features](https://microsoft.github.io/debug-adapter-protocol/specification).
 
 ## Contribute
 
