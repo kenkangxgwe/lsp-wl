@@ -789,7 +789,7 @@ handleDapMessage[msg_Association, state_WorkState] := Module[
 		newState = state
 	},
 
-	LogDebug["handleDapMessage" <> msg];
+	LogDebug["handleDapMessage: " <> ToString[msg]];
 
 	Which[
 		(* wrong message before initialization *)

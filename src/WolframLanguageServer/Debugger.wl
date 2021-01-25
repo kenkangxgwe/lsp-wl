@@ -12,9 +12,9 @@ ClearAll[Evaluate[Context[] <> "*"]]
 
 
 (* Output Symbols *)
-DebuggerInit::usage = ""
-GetContextsReferences::usage = ""
-GetVariablesReference::usage = ""
+DebuggerInit::usage = "DebuggerInit[] initializes the debugger with an empty symbol table to record every symbol defined."
+GetContextsReferences::usage = "GetContextsReferences[] refreshes contexts imported in the debugger."
+GetVariablesReference::usage = "GetVariablesReference[variablesArguments_Association] returns a set of variables regarding the specified arguments."
 
 (* Private Context *)
 Begin["`Private`"]
@@ -43,7 +43,7 @@ appendReference[type_, name_String, pos_:Nothing] := With[
         newKey = (Length[$ReferenceTable] + 1)
     },
 
-    AppendTo[$ReferenceTable, newKey -> (
+    AssociateTo[$ReferenceTable, newKey -> (
         {type, name, pos}
     )];
     newKey
@@ -51,7 +51,7 @@ appendReference[type_, name_String, pos_:Nothing] := With[
 
 
 GetContextsReferences[] := (
-    $ReferenceTable = <| 1 -> {} |>;
+    AssociateTo[$ReferenceTable, 1 -> {}];
     Table[
         Scope[<|
             "name" -> context,

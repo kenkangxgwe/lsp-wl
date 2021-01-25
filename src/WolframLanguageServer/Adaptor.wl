@@ -86,7 +86,6 @@ GetScopes[scopesArguments_Association, kernel_KernelObject] := (
 
 GetVariables[variablesArguments_Association, kernel_KernelObject] := (
     ParallelEvaluate[GetVariablesReference[variablesArguments], kernel]
-    // LogDebug
 )
 
 
