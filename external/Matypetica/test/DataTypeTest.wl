@@ -58,14 +58,15 @@ VerificationTest[
 VerificationTest[
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Man"|>];
 	stu1["sex"],
-	Missing["PatternMismatch", {"Man", "Male"|"Female"}],
+	"Man",
+	{TypeCheck::mispat},
 	TestID -> "Getter Type Check"
 ],
 
 VerificationTest[
-    TypeCheckOff[];
+    TypeCheck[False];
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Man"|>];
-	With[{res = stu1["sex"]}, TypeCheckOn[]; res],
+	With[{res = stu1["sex"]}, TypeCheck[True]; res],
 	"Man",
 	TestID -> "Getter Type Check Off"
 ],

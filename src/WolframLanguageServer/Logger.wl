@@ -1,9 +1,10 @@
 (* ::Package:: *)
 
+(* Copyright 2018 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server Logger *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
-           huxianglong <hxianglong_at_gmail.com>
-*)
 
 
 BeginPackage["WolframLanguageServer`Logger`"];
@@ -31,8 +32,12 @@ LoggerStart[level_, streams:{_OutputStream..}] := Module[
 		(Function[{lvl},
 			Function[{msg},
 				Function[{stream}, WriteString[stream,
-					Snippet["[" <> StringPadRight[ToUpperCase[lvl], 5] <> " " 
-					<> DateString["ISODateTime"] <> "] " <> ToString[msg], 20] <> "\n"
+					StringJoin[
+						StringJoin[
+							"[", StringPadRight[ToUpperCase[lvl], 5], " ", DateString["ISODateTime"], "] ", ToString[msg]
+						]
+						// Snippet[#, 20]&,
+					"\n"]
 				]] /@ streams; msg
 			]
 			(*Echo[#, lvl, ##2]&*)

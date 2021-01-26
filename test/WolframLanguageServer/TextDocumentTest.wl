@@ -1,5 +1,12 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
+(* Wolfram Language Server TextDocument Test *)
+
+
 BeginPackage["WolframLanguageServer`TextDocumentTest`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
@@ -105,6 +112,148 @@ VerificationTest[
 ],
 
 VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name*)",
+			"",
+			"",
+			"(* " ~~ "::nostyle::" ~~ " *)",
+			"(*section name*)",
+			"",
+			""
+		}
+	|>]],
+	{
+		DocumentSymbol[<|
+			"name" -> "section name",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 7,
+					"character" -> 0
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 2
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 14
+				|>]
+			|>],
+			"children" -> {
+				DocumentSymbol[<|
+					"name" -> "section name",
+					"detail" -> "nostyle",
+					"kind" -> 15,
+					"range" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 4,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 7,
+							"character" -> 0
+						|>]
+					|>],
+					"selectionRange" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 2
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 14
+						|>]
+					|>],
+					"children"->{}
+				|>]
+			}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolEmptySymbol1"
+],
+
+VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name*)",
+			"",
+			"",
+			"(* " ~~ "::Subsection::Closed::" ~~ " *)",
+			"(*section name*)",
+			"",
+			""
+		}
+	|>]],
+	{
+		DocumentSymbol[<|
+			"name" -> "section name",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 7,
+					"character" -> 0
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 2
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 1,
+					"character" -> 14
+				|>]
+			|>],
+			"children" -> {
+				DocumentSymbol[<|
+					"name" -> "section name",
+					"detail" -> "Subsection",
+					"kind" -> 15,
+					"range" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 4,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 7,
+							"character" -> 0
+						|>]
+					|>],
+					"selectionRange" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 2
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 14
+						|>]
+					|>],
+					"children"->{}
+				|>]
+			}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolCompoundStyle1"
+],
+
+VerificationTest[
 	FindAllCodeRanges[TextDocument[<|
 		"text" -> {
 			"(* " ~~ "::Package::" ~~ " *)",
@@ -121,7 +270,7 @@ VerificationTest[
 			"character" -> 30
 		|>]
 	|>]},
-	TestID -> "FindAllCodeRangePackage1"
+	TestID -> "FindAllCodeRangesPackage1"
 ],
 
 VerificationTest[
@@ -142,7 +291,7 @@ VerificationTest[
 			"character" -> 30
 		|>]
 	|>]},
-	TestID -> "FindAllCodeRangePackage2"
+	TestID -> "FindAllCodeRangesPackage2"
 ],
 
 VerificationTest[
@@ -172,7 +321,7 @@ VerificationTest[
 			|>]
 		|>]
 	},
-	TestID -> "FindAllCodeRangeSection1"
+	TestID -> "FindAllCodeRangesSection1"
 ],
 
 VerificationTest[
@@ -200,7 +349,7 @@ VerificationTest[
 			|>]
 		|>]
 	},
-	TestID -> "FindAllCodeRangeSection2"
+	TestID -> "FindAllCodeRangesSection2"
 ],
 
 VerificationTest[
@@ -226,7 +375,7 @@ VerificationTest[
 			|>]
 		|>]
 	},
-	TestID -> "FindAllCodeRangeSection3"
+	TestID -> "FindAllCodeRangesSection3"
 ],
 
 VerificationTest[
@@ -255,7 +404,52 @@ VerificationTest[
 			|>]
 		|>]
 	},
-	TestID -> "FindAllCodeRangeTwoSection1"
+	TestID -> "FindAllCodeRangesTwoSection1"
+],
+
+VerificationTest[
+	FindAllCodeRanges[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::UnknownStyle::" ~~ " *)",
+			"(*style title*)",
+			"",
+			"",
+			"(* code range with one line *)",
+			"(* " ~~ "::UnknownStyle::" ~~ " *)",
+			"(*style title*)",
+			"",
+			"",
+			"(* code range with two lines *)",
+			"(* code range with two lines *)",
+			"(* " ~~ "::UnknownStyle::" ~~ " *)",
+			"(*style title*)",
+			"",
+			""
+		}
+	|>]],
+	{
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 4,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 5,
+				"character" -> 0
+			|>]
+		|>],
+		LspRange[<|
+			"start" -> LspPosition[<|
+				"line" -> 9,
+				"character" -> 0
+			|>],
+			"end" -> LspPosition[<|
+				"line" -> 11,
+				"character" -> 0
+			|>]
+		|>]
+	},
+	TestID -> "FindAllCodeRangesMultipleUnknownStyles1"
 ],
 
 VerificationTest[
@@ -471,6 +665,22 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "HoverOperator 2"
+],
+
+VerificationTest[
+	GetHoverInfo[
+		TextDocument[<|
+			"text" -> {
+				"(* this is comment *)"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	{{}},
+	TestID -> "HoverComment 1"
 ]
 
 } // Map[Sow[#, CurrentContext]&]

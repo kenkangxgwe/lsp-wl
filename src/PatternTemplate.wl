@@ -1,7 +1,10 @@
 (* ::Package:: *)
 
+(* Copyright 2020 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Pattern Template *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com> *)
 
 
 BeginPackage["PatternTemplate`"]
@@ -57,7 +60,7 @@ PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns___] := 
     // PatternTemplateObject[templatedPattern]
 )
 
-PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns_Association] := Block[
+PatternTemplateObject[templatedPattern_, o:OptionsPattern[]][newPatterns_Association] := With[
     {
         newPatternTuples = Replace[
             newPatterns,

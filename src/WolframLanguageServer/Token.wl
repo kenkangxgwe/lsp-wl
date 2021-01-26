@@ -1,16 +1,17 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server Token *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
-           huxianglong <hxianglong_at_gmail.com>
-*)
 
 
 BeginPackage["WolframLanguageServer`Token`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in Markdown format.
+TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in specified format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\"
 "
@@ -164,7 +165,7 @@ GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
             } // Through
             // Apply[
                 If[OptionValue["Format"] == MarkupKind["Markdown"],
-                    StringTemplate["**`1`**&nbsp;`2`&emsp;(`3`)\n"],
+                    StringTemplate["**`1`** `2` `3`\n"],
                     StringTemplate["`1`\t(`3`)\n"]
                 ]
             ]
@@ -204,7 +205,8 @@ Options[GenAttributes] = {
 GenAttributes[token_String, o:OptionsPattern[]] := (
     Attributes[token]
     // Replace[_Attributes -> {}]
-    // StringRiffle[#, ", "]&
+    // StringRiffle[#, {"(", ", ", ")"}]&
+    // Replace["()" -> ""]
 )
 
 Options[GenOptions] = {
@@ -214,7 +216,8 @@ GenOptions[token_String, o:OptionsPattern[]] := (
     token
     // StringTemplate["Options[``]"]
     // ToExpression
-    // Replace[_Options -> {}]
+    // Quiet
+    // Replace[_Options|_?FailureQ -> {}]
     // Map[ToString[#, InputForm]&]
     // Replace[{options__} :> (
         If[OptionValue["Format"] == MarkupKind["Markdown"],
@@ -509,7 +512,6 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-(* SetDelayed is not needed. Cache it when define it. *)
 GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
     If[GetTokenPrefix[doc, pos] == "\\\\",
         (* double-triggered *)
@@ -519,6 +521,7 @@ GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
 )
 
 
+(* SetDelayed is not needed. Cache it when define it. *)
 NonLetterAliasCompletionItems = (
     Join[
         AliasToLongName

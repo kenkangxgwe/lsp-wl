@@ -1,9 +1,10 @@
 (* ::Package:: *)
 
+(* Copyright 2018 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>,
-           huxianglong <hxianglong_at_gmail.com>
-*)
 
 
 BeginPackage["WolframLanguageServer`Server`"];
@@ -26,14 +27,17 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
+Needs["WolframLanguageServer`Adaptor`"]
 
 
 (* ::Section:: *)
 (*Utility*)
 
 
-FoldWhile[f_, x_, list_List, test_] := FoldWhile[f, Prepend[list, x], test];
-FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take[#, 2]]&, list, Length[#] > 1 && test[First[#]]&]];
+If[$VersionNumber < 12.2,
+	FoldWhile[f_, x_, list_List, test_] := FoldWhile[f, Prepend[list, x], test];
+	FoldWhile[f_, list_List, test_] := First[NestWhile[Prepend[Drop[#, 2], f @@ Take[#, 2]]&, list, Length[#] > 1 && test[First[#]]&]]
+]
 
 
 (* ::Section:: *)
@@ -45,11 +49,21 @@ DeclareType[WorkState, <|
 	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientCapabilities" -> _Association,
+	"debugSession" -> _DebugSession,
 	"scheduledTasks" -> {___ServerTask},
 	"caches" -> _Association,
+	"pendingServerRequests" -> _Association,
 	"config" -> _Association
 |>]
 
+DeclareType[DebugSession, <|
+	"initialized" -> _?BooleanQ,
+	"server" -> _SocketObject | Null,
+	"client" -> _SocketObject | Null,
+	"subKernel" -> _,
+	"context" -> _String,
+	"thread" -> _DapThread
+|>]
 
 DeclareType[RequestCache, <|
 	"cachedTime" -> _DateObject,
@@ -69,8 +83,14 @@ InitialState = WorkState[<|
 	"initialized" -> False,
 	"openedDocs" -> <||>,
 	"client" -> Null,
+	"debugSession" -> DebugSession[<|
+		"initialized" -> False,
+		"server" -> Null,
+		"client" -> Null
+	|>],
 	"scheduledTasks" -> {},
 	"caches" -> initialCaches,
+	"pendingServerRequests" -> <||>,
 	"config" -> <|
 		"configFileConfig" -> loadConfig[]
 	|>
@@ -89,19 +109,25 @@ ServerCapabilities = <|
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
+	"codeActionProvider" -> True,
 	"documentHighlightProvider" -> True,
+	"codeLensProvider" -> <|
+		"resolveProvider" -> True
+	|>,
 	"colorProvider" -> True,
-	(* "executeCommandProvider" -> <|
+	"executeCommandProvider" -> <|
 		"commands" -> {
-			"openRef"
+			"openRef",
+			"dap-wl.evaluate-file",
+			"dap-wl.evaluate-range"
 		}
-	|>, *)
+	|>,
 	Nothing
 |>
 
 ServerConfig = <|
 	"updateCheckInterval" -> Quantity[7, "Days"],
-		(* cached results *)
+	(* cached results *)
 	"cachedRequests" -> {
 		"textDocument/signatureHelp",
 		"textDocument/documentSymbol",
@@ -388,13 +414,26 @@ TcpSocketHandler[{stop_, state_WorkState}]:= (
 	CloseClient[state["client"]];
     {stop, state}
 )
-TcpSocketHandler[state_WorkState] := Module[
+TcpSocketHandler[state_WorkState] := With[
 	{
-		client = state["client"]
+		client = state["client"],
+		debugSession = state["debugSession"]
 	},
 
-	If[SocketReadyQ[client],
+	Which[
+		SocketReadyQ[client],
 		handleMessageList[ReadMessages[client], state],
+		(* new client connected *)
+		debugSession["server"] =!= Null &&
+		debugSession["client"] === Null &&
+		Length[debugSession["server"]["ConnectedClients"]] > 0,
+		{
+			"Continue",
+			ReplaceKey[state, {"debugSession", "client"} -> First[debugSession["server"]["ConnectedClients"]]]
+		},
+		debugSession["client"] =!= Null && SocketReadyQ[debugSession["client"]],
+		handleDapMessageList[ReadMessages[debugSession["client"]], state],
+		True,
 		doNextScheduledTask[state]
 	]
 	// Replace[{
@@ -449,7 +488,7 @@ StreamPattern = ("stdio"|_SocketObject);
 
 
 SelectClient[connection_SocketObject] := (	
-	SelectFirst[connection["ConnectedClients"], SocketReadyQ] (* SocketWaitNext does not work in 11.3 *)
+  SelectFirst[connection["ConnectedClients"], SocketReadyQ] (* SocketWaitNext does not work in 11.3 *)
 	// (If[MissingQ[#],
 		Pause[1];
 		Return[SelectClient[connection]],
@@ -635,7 +674,7 @@ RPCPatterns = <|
 
 constructRPCBytes[msg_Association] := (
 	Check[
-		ExportByteArray[msg, "RawJSON"],
+		ExportByteArray[msg, "RawJSON", "Compact" -> True],
 		(*
 			if the result is not able to convert to JSON,
 			returns an error respond
@@ -648,7 +687,9 @@ constructRPCBytes[msg_Association] := (
 				"InternalError",
 				"The request is not handled correctly."
 			]],
-		"RawJSON"]
+			"RawJSON",
+			"Compact" -> True
+		]
 	] // {
 		(* header *)
 		Length
@@ -692,10 +733,11 @@ CloseClient[client_NamedPipe] := With[
 
 NotificationQ = KeyExistsQ["id"] /* Not
 (* NotificationQ[msg_Association] := MissingQ[msg["id"]] *)
+ResponseQ = And[KeyExistsQ["method"] /* Not, KeyExistsQ["id"]] /* Through
 
 handleMessageList[msgs:{___Association}, state_WorkState] := (
     FoldWhile[handleMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
-);
+)
 
 handleMessage[msg_Association, state_WorkState] := With[
 	{
@@ -706,19 +748,22 @@ handleMessage[msg_Association, state_WorkState] := With[
 		(* wrong message before initialization *)
 		!state["initialized"] && !MemberQ[{"initialize", "initialized", "exit"}, method],
 		If[!NotificationQ[msg],
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"error" -> ServerError[
 					"ServerNotInitialized",
 					"The server is not initialized."
 				]
-			|>]
+			|>]]
 			(* otherwise, dropped the notification *)
 		];
 		{"Continue", state},
 		(* notification*)
 		NotificationQ[msg],
 		handleNotification[method, msg, state],
+		(* response *)
+		ResponseQ[msg],
+		handleResponse[state["pendingServerRequests"][msg["id"]], msg, state],
 		(* resquest *)
 		True,
 		Which[
@@ -732,7 +777,47 @@ handleMessage[msg_Association, state_WorkState] := With[
 			handleRequest[method, msg, state]
 		]
 	]
-];
+]
+
+
+handleDapMessageList[msgs:{___Association}, state_WorkState] := (
+    FoldWhile[handleDapMessage[#2, Last[#1]]&, {"Continue", state}, msgs, MatchQ[{"Continue", _}]]
+)
+
+handleDapMessage[msg_Association, state_WorkState] := Module[
+	{
+		newState = state
+	},
+
+	LogDebug["handleDapMessage: " <> ToString[msg]];
+
+	Which[
+		(* wrong message before initialization *)
+		!state["debugSession"]["Initialized"] &&
+		msg["type"] != "request" &&
+		!MemberQ[{"initialize"}, msg["command"]],
+		If[msg["type"] == "request",
+			sendMessage[state["dubugSession"]["client"], DapResponse[<|
+				"type" -> "response",
+				"request_seq" -> msg["seq"],
+				"success" -> False,
+				"command" -> msg["command"],
+				"message" -> "ServerNotInitialized",
+				"body" -> <|
+					"error" -> "The server is not initialized."
+				|>
+			|>]]
+			(* otherwise, dropped the notification *)
+		];
+		{"Continue", state},
+		(* event*)
+		msg["type"] == "event",
+		handleDapEvent[msg["event"], msg, newState],
+		(* resquest *)
+		True,
+		handleDapRequest[msg["command"], msg, newState]
+	]
+]
 
 
 
@@ -745,17 +830,21 @@ cacheResponse[method_String, msg_][state_WorkState] =
 	cacheResponse[method, msg, state]
 
 
-sendCachedResult[method_String, msg_, state_WorkState] := Block[
+sendCachedResult[method_String, msg_, state_WorkState] := With[
 	{
 		cache = getCache[method, msg, state]
 	},
 
-	sendResponse[state["client"],
-		<|"id" -> msg["id"]|>
-		// Append[
-			If[!MissingQ[cache["result"]],
-				"result" -> cache["result"],
-				"error" -> cache["error"]
+	sendMessage[state["client"],
+		ResponseMessage[<|"id" -> msg["id"]|>]
+		// ReplaceKey[
+			If[MissingQ[cache],
+				(* File closed, sends Null. *)
+				"result" -> Null,
+				If[!MissingQ[cache["result"]],
+					"result" -> cache["result"],
+					"error" -> cache["error"]
+				]
 			]
 		]
 	];
@@ -774,7 +863,7 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 				ServerConfig["requestDelays"][method],
 				"Second"
 			}],
-			"id" -> msg["id"],
+			"id" -> (msg["id"] // Replace[Except[_Integer] -> Missing["NoIdNeeded"]]),
 			"params" -> getScheduleTaskParameter[method, msg, state],
 			"callback" -> (handleRequest[method, msg, #1]&)
 		|>]]
@@ -782,9 +871,20 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 )
 
 
-(* response, notification and request will call this function *)
-sendResponse[client_, res_Association] := (
-	Prepend[res, <|"jsonrpc" -> "2.0"|>]
+(* For LSP: response, notification and request *)
+sendMessage[client_, res:(_RequestMessage|_ResponseMessage|_NotificationMessage)] := (
+	res
+	// ReplaceKey["jsonrpc" -> "2.0"]
+	// ToAssociation
+	// constructRPCBytes
+	// WriteMessage[client]
+)
+
+(* For DAP: event and response *)
+sendMessage[client_, res:(_DapEvent|_DapResponse)] := (
+	res
+	// LogDebug
+	// ToAssociation
 	// constructRPCBytes
 	// WriteMessage[client]
 )
@@ -794,27 +894,33 @@ sendResponse[client_, res_Association] := (
 (*initialize*)
 
 
-handleRequest["initialize", msg_, state_WorkState] := Module[
-	{
-		newState = state
-	},
+handleRequest["initialize", msg_, state_WorkState] := With[
+    {
+        debugPort = Fold[Replace[#1, _?MissingQ -> <||>][#2]&,
+            msg, {"params", "initializationOptions", "debuggerPort"}
+        ]
+    },
 
-	LogDebug["handle/initialize"];
-	
-	(* Check Client Capabilities *)
-	newState = ReplaceKey[state,
-		"clientCapabilities" -> msg["params"]["capabilities"]
-	];
-	
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> <|
 			"capabilities" -> ServerCapabilities
 		|>
-	|>];
-	
-	{"Continue", newState}
-];
+	|>]];
+
+	(* TODO(kenkangxgwe): check client capabilities *)
+	{
+		"Continue",
+		Fold[ReplaceKey, state, {
+			"clientCapabilities" -> msg["params"]["capabilities"],
+			If[!MissingQ[debugPort],
+				LogInfo["Debugger listening at port " <> ToString[debugPort]];
+				{"debugSession", "server"} -> SocketOpen[debugPort],
+				Nothing
+			]
+		}]
+	}
+]
 
 
 (* ::Subsection:: *)
@@ -825,10 +931,10 @@ handleRequest["shutdown", msg_, state_] := Module[
 	{
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> Null
-	|>];
+	|>]];
 
 	{"Continue", state}
 ];
@@ -844,19 +950,159 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 		args = msg["params"]["arguments"]
 	},
 
-	Replace[command, {
-		"dap-wl.runfile" -> (
-			LogInfo[StringJoin["executing ", command, "with arguments: ", ToString[args]]]
-		)
-	}];
+	LogDebug[StringJoin["executing ", command, " with arguments: ", ToString[args]]];
+	executeCommand[command, msg, state]
+]
 
-	sendResponse[state["client"], <|
+
+(* ::Subsubsection:: *)
+(*openRef*)
+
+
+executeCommand["openRef", msg_, state_WorkState] := (
+  msg["params"]["arguments"]
+  // First
+  // SystemOpen
+  // UsingFrontEnd;
+
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> Null
-	|>];
+	|>]];
 
 	{"Continue", state}
+)
 
+
+(* ::Subsubsection:: *)
+(*dap-wl.evaluate-file*)
+
+
+executeCommand["dap-wl.evaluate-file", msg_, state_WorkState] := With[
+	{
+		args = msg["params"]["arguments"] // First
+	},
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "continued",
+		"body" -> <|
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsContinued" -> True *)
+		|>
+	|>]];
+
+	text = state["openedDocs"][args["uri"]]
+		// GetDocumentText
+		// StringTrim
+		// (LogDebug["Evaluating " <> #]; #)&;
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			(* "category" -> "stdout", *)
+			"output" -> (
+				DebuggerEvaluate[
+					<|"expression" -> text|>,
+					state["debugSession"]["subKernel"]
+				]
+			)
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "stopped",
+		"body" -> <|
+			"reason" -> "pause",
+			"description" -> "Cell Evaluated Successfully",
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
+		|>
+	|>]];
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> Null
+	|>]];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsubsection:: *)
+(*dap-wl.evaluate-range*)
+
+
+executeCommand["dap-wl.evaluate-range", msg_, state_WorkState] := Block[
+	{
+		args = msg["params"]["arguments"] // First,
+		text
+	},
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "continued",
+		"body" -> <|
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsContinued" -> True *)
+		|>
+	|>]];
+
+	text = state["openedDocs"][args["uri"]]
+		// GetDocumentText[#, ConstructType[args["range"], _LspRange]]&
+		// StringTrim
+		// (LogDebug["Evaluating " <> #]; #)&;
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "output",
+		"body" -> <|
+			(* "category" -> "stdout", *)
+			"output" -> (
+				DebuggerEvaluate[
+					<|"expression" -> text|>,
+					state["debugSession"]["subKernel"]
+				]
+				// (# <> "\n")&
+			)
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "stopped",
+		"body" -> <|
+			"reason" -> "pause",
+			"description" -> "Cell Evaluated Successfully",
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
+		|>
+	|>]];
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> Null
+	|>]];
+
+	{"Continue", state}
 ]
 
 
@@ -865,25 +1111,25 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 
 
 handleRequest["textDocument/publishDiagnostics", uri_String, state_WorkState] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
 			"uri" -> uri,
-			"diagnostics" -> ToAssociation[DiagnoseDoc[state["openedDocs"][uri]]]
+			"diagnostics" -> DiagnoseDoc[state["openedDocs"][uri]]
 		|>
-	|>];
+	|>]];
 	{"Continue", state}
 )
 
 
 handleRequest["textDocument/clearDiagnostics", uri_String, state_WorkState] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
 			"uri" -> uri,
 			"diagnostics"  -> {}
 		|>
-	|>];
+	|>]];
 	{"Continue", state}
 )
 
@@ -899,15 +1145,17 @@ getScheduleTaskParameter[method:"textDocument/publishDiagnostics", uri_String, s
 
 handleRequest["textDocument/hover", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation[GetHoverAtPosition[doc, pos]]
-	|>];
-
+		"result" -> GetHoverAtPosition[
+			state["openedDocs"][uri],
+			pos
+		]
+	|>]];
 	{"Continue", state}
 ]
 
@@ -931,19 +1179,22 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				GetSignatureHelp[state["openedDocs"][uri], pos]
-				// ToAssociation
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> GetSignatureHelp[
+					state["openedDocs"][uri],
+					pos
+				]
+			|>]
+		]
 	]
 ]
 
 
-cacheAvailableQ[method:"textDocument/signatureHelp", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/signatureHelp", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
@@ -966,44 +1217,47 @@ getCache[method:"textDocument/signatureHelp", msg_, state_WorkState] := (
 
 handleRequest["textDocument/completion", msg_, state_] := Module[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
 	msg["params"]["context"]["triggerKind"]
 	// Replace[{
 		CompletionTriggerKind["Invoked"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
-					"items" -> ToAssociation@GetTokenCompletionAtPostion[doc, pos]
+					"items" -> GetTokenCompletionAtPostion[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
-			|>]
+			|>]]
 		),
 		CompletionTriggerKind["TriggerCharacter"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> True,
-					"items" -> (
-						GetTriggerKeyCompletion[doc, pos]
-						// ToAssociation
-					)
+					"items" -> GetTriggerKeyCompletion[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
-			|>]
+			|>]]
 		),
 		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					"isIncomplete" -> False,
-					"items" -> (
-						GetIncompleteCompletionAtPosition[doc, pos]
-						// ToAssociation
-					) 
+					"items" -> GetIncompleteCompletionAtPosition[
+						state["openedDocs"][uri],
+						pos
+					]
 				|>
-			|>];
+			|>]];
 		)
 	}];
 
@@ -1030,13 +1284,13 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 	msg["params"]["data"]["type"]
 	// Replace[{
 		"Alias" | "LongName" :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> msg["params"]
-			|>] 
+			|>]] 
 		),
 		"Token" :> (
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
 					msg["params"]
@@ -1047,7 +1301,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 						|>
 					]
 				|>
-			|>]
+			|>]]
 		)
 	}];
 
@@ -1066,14 +1320,17 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 
 handleRequest["textDocument/definition", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation@FindDefinitions[doc, pos]
-	|>] // AbsoluteTiming // First // LogDebug;
+		"result" -> FindDefinitions[
+			state["openedDocs"][uri],
+			pos
+		]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1085,15 +1342,19 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 
 handleRequest["textDocument/references", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]],
 		includeDeclaration = msg["params"]["context"]["includeDeclaration"]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> ToAssociation@FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
-	|>] // AbsoluteTiming // First // LogDebug;
+		"result" -> FindReferences[
+			state["openedDocs"][uri],
+			pos,
+			"IncludeDeclaration" -> includeDeclaration
+		]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1105,18 +1366,17 @@ handleRequest["textDocument/references", msg_, state_] := With[
 
 handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] := With[
 	{
-		id = msg["id"],
 		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendResponse[state["client"], <|
-		"id" -> id,
-		"result" -> (
-			FindDocumentHighlight[state["openedDocs"][uri], pos]
-			// ToAssociation
-		)
-	|>];
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> FindDocumentHighlight[
+			state["openedDocs"][uri],
+			pos
+		]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1144,20 +1404,19 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				state["openedDocs"][uri]
-				// ToDocumentSymbol
-				// ToAssociation
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> ToDocumentSymbol[state["openedDocs"][uri]]
+			|>]
+		]
 	]
 ]
 
 
-cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
@@ -1179,6 +1438,138 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 
 
 (* ::Subsection:: *)
+(*textDocument/codeAction*)
+
+
+handleRequest["textDocument/codeAction", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"],
+		range = ConstructType[msg["params"]["range"], LspRange]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> (
+			GetCodeActionsInRange[
+				state["openedDocs"][uri],
+				range
+			] // If[state["debugSession"]["initialized"],
+				Append[
+					LspCodeAction[<|
+						"title" -> "Evaluate in Debug Console",
+						"kind" -> CodeActionKind["Empty"],
+						"command" -> <|
+							"title" -> "Evaluate in Debug Console",
+							"command" -> "dap-wl.evaluate-range",
+							"arguments" -> {<|
+								"uri" -> uri,
+								"range" -> range
+							|>}
+						|>
+					|>]
+				],
+				Identity
+			]
+		)
+	|>]];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocuent/codeLens*)
+
+
+handleRequest["textDocument/codeLens", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> id,
+		"result" -> (
+			If[state["debugSession"]["initialized"],
+				{
+					CodeLens[<|
+						"range" -> <|
+							"start" -> <|
+								"line" -> 0,
+								"character" -> 0
+							|>,
+							"end" -> <|
+								"line" -> 0,
+								"character" -> 0
+							|>
+						|>,
+						"data" -> <|
+							"title" -> "$(workflow) Evaluate File",
+							"command" -> "dap-wl.evaluate-file",
+							"arguments" -> {<|
+								"uri" -> uri
+							|>}
+						|>
+					|>],
+					Table[
+						CodeLens[<|
+							(* range can only span one line *)
+							"range" -> (
+								codeRange
+								// ReplaceKey["end" -> codeRange["start"]]
+								(* // ReplaceKey[{"end", "line"} -> codeRange["start"]["line"]]
+								// ReplaceKey[{"end", "character"} -> 1] *)
+							),
+							"data" -> <|
+								"title" -> "$(play) Evaluate",
+								"command" -> "dap-wl.evaluate-range",
+								"arguments" -> {<|
+									"uri" -> uri,
+									"range" -> codeRange
+								|>}
+							|>
+						|>],
+						{
+							codeRange,
+							state["openedDocs"][uri]
+							// FindAllCodeRanges
+						}
+					]
+				},
+				{}
+			]
+			// Flatten
+		)
+	|>]];
+
+	{"Continue", state}
+
+]
+
+
+(* ::Subsection:: *)
+(*codeLens/resolve*)
+
+
+handleRequest["codeLens/resolve", msg_, state_] := With[
+	{
+		id = msg["id"],
+		codeLens = msg["params"]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> id,
+		"result" -> (
+      ConstructType[codeLens, CodeLens]
+			// ReplaceKey[#, "command" -> #["data"]]&
+    )
+	|>]];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
 (*textDocument/documentColor*)
 
 
@@ -1195,20 +1586,19 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 	},
 
 	state
-	// ReplaceKey[
-		{"caches", method, uri} -> RequestCache[<|
-		 	"cachedTime" -> Now,
-			"result" -> (
-				state["openedDocs"][uri]
-				// FindDocumentColor
-				// ToAssociation
-			)
-		|>]
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> FindDocumentColor[state["openedDocs"][uri]]
+			|>]
+		]
 	]
 ]
 
 
-cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := Block[
+cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := With[
 	{
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
@@ -1237,17 +1627,14 @@ getScheduleTaskParameter[method:"textDocument/documentColor", msg_, state_WorkSt
 handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 	{
 		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
-		color = msg["params"]["color"] // LspColor,
-		range = msg["params"]["range"] // LspRange
+		color = ConstructType[msg["params"]["color"], LspColor],
+		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> (
-			GetColorPresentation[doc, color, range]
-			// ToAssociation
-		)
-	|>];
+		"result" -> GetColorPresentation[doc, color, range]
+	|>]];
 
 	{
 		"Continue",
@@ -1265,14 +1652,14 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 
 
 handleRequest[_, msg_, state_] := (
-	sendResponse[state["client"], <|
+	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"error" -> ServerError["MethodNotFound",
 			msg
 			// ErrorMessageTemplates["MethodNotFound"]
 			// LogError
 		]
-	|>];
+	|>]];
 
 	{"Continue", state}
 )
@@ -1333,13 +1720,13 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 			Part[state["scheduledTasks"], pos]["type"]
 			// StringJoin[#, " request is cancelled."]&
 			// LogDebug;
-			sendResponse[state["client"], <|
+			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> id,
 				"error" -> ServerError[
 					"RequestCancelled",
 					"The request is cancelled."
 				]
-			|>];
+			|>]];
 			state
 			// ReplaceKeyBy["scheduledTasks" -> (Delete[pos])]
 		),
@@ -1390,14 +1777,15 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	LogDebug @ ("Close Document " <> uri);
+	LogInfo @ ("Close Document " <> uri);
 
 	state
 	// ReplaceKeyBy[{"openedDocs"} -> KeyDrop[uri]]
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
 		"textDocument/documentSymbol" -> KeyDrop[uri],
 		"textDocument/documentColor" -> KeyDrop[uri],
-		"textDocument/codeLens" -> KeyDrop[uri]
+		"textDocument/codeLens" -> KeyDrop[uri],
+		"textDocument/publishDiagnostics" -> KeyDrop[uri]
 	}]&)]
 	// handleRequest["textDocument/clearDiagnostics", uri, #]&
 ]
@@ -1502,6 +1890,376 @@ handleNotification[_, msg_, state_] := (
 
 
 (* ::Section:: *)
+(*Send Request*)
+
+
+$requestId = 0
+getRequestId[] := (
+	"req_" <> ToString[($requestId += 1)]
+)
+
+
+(* ::Subsection:: *)
+(*workspace/applyEdit*)
+
+
+sendRequest[method:"workspace/applyEdit", msg_, state_WorkState] := With[
+	{
+		id = getRequestId[]
+	},
+
+	sendMessage[state["client"], RequestMessage[<|
+		"id" -> id,
+		"method" -> method,
+		"params" -> <|
+			"edit" -> msg["params"]["edit"]
+		|>
+	|>]];
+
+	{
+		"Continue",
+		state
+		// ReplaceKeyBy["pendingServerRequests" -> Append[id -> method]]
+	}
+]
+
+
+(* ::Subsection:: *)
+(*workspace/codeLens/refresh*)
+
+
+sendRequest[method:"workspace/codeLens/refresh", state_WorkState] := With[
+	{
+		id = getRequestId[]
+	},
+
+	sendMessage[state["client"], RequestMessage[<|
+		"id" -> id,
+		"method" -> method,
+		"params" -> <||>
+	|>]];
+
+	{
+		"Continue",
+		state
+		// ReplaceKeyBy["pendingServerRequests" -> Append[id -> method]]
+	}
+]
+
+
+(* ::Section:: *)
+(*Handle Response*)
+
+
+handleResponse[_, msg_, state_WorkState] := (
+	{
+		"Continue",
+		state
+		// DeleteKey[{"pendingServerRequests", msg["id"]}]
+	}
+)
+
+
+(* ::Section:: *)
+(*Handle Dap Request*)
+
+
+(* ::Subsection:: *)
+(*initialize*)
+
+
+handleDapRequest["initialize", msg_, state_WorkState] := Block[
+	{
+		subKernel = CreateDebuggerKernel[]
+	},
+
+	LogInfo["Initializing Wolfram Language Debugger"];
+
+    sendMessage[state["debugSession"]["client"], DapResponse[<|
+        "type" -> "response",
+        "request_seq" -> msg["seq"],
+        "success" -> True,
+        "command" -> msg["command"],
+        "body" -> <|
+			"supportsConfigurationDoneRequest" -> True,
+			"supportsEvaluateForHovers" -> True
+        |>
+    |>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "initialized"
+	|>]];
+
+    state
+    // ReplaceKeyBy["debugSession" -> (
+		Fold[ReplaceKey, #, {
+			"initialized" -> True,
+			"subKernel" -> subKernel,
+			"context" -> context,
+			"thread" -> DapThread[<|
+				"id" -> GetKernelId[subKernel],
+				"name" -> StringJoin[
+					"SubKernel ",
+					GetProcessId[subKernel]
+					// ToString
+				]
+			|>],
+			"symbolTable" -> <||>
+		}]&)]
+    // sendRequest["workspace/codeLens/refresh", #]&
+]
+
+
+(* ::Subsection:: *)
+(*configurationDone*)
+
+
+handleDapRequest["configurationDone", msg_, state_WorkState] := (
+
+	LogInfo["Configuration Done for Wolfram Language Debugger"];
+
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <||>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "stopped",
+		"body" -> <|
+			"reason" -> "pause",
+			"description" -> "Cell Evaluated Successfully",
+			"threadId" -> (
+				GetThreads[state["debugSession"]["subKernel"]]
+				// First
+				// Key["id"]
+			)
+			(* , "allThreadsStopped" -> True *)
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*attach*)
+
+
+handleDapRequest["attach", msg_, state_WorkState] := (
+
+	LogInfo["Attaching to Wolfram Language Kernel"];
+
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <||>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "process",
+		"body" -> <|
+			"name" -> "wolfram.exe",
+			"systemProcessId" -> state["debugSession"]["thread"]["id"],
+			"isLocalProcess" -> True,
+			"startMethod" -> "attach"
+		|>
+	|>]];
+
+	sendMessage[state["debugSession"]["client"], DapEvent[<|
+		"type" -> "event",
+		"event" -> "thread",
+		"body" -> <|
+			"reason" -> "wolfram.exe",
+			"threadId" -> state["debugSession"]["thread"]["id"]
+		|>
+	|>]];
+
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*disconnect*)
+
+
+handleDapRequest["disconnect", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <||>
+	|>]];
+
+	state
+	// ReplaceKey[{"debugSession", "initialized"} -> False]
+	// ReplaceKey[{"debugSession", "client"} -> Null]
+    // sendRequest["workspace/codeLens/refresh", #]&
+)
+
+
+(* ::Subsection:: *)
+(*setBreakpoints*)
+
+
+handleDapRequest["setBreakPoints", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"breakpoints" -> {}
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*threads*)
+
+
+handleDapRequest["threads", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"threads" -> GetThreads[
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*stackTrace*)
+
+
+handleDapRequest["stackTrace", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"stackFrames" -> GetStackFrames[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*scopes*)
+
+
+handleDapRequest["scopes", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"scopes" -> GetScopes[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*variables*)
+
+
+handleDapRequest["variables", msg_, state_WorkState] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"variables" -> GetVariables[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			]
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Subsection:: *)
+(*evaluate*)
+
+
+handleDapRequest["evaluate", msg_, state_WorkState] := (
+
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> True,
+		"command" -> msg["command"],
+		"body" -> <|
+			"result" -> DebuggerEvaluate[
+				msg["arguments"],
+				state["debugSession"]["subKernel"]
+			],
+			"variablesReference" -> 0
+		|>
+	|>]];
+
+	{"Continue", state}
+ )
+
+
+(* ::Subsection:: *)
+(*Invalid Dap Request*)
+
+
+handleDapRequest[_, msg_, state_] := (
+	sendMessage[state["debugSession"]["client"], DapResponse[<|
+		"type" -> "response",
+		"request_seq" -> msg["seq"],
+		"success" -> False,
+		"command" -> msg["command"],
+		"body" -> <|
+			"error" -> <|
+				"id" -> msg["seq"],
+				"format" -> ErrorMessageTemplates["DapRequestNotFound"][msg["command"]]
+			|>
+		|>
+	|>]];
+
+	{"Continue", state}
+)
+
+
+(* ::Section:: *)
 (*Send Message*)
 
 
@@ -1514,33 +2272,29 @@ MessageType = <|
 |>
 
 showMessage[message_String, msgType_String, state_WorkState] := (
-	MessageType[msgType]
-	// Replace[_?MissingQ :> MessageType["Error"]]
-	// LogDebug
-	// (type \[Function] 
-		sendResponse[state["client"], <|
-			"method" -> "window/showMessage", 
-			"params" -> <|
-				"type" -> type,
-				"message" -> message
-			|>
-		|>]
-	)
+	sendMessage[state["client"], NotificationMessage[<|
+		"method" -> "window/showMessage",
+		"params" -> <|
+			"type" -> (
+				MessageType[msgType]
+				// Replace[_?MissingQ :> MessageType["Error"]]
+			),
+			"message" -> message
+		|>
+	|>]]
 )
 
 logMessage[message_String, msgType_String, state_WorkState] := (
-	MessageType[msgType]
-	// Replace[_?MissingQ :> MessageType["Error"]]
-	// LogDebug
-	// (type \[Function] 
-		sendResponse[state["client"], <|
-			"method" -> "window/logMessage", 
-			"params" -> <|
-				"type" -> type,
-				"message" -> message
-			|>
-		|>]
-	)
+	sendMessage[state["client"], NotificationMessage[<|
+		"method" -> "window/logMessage",
+		"params" -> <|
+			"type" -> (
+				MessageType[msgType]
+				// Replace[_?MissingQ :> MessageType["Error"]]
+			),
+			"message" -> message
+		|>
+	|>]]
 )
 
 
@@ -1548,7 +2302,7 @@ logMessage[message_String, msgType_String, state_WorkState] := (
 (*Handle Error*)
 
 
-ServerError[errorType_String, msg_String] := (
+ServerError[errorType_String, msg_String] := ResponseError[
 	<|
 		"code" -> (
 			errorType
@@ -1560,11 +2314,12 @@ ServerError[errorType_String, msg_String] := (
 		), 
 		"message" -> msg
 	|>
-)
+]
 
 
 ErrorMessageTemplates = <|
-	"MethodNotFound" -> StringTemplate["The requested method `method` is invalid or not implemented"]
+	"MethodNotFound" -> StringTemplate["The requested method \"`method`\" is invalid or not implemented"],
+	"DapRequestNotFound" -> StringTemplate["The request \"`command`\" is invalid or not implemented"]
 |>
 
 
@@ -1606,7 +2361,7 @@ doNextScheduledTask[state_WorkState] := (
 			Pause[0.001];
 			{"Continue", state}
 		),
-		task_ServerTask :> Block[
+		task_ServerTask :> With[
 			{
 				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
 			},
@@ -1615,22 +2370,28 @@ doNextScheduledTask[state_WorkState] := (
 			task["type"]
 			// Replace[{
 				method:"textDocument/publishDiagnostics" :> (
-					newState
-					// If[DatePlus[
-						newState["openedDocs"][task["params"]]["lastUpdate"],
-						{5, "Second"}] > Now,
-						(* Reschedule the task *)
-						scheduleDelayedRequest[method, task["params"], #]&,
-						ReplaceKey[
-							{
-								"caches",
-								"textDocument/publishDiagnostics",
-								task["params"],
-								"scheduledQ"
-							} -> False
-						]
-						/* (task["callback"][#, task["params"]]&)
-					]
+					newState["openedDocs"][task["params"]]
+					// Replace[{
+						(* File closed, does nothing *)
+						_?MissingQ -> {"Continue", newState},
+						_?((DatePlus[#["lastUpdate"], {5, "Second"}] > Now)&) :> (
+							(* Reschedule the task *)
+							newState
+							// scheduleDelayedRequest[method, task["params"], #]&
+						),
+						_ :> (
+							newState
+							// ReplaceKey[
+								{
+									"caches",
+									"textDocument/publishDiagnostics",
+									task["params"],
+									"scheduledQ"
+								} -> False
+							]
+							// task["callback"][#, task["params"]]&
+						)
+					}]
 				),
 				"InitialCheck" :> (
 					newState
@@ -1651,17 +2412,17 @@ doNextScheduledTask[state_WorkState] := (
 						(* if there will not be a same task in the future, do it now *)
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
-							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendResponse[state["client"], <|"id" -> task["params"]["id"], "result" -> <||>|>]], *)
+							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
 							task["callback"][newState, task["params"]]
 							// AbsoluteTiming
 							// Apply[(LogInfo[{task["type"], #1}];#2)&],
-							sendResponse[newState["client"], <|
+							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
 									"InternalError",
 									"There is no callback function for this scheduled task."
 								]
-							|>];
+							|>]];
 							{"Continue", newState}
 						],
 						(* find a recent duplicate request *)
@@ -1669,13 +2430,13 @@ doNextScheduledTask[state_WorkState] := (
 							(* execute fallback function if applicable *)
 							task["duplicateFallback"][newState, task["params"]],
 							(* otherwise, return ContentModified error *)
-							sendResponse[newState["client"], <|
+							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
 									"RequestCancelled",
 									"There is a more recent duplicate request."
 								]
-							|>];
+							|>]];
 							{"Continue", newState}
 						]
 					}]
@@ -1730,117 +2491,129 @@ defaultConfig = <|
 
 
 (* ::Subsection:: *)
-(*check upgrades*)
+(*initial checks*)
 
 
 initialCheck[state_WorkState] := (
 	checkDependencies[state];
-	If[
-		DateDifference[
-			DateObject[state["config"]["configFileConfig"]["lastCheckForUpgrade"]],
-			Today
-		] < ServerConfig["updateCheckInterval"],
-		logMessage[
-			"Upgrade not checked, only a few days after the last check.",
-			"Log",
-			state
-		],
-		(* check for upgrade if not checked for more than checkInterval days *)
-		checkGitRepo[state];
-		(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
-		// saveConfig *)
-	];
+	checkUpdates[state];
 	{"Continue", state}
 )
 
-checkGitRepo[state_WorkState] := (
-	Check[Needs["GitLink`"],
-		showMessage[
-			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
-			"Info",
-			state
-		];
-		Return[]
-	] // Quiet;
+(* ::Subsubsection:: *)
+(*checkDependencies*)
 
-	If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
-		showMessage[
-			"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
-			"Info",
-			state
-		];
-		Return[]
-	];
 
-	With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
-		If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
-			logMessage[
-				"Upgrade not checked, the current branch is not 'master'.",
-				"Log",
-				state
-			],
-			GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
-			// Replace[
-				{_, _?Positive} :> (
-					showMessage[
-						"A new version detected, please close the server and use 'git pull' to upgrade.",
-						"Info",
-						state
-					]
-				)
-			]
-		]
-	];
-)
-
-If[$VersionNumber >= 12.1,
-	pacletInstalledQ[{name_String, version_String}] := (
-		PacletObject[name -> version]
-		// FailureQ // Not
-	),
-	pacletInstalledQ[{name_String, version_String}] := (
-		PacletManager`PacletInformation[{name, version}]
-		// MatchQ[{}] // Not
-	)
-]
-
-checkDependencies[state_WorkState] := With[
-	{
-		dependencies = {
-			{"CodeParser", "1.0"},
-			{"CodeInspector", "1.0"}
-		}
-	},
-
-	Check[Needs["PacletManager`"],
+If[FindFile["PacletManager`"] // FailureQ,
+	checkDependencies[state_Workstate] := (
 		showMessage[
 			"The PacletManager is not installed to the current Wolfram kernel, please check dependencies manually.",
 			"Info",
 			state
-		];
-		Return[]
-	];
+		]
+	),
+	Needs["PacletManager`"];
+	checkDependencies[state_WorkState] := With[
+		{
+			dependencies = {
+				{"CodeParser", "1.*"},
+				{"CodeInspector", "1.*"}
+			}
+		},
 
-	dependencies
-	// Select[pacletInstalledQ /* Not]
-	// Replace[
-		missingDeps:Except[{}] :> (
-			StringRiffle[missingDeps, ", ", "-"]
-			// StringTemplate[StringJoin[
-				"These dependencies with correct versions need to be installed or upgraded: ``, ",
-				"otherwise the server may malfunction. ",
-				"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
-			]]
-			// showMessage[#, "Warning", state]&
-		)
+		dependencies
+		// Select[PacletFind /* MatchQ[{}]]
+		// Replace[
+			missingDeps:Except[{}] :> (
+				StringRiffle[missingDeps, ", ", "-"]
+				// StringTemplate[StringJoin[
+					"These dependencies with correct versions need to be installed or upgraded: ``, ",
+					"otherwise the server may malfunction. ",
+					"Please see the [Installation](https://github.com/kenkangxgwe/lsp-wl/blob/master/README.md#installation) section for details."
+				]]
+				// showMessage[#, "Warning", state]&
+			)
+		]
 	]
 ]
 
 
-WLServerVersion[] := WolframLanguageServer`Version;
+(* ::Subsubsection:: *)
+(*checkUpdates*)
+
+
+Check[
+	Needs["GitLink`"];
+	checkUpdates[state_WorkState] := (
+		(* check for upgrade if not checked for more than checkInterval days *)
+		If[
+			DateDifference[
+				DateObject[state["config"]["configFileConfig"]["lastCheckForUpgrade"]],
+				Today
+			] < ServerConfig["updateCheckInterval"],
+			logMessage[
+				"Upgrade not checked, only a few days after the last check.",
+				"Log",
+				state
+			];
+			Return[]
+			(* ReplaceKey[state["config"], "lastCheckForUpgrade" -> DateString[Today]]
+			// saveConfig *)
+		];
+
+		If[!GitLink`GitRepoQ[WolframLanguageServer`RootDirectory],
+			showMessage[
+				"Wolfram Language Server is not in a git repository, cannot detect upgrades.",
+				"Log",
+				state
+			];
+			Return[]
+		];
+
+		With[{repo = GitLink`GitOpen[WolframLanguageServer`RootDirectory]},
+			If[GitLink`GitProperties[repo, "HeadBranch"] != "master",
+				showMessage[
+					"Upgrade not checked, the current branch is not 'master'.",
+					"Log",
+					state
+				],
+				GitLink`GitAheadBehind[repo, "master", GitLink`GitUpstreamBranch[repo, "master"]]
+				// Replace[
+					{_, _?Positive} :> (
+						showMessage[
+							"A new version detected, please close the server and use 'git pull' to upgrade.",
+							"Info",
+							state
+						]
+					)
+				]
+			]
+		];
+	),
+	checkUpdates[state_WorkState] := (
+		(*
+			GitLink is not a native paclet for Mathematica / Wolfram Engine.
+			Don't show the message by default.
+		*)
+		(* showMessage[
+			"The GitLink is not installed to the current Wolfram kernel, please check upgrades via git manually.",
+			"Info",
+			state
+		]; *)
+		Null
+	)
+] // Quiet;
+
+
+(* ::Subsection:: *)
+(*Constant Functions*)
+
+
+WLServerVersion[] := WolframLanguageServer`$Version;
 
 
 WLServerDebug[] := Print["This is a debug function."];
+
 
 
 End[];

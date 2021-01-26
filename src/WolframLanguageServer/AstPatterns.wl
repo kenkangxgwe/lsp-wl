@@ -1,9 +1,11 @@
 (* ::Package:: *)
 
+(* Copyright 2019 lsp-wl Authors *)
+(* SPDX-License-Identifier: MIT *)
+
+
 (* Wolfram Language Server Ast Patterns *)
-(* Author: kenkangxgwe <kenkangxgwe_at_gmail.com>, 
-           huxianglong <hxianglong_at_gmail.com>
-*)
+
 
 BeginPackage["WolframLanguageServer`AstPatterns`"]
 ClearAll[Evaluate[Context[] <> "*"]]
