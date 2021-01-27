@@ -27,7 +27,7 @@ Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 Needs["WolframLanguageServer`Token`"]
-Needs["WolframLanguageServer`Adaptor`"]
+Needs["WolframLanguageServer`Adapter`"]
 
 
 (* ::Section:: *)

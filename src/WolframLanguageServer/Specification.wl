@@ -46,7 +46,7 @@ ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
 
 
 (* ::Section:: *)
-(* Debug Adaptor Protocol*)
+(* Debug Adapter Protocol*)
 
 
 DapEvent::usage = "is the type of Event interface in DAP."
@@ -401,7 +401,7 @@ DeclareType[ColorPresentation, <|
 
 
 (* ::Section:: *)
-(*Debug Adaptor Types*)
+(*Debug Adapter Types*)
 
 
 DeclareType[DapEvent, <|

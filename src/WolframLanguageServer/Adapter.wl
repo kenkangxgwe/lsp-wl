@@ -4,10 +4,10 @@
 (* SPDX-License-Identifier: MIT *)
 
 
-(* Wolfram Language Server Debugger Adaptor *)
+(* Wolfram Language Server Debugger Adapter *)
 
 
-BeginPackage["WolframLanguageServer`Adaptor`"]
+BeginPackage["WolframLanguageServer`Adapter`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
