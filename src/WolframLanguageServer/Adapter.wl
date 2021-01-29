@@ -40,6 +40,12 @@ Needs["WolframLanguageServer`Debugger`"]
 $DistributedContexts = "WolframLanguageServer`Debugger`"
 
 
+kernelObject = If[$VersionNumber >= 12.0,
+    _KernelObject,
+    _Parallel`Kernels`kernel
+]
+
+
 CreateDebuggerKernel[] := With[
     {
         subKernel = LaunchKernels[1] // First,
@@ -55,13 +61,13 @@ CreateDebuggerKernel[] := With[
 ]
 
 
-GetKernelId[kernel_KernelObject] := ParallelEvaluate[$KernelID, kernel]
+GetKernelId[kernel:kernelObject] := ParallelEvaluate[$KernelID, kernel]
 
 
-GetProcessId[kernel_KernelObject] := ParallelEvaluate[$ProcessID, kernel]
+GetProcessId[kernel:kernelObject] := ParallelEvaluate[$ProcessID, kernel]
 
 
-GetThreads[kernel_KernelObject] := {
+GetThreads[kernel:kernelObject] := {
     DapThread[<|
         "id" -> 1,
         "name" -> "default"
@@ -69,7 +75,7 @@ GetThreads[kernel_KernelObject] := {
 }
 
 
-GetStackFrames[stackTraceArguments_Association, kernel_KernelObject] := {
+GetStackFrames[stackTraceArguments_Association, kernel:kernelObject] := {
     StackFrame[<|
         "id" -> 0,
         "name" -> "default",
@@ -79,17 +85,17 @@ GetStackFrames[stackTraceArguments_Association, kernel_KernelObject] := {
 }
 
 
-GetScopes[scopesArguments_Association, kernel_KernelObject] := (
+GetScopes[scopesArguments_Association, kernel:kernelObject] := (
     ParallelEvaluate[GetContextsReferences[], kernel]
 )
 
 
-GetVariables[variablesArguments_Association, kernel_KernelObject] := (
+GetVariables[variablesArguments_Association, kernel:kernelObject] := (
     ParallelEvaluate[GetVariablesReference[variablesArguments], kernel]
 )
 
 
-DebuggerEvaluate[evaluateArguments_Association, kernel_KernelObject] := (
+DebuggerEvaluate[evaluateArguments_Association, kernel:kernelObject] := (
     If[evaluateArguments["context"] === "variables",
         evaluateArguments["expression"],
         evaluateArguments["expression"]
