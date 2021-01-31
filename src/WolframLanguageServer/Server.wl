@@ -115,6 +115,8 @@ ServerCapabilities = <|
 		"resolveProvider" -> True
 	|>,
 	"colorProvider" -> True,
+	"foldingRangeProvider" -> True,
+	"selectionRangeProvider" -> True,
 	"executeCommandProvider" -> <|
 		"commands" -> {
 			"openRef",
@@ -1063,7 +1065,7 @@ executeCommand["dap-wl.evaluate-range", msg_, state_WorkState] := Block[
 	|>]];
 
 	text = state["openedDocs"][args["uri"]]
-		// GetDocumentText[#, ConstructType[args["range"], _LspRange]]&
+		// GetDocumentText[#, ConstructType[args["range"], LspRange]]&
 		// StringTrim
 		// (LogDebug["Evaluating " <> #]; #)&;
 
@@ -1560,7 +1562,7 @@ handleRequest["codeLens/resolve", msg_, state_] := With[
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> id,
 		"result" -> (
-      ConstructType[codeLens, CodeLens]
+			ConstructType[codeLens, CodeLens]
 			// ReplaceKey[#, "command" -> #["data"]]&
     )
 	|>]];
@@ -1644,6 +1646,46 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 		|>]]
 	}
 
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/foldingRange*)
+
+
+handleRequest["textDocument/foldingRange", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> FindFoldingRange[state["openedDocs"][uri]]
+	|>]];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/selectionRange*)
+
+
+handleRequest["textDocument/selectionRange", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"],
+		posList = ConstructType[msg["params"]["positions"], {___LspPosition}]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> (
+			posList
+			// Map[FindSelectionRange[state["openedDocs"][uri], #]&]
+		)
+	|>]];
+
+	{"Continue", state}
 ]
 
 

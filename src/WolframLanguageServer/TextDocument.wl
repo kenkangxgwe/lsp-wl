@@ -29,6 +29,8 @@ GetDocumentText::usage = "GetDocumentText[doc_TextDocument] returns the text of 
 GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
 FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
 GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
+FindFoldingRange::usage = "FindFoldingRange[doc_TextDocument] returns a list of FoldRange for the specific document."
+FindSelectionRange::usage = "FindSelectionRanges[doc_TextDocument, pos_LspPosition] returns the nested range of all its AST ancestors at given position."
 
 
 Begin["`Private`"]
@@ -1538,6 +1540,78 @@ ToRGBA[colorName_String] := With[
         rgbColor
     ]
 ]
+
+
+(* ::Section:: *)
+(* FoldingRange*)
+
+
+FindFoldingRange[doc_TextDocument] := (
+    doc
+    // divideCells
+    // findFoldRangeImpl
+    // Reap
+    // Last
+    // Replace[{} -> {{}}]
+    // First
+)
+
+
+findFoldRangeImpl[node_CellNode] := (
+    node["range"]
+    // Apply[{startLine, endLine} \[Function] (
+        FoldingRange[<|
+            "startLine" -> If[node["title"] // MissingQ,
+                startLine,
+                startLine + 1
+            ],
+            "endLine" -> endLine - 1,
+            "kind" -> FoldingRangeKind["Region"]
+        |>]
+    )] // Sow;
+
+    node["children"]
+    // Map[findFoldRangeImpl]
+)
+
+
+(* ::Section:: *)
+(* SelectionRange*)
+
+
+FindSelectionRange[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1,
+        character = pos["character"] + 1
+    },
+
+    GetAstAtPosition[doc, pos]
+    // Replace[_?MissingQ -> {}]
+    // Cases[#, (
+        data_Association?(NodeDataContainsPosition[{line, character}]) :> (
+            data[CodeParser`Source]
+            // Replace[{{startLine_, startCharacter_}, {endLine_, endCharacter_}} :> (
+                SelectionRange[<|
+                    "range" -> LspRange[<|
+                        "start" -> LspPosition[<|
+                            "line" -> startLine - 1,
+                            "character" -> startCharacter - 1
+                        |>],
+                        "end" -> LspPosition[<|
+                            "line" -> endLine - 1,
+                            "character" -> endCharacter - 1
+                        |>]
+                    |>]
+                |>]
+            )]
+        )
+    ), AstLevelspec["DataWithSource"]]&
+    // Reverse
+    // Replace[{} -> {None}]
+    // Fold[ReplaceKey[#2, "parent" -> #1]&]
+    // LogDebug
+ ]
+
 
 
 End[]

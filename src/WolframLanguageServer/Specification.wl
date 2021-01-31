@@ -43,6 +43,8 @@ CodeLens::usage = "is type of CodeLens Interface in LSP."
 ColorInformation::usage = "is the type of ColorInformation interface in LSP."
 LspColor::usage = "is the type of Color interface in LSP."
 ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
+FoldingRange::usage = "is the type of FoldingRange interface in LSP."
+SelectionRange::usage = "is the type of SelectionRange interface in LSP."
 
 
 (* ::Section:: *)
@@ -185,6 +187,13 @@ CodeActionKind = <|
     "Source" -> "source",
     "SourceOrganizeImports" -> "source.orgainizeImports"
 |>
+
+FoldingRangeKind = <|
+    "Comment" -> "comment",
+    "Imports" -> "imports",
+    "Region" -> "region"
+|>
+
 
 (* ::Section:: *)
 (*Constants*)
@@ -397,6 +406,19 @@ DeclareType[ColorPresentation, <|
     "label" -> _String,
     "textEdit" -> _TextEdit,
     "additionalTextEdits" -> {__TextEdit}
+|>]
+
+DeclareType[FoldingRange, <|
+    "startLine" -> _Interger,
+    "startCharacter" -> _Interger,
+    "endLine" -> _Interger,
+    "endCharacter" -> _Interger,
+    "kind" -> _String
+|>]
+
+DeclareType[SelectionRange, <|
+    "range" -> _LspRange,
+    "parent" -> _SelectionRange
 |>]
 
 
