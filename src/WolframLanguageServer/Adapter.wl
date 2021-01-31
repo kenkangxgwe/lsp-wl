@@ -103,10 +103,13 @@ DebuggerEvaluate[evaluateArguments_Association, kernel:kernelObject] := (
         // ParallelEvaluate[
             (* Keeps Stack[] clean *)
             ToExpression[#, InputForm, Hold]
-            // ReleaseHold,
-            kernel,
+            // ReleaseHold
             (* This will save all the results (per line) into a sequence. *)
-            Hold
+            // Hold[##]&,
+            kernel
+            (* This usage only takes effect after 12.1,
+               thus replaced by // Hold[##]& above *)
+            (*, Hold *)
         ]&
         // Replace[$Failed -> Hold[]]
         // DeleteCases[Null]
