@@ -711,8 +711,8 @@ ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
 
 ToDocumentSymbolImpl[node_] := (
     node
-    // Replace[{
-        AstPattern["Definable"][head_, func_, key_, data_] :> (
+    // ReplaceAll[{
+        AstPattern["Definable"][head_, func_, key_, body_, data_] :> (
             DocumentSymbol[<|
                 "name" -> (
                     key
@@ -737,11 +737,15 @@ ToDocumentSymbolImpl[node_] := (
                     // Key[CodeParser`Source]
                     // SourceToRange
                 ),
-                "children" -> ({})
-            |>]
+                "children" -> (
+                    {head, body}
+                    // Map[ToDocumentSymbolImpl]
+                    // Catenate
+                )
+            |>] // Sow
         ),
 
-        AstPattern["Set"][head_, op:"Set", data_] :> Block[
+        AstPattern["Set"][head_, op:"Set", body_, data_] :> Block[
             {
                 symbolList
             },
@@ -763,8 +767,12 @@ ToDocumentSymbolImpl[node_] := (
                             // Key[CodeParser`Source]
                             // SourceToRange
                         ),
-                        "children" -> ({})
-                    |>]
+                        "children" -> (
+                            {head, body}
+                            // Map[ToDocumentSymbolImpl]
+                            // Catenate 
+                        )
+                    |>] // Sow
                 ),
                 _ -> Nothing
             }, {1}]
@@ -778,7 +786,7 @@ ToDocumentSymbolImpl[node_] := (
             )
         ],
 
-        AstPattern["Set"][head_, op_, tag_, data_] :> (
+        AstPattern["Set"][head_, op_, tag_, body_, data_] :> (
             DocumentSymbol[<|
                 "name" -> (
                     FirstCase[
@@ -813,19 +821,27 @@ ToDocumentSymbolImpl[node_] := (
                     // Key[CodeParser`Source]
                     // SourceToRange
                 ),
-                "children" -> ({})
+                "children" -> (
+                    {head, body}
+                    // Map[ToDocumentSymbolImpl]
+                    // Catenate
+                )
             |>]
-        ),
+            // Sow
+        )
 
-        AstPattern["CompoundExpression"][exprs_] :> (
+        (* AstPattern["CompoundExpression"][exprs_] :> (
             exprs
             // Map[ToDocumentSymbolImpl]
-        ),
+        ), *)
         (* lhsNode[CodeParser`CallNode[caller_, {callees__}, _]] :> ({}),
         lhsNode[CodeParser`LeafNode[Symbol, symbolName_String, _]] :> ({}), *)
-        _ -> Nothing
+        (* _ -> Nothing *)
     }]
-
+    // Reap
+    // Last
+    // Replace[{} -> {{}}]
+    // First
 )
 
 
