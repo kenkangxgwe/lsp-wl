@@ -359,7 +359,9 @@ PUACharactersReplaceRule = {
     "\[RightAssociation]" -> "|>",
     "\[InvisibleSpace]" -> " ",
     "\[Null]" -> "",
-    "\[ExponentialE]" -> "\[ScriptE]"
+    "\[ExponentialE]" -> "\[ScriptE]",
+    "\[Function]" -> "|->",
+    "\[Application]" -> "\[CenterDot]"
 }
 
 
