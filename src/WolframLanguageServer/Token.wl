@@ -28,7 +28,14 @@ Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`UnicodeTable`"]
+Needs["WolframLanguageServer`CompletionTable`"]
+Needs["WolframLanguageServer`ColorTable`"]
 Needs["WolframLanguageServer`TextDocument`"]
+
+
+$DocumentedContext = {
+        $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
+    } // FileNameJoin // Get
 
 
 (* ::Section:: *)
@@ -459,21 +466,20 @@ printSignatureHelp[functionName_String] := (
 (*Completion*)
 
 
-TokenKind[token_String] := Module[
-    {
-    },
+TokenKind[token_String] := (
     (*If[Context[token] === "Global`",
-        
     If[OwnValues[Symbol[token]] === {},
         CompletionItemKind["Function"],
         CompletionItemKind["Variable"]
     ]*)
-    
-    If[StringTake[token, 1] === "$",
-        CompletionItemKind["Variable"],
-        CompletionItemKind["Function"]
-    ]
-];
+    token
+    // Replace[{
+        _?(StringEndsQ["`"]) -> CompletionItemKind["Module"],
+        _?(StringStartsQ["$"]) -> CompletionItemKind["Variable"],
+        _?(MemberQ[ColorName, #]&) -> CompletionItemKind["Color"],
+        _ -> CompletionItemKind["Function"]
+    }]
+)
 
 
 GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
@@ -485,12 +491,34 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
         Return[{}]
     ];
 
-    Names[prefix<>"*"]
-    // Select[Context /* EqualTo["System`"]]
-    // Map[item \[Function] (
+    Join[
+        Names[prefix ~~ ___, SpellingCorrection -> True, IgnoreCase -> True]
+        // Select[Context /* (MemberQ[$DocumentedContext, #]&)]
+        // Join[
+            Cases[TopCompletionTokens, Alternatives @@ #],
+            Complement[#, TopCompletionTokens]
+        ]&,
+        Cases[$DocumentedContext, _?(StringStartsQ[prefix])]
+    ]
+    // Take[#, UpTo[16^^FFFF]]&
+    // MapIndexed[{item, index} \[Function] With[
+        {
+            kind = TokenKind[item]
+        },
+
         CompletionItem[<|
             "label" -> item,
-            "kind" -> TokenKind[item],
+            "kind" -> kind,
+            "detail" -> (
+                If[kind === CompletionItemKind["Module"],
+                    Null,
+                    item // Replace[{
+                        _?(Context /* EqualTo["System`"] /* Not) :> (item // Context),
+                        _ -> Null
+                    }]
+                ]
+            ),
+            "sortText" -> (index // First // IntegerString[#, 16, 4]&),
             "textEdit" -> TextEdit[<|
                 "range" -> LspRange[<|
                     "start" -> LspPosition[<|
@@ -508,7 +536,7 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
                 "type" -> "Token"
             |>
         |>]
-    )]
+    ]]
 ]
 
 
@@ -540,7 +568,7 @@ NonLetterAliasCompletionItems = (
                     alias // StringReplace[" " -> "\[SpaceIndicator]"] , "\t\t",
                     "\\[", longName, "]"
                 ],
-                "kind" -> CompletionItemKind["Text"],
+                "kind" -> CompletionItemKind["Operator"],
                 "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
                 "filterText" -> alias,
                 "sortText" -> alias,
@@ -584,7 +612,7 @@ GetAliasCompletion[prefix_String, pos_LspPosition] := (
                 alias , "\t\t",
                 "\\[", longName, "]"
             ],
-            "kind" -> CompletionItemKind["Text"],
+            "kind" -> CompletionItemKind["Operator"],
             "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
             (* label has some extra information, thus cannot be used to sort, filter or insert *)
             "sortText" -> alias (*StringDrop[alias, StringLength[prefix] - 1]*),
