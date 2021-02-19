@@ -93,7 +93,7 @@ If[$FrontEnd === Null,
 VerificationTest[
 	TokenDocumentation["$FrontEndSession", "usage"],
 	StringJoin[
-		"**$FrontEndSession** [*reference*](https://reference.wolfram.com/language/ref/$FrontEndSession.html) (Protected, ReadProtected)\n\n\n",
+		"**$FrontEndSession** [*reference*](https://reference.wolfram.com/language/ref/%24FrontEndSession.html) (Protected, ReadProtected)\n\n\n",
 		"```mathematica\n",
 		"$FrontEndSession \n",
 		"```\n\n",

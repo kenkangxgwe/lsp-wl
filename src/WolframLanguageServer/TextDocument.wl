@@ -494,7 +494,7 @@ GetTokenAtPosition[doc_TextDocument, pos_LspPosition] := (
         codeRange: {startLine_Integer, _Integer} :> (
             Take[doc["text"], codeRange]
             // StringRiffle[#, "\n"]&
-            // CodeParser`CodeTokenize
+            // CodeParser`CodeTokenize[#, "TabWidth" -> 1]&
             // SelectFirst[NodeContainsPosition[{
                 (pos["line"] + 1) - startLine + 1,
                 pos["character"]
@@ -770,7 +770,7 @@ ToDocumentSymbolImpl[node_] := (
                         "children" -> (
                             {head, body}
                             // Map[ToDocumentSymbolImpl]
-                            // Catenate 
+                            // Catenate
                         )
                     |>] // Sow
                 ),

@@ -34,8 +34,20 @@ Needs["WolframLanguageServer`TextDocument`"]
 
 
 $DocumentedContext = {
-        $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
-    } // FileNameJoin // Get
+    $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
+} // FileNameJoin // Get
+
+systemIdentifierQ[token_String] := (
+    token
+    // Replace[{
+        _?(StringContainsQ[Except[WordCharacter|"$"|"`"]]) -> "",
+        _?(StringContainsQ["`"] /* Not) :> (
+            "System`" ~~ token
+        )
+    }]
+    // Names
+    // (# =!= {})&
+)
 
 
 (* ::Section:: *)
@@ -49,11 +61,13 @@ Options[TokenDocumentation] = {
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
 
-    If[Names["System`"<>token] === {}, Return[""]];
-
-    ToExpression[token<>"::"<>tag]
+    If[token // systemIdentifierQ,
+        ToExpression[token<>"::"<>tag]
+        // Replace[_Message -> ""],
+        ""
+    ]
     // Replace[{
-        _MessageName -> "",
+        "" -> "",
         boxText_String :> (
             tag // Replace[{
                 "usage" :> (
@@ -130,7 +144,7 @@ splitUsage[usageText_String] := (
             // StringPosition[" "]
             // (Part[#, All, 1]&)
             // SelectFirst[groupBalanceQ[StringTake[origin, #]]&]
-            // Replace[{ 
+            // Replace[{
                 splitPos_Integer :> {
                     StringTake[origin, splitPos],
                     StringDrop[origin, splitPos]
@@ -194,17 +208,27 @@ GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
 
 
 (* TODO: check valid url *)
-GetUri[token_String, tag_String] := (
+GetUri[token_String, tag_String] := With[
+    {
+        context = Context[token]
+            // StringDrop[#, -1]&
+            // Replace["System" -> ""],
+        symbol = token // StringSplit[#, "`"]& // Part[#, -1]&
+    },
+
     tag
     // Replace[{
         "usage" :> (
-            StringJoin["[*reference*](https://reference.wolfram.com/language/ref/", token, ".html)"]
+            URLBuild[{"https://reference.wolfram.com",
+                "language", context, "ref", symbol <> ".html"
+            }]
         ),
         _ :> (
-            StringJoin["[*reference*](https://reference.wolfram.com/language/ref/message/", token, "/", tag,".html)"]
+            URLBuild[{"https://reference.wolfram.com",
+             "language", "ref", "message", symbol, tag <>".html"}]
         )
     }]
-)
+]
 
 Options[GenAttributes] = {
     "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
@@ -437,12 +461,13 @@ GetSignatureHelp[doc_TextDocument, pos_LspPosition] := (
 
 
 printSignatureHelp[functionName_String] := (
-
-    If[Names["System`"<>functionName] === {}, Return[Null]];
-
-    ToExpression[functionName<>"::"<>"usage"]
+    If[functionName // systemIdentifierQ,
+        ToExpression[functionName<>"::"<>"usage"]
+        // Replace[_Message -> ""],
+        ""
+    ]
     // Replace[{
-        _MessageName -> {},
+        "" -> {},
         usageText_String :> (
             splitUsage[usageText]
             // MapAt[GenPlainText, {All, 1}]
@@ -460,7 +485,6 @@ printSignatureHelp[functionName_String] := (
         |>]
     )]]
     // SignatureHelp[<|"signatures" -> #|>]&
-
 )
 
 
@@ -490,17 +514,16 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
     },
 
     If[prefix == "",
-        Return[{}]
-    ];
-
-    Join[
-        Names[prefix ~~ ___, SpellingCorrection -> True, IgnoreCase -> True]
-        // Select[Context /* (MemberQ[$DocumentedContext, #]&)]
-        // Join[
-            Cases[TopCompletionTokens, Alternatives @@ #],
-            Complement[#, TopCompletionTokens]
-        ]&,
-        Cases[$DocumentedContext, _?(StringStartsQ[prefix])]
+        {},
+        Join[
+            Names[prefix ~~ ___, SpellingCorrection -> True, IgnoreCase -> True]
+            // Select[Context /* (MemberQ[$DocumentedContext, #]&)]
+            // Join[
+                Cases[TopCompletionTokens, Alternatives @@ #],
+                Complement[#, TopCompletionTokens]
+            ]&,
+            Cases[$DocumentedContext, _?(StringStartsQ[prefix])]
+        ]
     ]
     // Take[#, UpTo[16^^FFFF]]&
     // MapIndexed[{item, index} \[Function] With[
@@ -511,15 +534,6 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
         CompletionItem[<|
             "label" -> item,
             "kind" -> kind,
-            "detail" -> (
-                If[kind === CompletionItemKind["Module"],
-                    Null,
-                    item // Replace[{
-                        _?(Context /* EqualTo["System`"] /* Not) :> (item // Context),
-                        _ -> Null
-                    }]
-                ]
-            ),
             "sortText" -> (index // First // IntegerString[#, 16, 4]&),
             "textEdit" -> TextEdit[<|
                 "range" -> LspRange[<|
