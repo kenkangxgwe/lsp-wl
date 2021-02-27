@@ -55,6 +55,7 @@ WolframLanguageServer`TestDirectories = {
 }
 
 
+WolframLanguageServer`$DefaultPath = $Path
 $Path = Join[
     WolframLanguageServer`SourceDirectories,
     WolframLanguageServer`TestDirectories,

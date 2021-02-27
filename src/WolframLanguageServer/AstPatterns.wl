@@ -112,6 +112,10 @@ AstPattern = <|
         CodeParser`LeafNode[Real, realLiteral_String, data_Association]
     ),
 
+    "String" -> (
+        CodeParser`LeafNode[String, stringLiteral_String, data_Association]
+    ),
+
     "Function" -> (
         (CodeParser`CallNode|CodeParser`UnderterminedCallNode)[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
     ),

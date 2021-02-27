@@ -27,6 +27,7 @@ FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list o
 GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
 GetDocumentText::usage = "GetDocumentText[doc_TextDocument] returns the text of the whole doc except for the shebang line (if exists).\n\
 GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
+GetDocumentLink::usage = "GetDocumentLink[doc_TextDocument] returns a list of potential links in the document."
 FindDocumentColor::usage = "FindDocumentColor[doc_TextDocument] gives a list of colors in the text document."
 GetColorPresentation::usage = "GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] gives the RGBColor presentation of the color."
 FindFoldingRange::usage = "FindFoldingRange[doc_TextDocument] returns a list of FoldRange for the specific document."
@@ -949,6 +950,9 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
                 real:AstPattern["Real"][realLiteral_] :> (
                     HoverInfo["Number", {realLiteral, CodeParser`FromNode[real]}]
                 ),
+                string:AstPattern["String"][stringLiteral_] :> (
+                    HoverInfo["String", {stringLiteral, CodeParser`FromNode[string]}]
+                ),
                 AstPattern["MessageName"][symbolName_, message_] :> (
                     HoverInfo["Message", {symbolName, CodeParser`FromNode[message]}]
                 ),
@@ -1436,6 +1440,20 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
     // List
     // DeleteMissing
 ]
+
+
+(* ::Section:: *)
+(*DocumentLink*)
+
+
+GetDocumentLink[doc_TextDocument] := (
+    rangeToAst[doc, All]
+    // (ast \[Function] (
+        Cases[ast, AstPattern["Function"][functionName:"Needs"|"Get", arguments:{stringNode:AstPattern["String"][data_]}] :> (
+            {stringNode // CodeParser`FromNode, data // Key[CodeParser`Source] // SourceToRange}
+        )]
+    ))
+)
 
 
 (* ::Section:: *)

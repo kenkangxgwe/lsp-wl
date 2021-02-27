@@ -89,8 +89,8 @@ VerificationTest[
 ],
 
 VerificationTest[
-    PatternTemplate[outer:{inner:{oldName:{___}}}][oldName:PatternTemplate[symbol_List][{}], inner_, outer_],
-	outer:{inner:{oldName:Except[Except[_List], {___}]}},
+    PatternTemplate[outer:{inner:{oldName:{___}}}][oldName:PatternTemplate[symbol_List][symbol_], inner_, outer_],
+	outer:{inner:{oldName:Except[Except[symbol_List], {___}]}},
 	TestID -> "NestedPatternTemplatesApply"
 ],
 

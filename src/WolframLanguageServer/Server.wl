@@ -26,6 +26,7 @@ Needs["DataType`"]
 Needs["WolframLanguageServer`Logger`"]
 Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
+Needs["WolframLanguageServer`Workspace`"]
 Needs["WolframLanguageServer`Token`"]
 Needs["WolframLanguageServer`Adapter`"]
 
@@ -49,6 +50,7 @@ DeclareType[WorkState, <|
 	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientCapabilities" -> _Association,
+	"workspaceFolders" -> _Association,
 	"debugSession" -> _DebugSession,
 	"scheduledTasks" -> {___ServerTask},
 	"caches" -> _Association,
@@ -74,6 +76,7 @@ DeclareType[RequestCache, <|
 initialCaches = <|
 	"textDocument/signatureHelp" -> <||>,
 	"textDocument/documentSymbol" -> <||>,
+	"textDocument/documentLink" -> <||>,
 	"textDocument/documentColor" -> <||>,
 	"textDocument/codeLens" -> <||>,
 	"textDocument/publishDiagnostics" -> <||>
@@ -114,6 +117,9 @@ ServerCapabilities = <|
 	"codeLensProvider" -> <|
 		"resolveProvider" -> True
 	|>,
+	"documentLinkProvider" -> <|
+		"resolveProvider" -> False
+	|>,
 	"colorProvider" -> True,
 	"foldingRangeProvider" -> True,
 	"selectionRangeProvider" -> True,
@@ -146,6 +152,7 @@ ServerConfig = <|
 		"textDocument/signatureHelp" -> 0.5,
 		"textDocument/documentSymbol" -> 4.0,
 		"textDocument/documentHighlight" -> 0.5,
+		"textDocument/documentLink" -> 4.0,
 		"textDocument/documentColor" -> 5.0
 	|>
 |>
@@ -901,6 +908,12 @@ sendMessage[client_, res:(_DapEvent|_DapResponse)] := (
 
 handleRequest["initialize", msg_, state_WorkState] := With[
     {
+		workspaceFolders = ConstructType[
+			Fold[Replace[#1, _?MissingQ -> <||>][#2]&,
+				msg, {"params", "workspaceFolders"}
+			],
+			{___WorkspaceFolder}
+		],
         debugPort = Fold[Replace[#1, _?MissingQ -> <||>][#2]&,
             msg, {"params", "initializationOptions", "debuggerPort"}
         ]
@@ -922,6 +935,11 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 		"Continue",
 		Fold[ReplaceKey, state, {
 			"clientCapabilities" -> msg["params"]["capabilities"],
+			"workspaceFolders" -> (
+				workspaceFolders
+				// Map[(#["uri"] -> #)&]
+				// Association
+			),
 			If[!MissingQ[debugPort],
 				LogInfo["Debugger listening at port " <> ToString[debugPort]];
 				{"debugSession", "server"} -> SocketOpen[debugPort],
@@ -1583,6 +1601,61 @@ handleRequest["codeLens/resolve", msg_, state_] := With[
 
 	{"Continue", state}
 ]
+
+
+(* ::Subsection:: *)
+(*textDocument/documentLink*)
+
+
+handleRequest[method:"textDocument/documentLink", msg_, state_WorkState] := (
+	state
+	// cacheResponse[method, msg]
+	// sendCachedResult[method, msg, #]&
+)
+
+
+cacheResponse[method:"textDocument/documentLink", msg_, state_WorkState] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	state
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> FindDocumentLink[
+					state["openedDocs"][uri],
+					state["workspaceFolders"]
+					// Values
+				]
+			|>]
+		]
+	]
+]
+
+
+cacheAvailableQ[method:"textDocument/documentLink", msg_, state_WorkState] := With[
+	{
+		cachedTime = getCache[method, msg, state]["cachedTime"]
+	},
+
+	!MissingQ[cachedTime] &&
+	(state["openedDocs"][
+		msg["params"]["textDocument"]["uri"]
+	]["lastUpdate"] < cachedTime)
+]
+
+
+getCache[method:"textDocument/documentLink", msg_, state_WorkState] := (
+	state["caches"][method][msg["params"]["textDocument"]["uri"]]
+)
+
+
+getScheduleTaskParameter[method:"textDocument/documentLink", msg_, state_WorkState] := (
+	msg["params"]["textDocument"]["uri"]
+)
 
 
 (* ::Subsection:: *)

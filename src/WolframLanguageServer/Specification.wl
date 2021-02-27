@@ -27,6 +27,7 @@ TextEdit::usage = "is type of TextEdit interface in LSP."
 TextDocumentItem::usage = "is type of TextDocumentItem interface in LSP."
 WorkspaceEdit::usage = "is type of WorkspaceEdit Interface in LSP."
 MarkupContent::usage = "is the type of MarkupContent interface in LSP."
+WorkspaceFolder::usage = "is the type of WorkspaceFolder interface in LSP."
 TextDocumentContentChangeEvent::usage = "is an event describing a change to a text document. If range and rangeLength are omitted \
  the new text is considered to be the full content of the document."
 Diagnostic::usage = "is the type of Diagnostic interface in LSP."
@@ -40,6 +41,7 @@ CompletionItem::usage = "is the type of CompletionItem interface in LSP."
 DocumentHighlight ::usage = "is the type of Location interface in LSP."
 LspCodeAction::usage = "is the type of CodeAction interface in LSP."
 CodeLens::usage = "is type of CodeLens Interface in LSP."
+DocumentLink::usage = "is type of DocumentLink Interface in LSP."
 ColorInformation::usage = "is the type of ColorInformation interface in LSP."
 LspColor::usage = "is the type of Color interface in LSP."
 ColorPresentation::usage = "is the type of ColorPresentation interface in LSP."
@@ -295,6 +297,16 @@ DeclareType[MarkupContent, <|
 
 
 (* ::Subsection:: *)
+(*Workspace*)
+
+
+DeclareType[WorkspaceFolder, <|
+    "uri" -> _DocumentUri,
+    "name" -> _String
+|>]
+
+
+(* ::Subsection:: *)
 (*Text Synchronization*)
 
 
@@ -387,6 +399,13 @@ DeclareType[LspCodeAction, <|
 DeclareType[CodeLens, <|
     "range" -> _LspRange,
     "command" -> _Command,
+    "data" -> _
+|>]
+
+DeclareType[DocumentLink, <|
+    "range" -> _LspRange,
+    "target" -> _DocumentUri,
+    "tooltip" -> _String,
     "data" -> _
 |>]
 
