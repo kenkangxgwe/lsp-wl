@@ -13,10 +13,18 @@ Please see the help info below.
 *)
 
 
-(* For windows, this should be set for Print to correctly format outputs. *)
+(* For Windows, this should be set for Print to correctly format outputs. *)
 If[$OperatingSystem == "Windows" && $FrontEnd === Null,
     SetOptions[$Output, FormatType -> OutputForm]
 ]
+
+(* Messaage pinted to stdout should be encoded in UTF-8. *)
+$CharacterEncoding = "UTF-8"
+
+(* Set $Language to FrontEnd's initial value, if the default provides empty Message Name. *)
+List::usage // Replace[_MessageName :> (
+    $Language = UsingFrontEnd[CurrentValue[$FrontEnd, Language]]
+)]
 
 
 (* ::Subsection:: *)
