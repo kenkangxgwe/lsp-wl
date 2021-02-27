@@ -113,7 +113,7 @@ AstPattern = <|
     ),
 
     "Function" -> (
-        CodeParser`CallNode[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
+        (CodeParser`CallNode|CodeParser`UnderterminedCallNode)[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
     ),
 
     "MessageName" -> (

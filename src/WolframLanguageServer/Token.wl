@@ -63,12 +63,11 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
 
     If[token // systemIdentifierQ,
         ToExpression[token<>"::"<>tag]
-        // Replace[_Message -> ""],
+        // Replace[_MessageName -> ""],
         ""
     ]
     // Replace[{
-        "" -> "",
-        boxText_String :> (
+        boxText:Except["", _String] :> (
             tag // Replace[{
                 "usage" :> (
                     {
@@ -77,6 +76,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             Nothing
                         ],
                         boxText
+                        // (LogDebug[FullForm[#]];#)&
                         // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
                             /* MapAt[GenMarkdownCodeBlock, {All, 1}]
@@ -159,35 +159,51 @@ splitUsage[usageText_String] := (
 )
 
 
-groupBalanceQ[text_String] := And[
-    StringCount[text, "("] == StringCount[text, ")"],
-    StringCount[text, "["] == StringCount[text, "]"],
-    StringCount[text, "{"] == StringCount[text, "}"],
-    StringCount[text, "<|"] == StringCount[text, "|>"],
-    StringCount[text, "\[LeftAssociation]"] == StringCount[text, "\[RightAssociation]"],
-    StringCount[text, "\("] == StringCount[text, "\)"]
-] // TrueQ
+delimiter = {
+    {"(", ")"},
+    {"[", "]"},
+    {"{", "}"},
+    {"<|", "|>"},
+    {"\[LeftAssociation]", "\[RightAssociation]"},
+    {"\(", "\)"}
+}
 
+quote = {
+    "\""
+}
 
+groupBalanceQ[text_String] := (
+    {
+        delimiter
+        // Map[Map[StringCount[text, #]&] /* Apply[Equal]],
+        quote
+        // Map[StringCount[text,#]& /* EvenQ]
+    }
+    // Catenate
+    // Apply[And]
+    // TrueQ
+)
 
 
 Options[GenHeader] = {
     "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
 }
+
 GenHeader[token_String, tag_String, o: OptionsPattern[]] := (
     tag
     // Replace[{
         "usage" :> (
             token
             // {
-                Identity,
+                Context /* Replace["System`" -> ""],
+                (StringSplit[#, "`"]&) /* (Part[#, -1]&),
                 GetUri[#, tag]&,
                 GenAttributes
             } // Through
             // Apply[
                 If[OptionValue["Format"] == MarkupKind["Markdown"],
-                    StringTemplate["**`1`** `2` `3`\n"],
-                    StringTemplate["`1`\t(`3`)\n"]
+                    StringTemplate["`1`**`2`** [*reference*](`3`) `4`\n"],
+                    StringTemplate["`1``2`\t(`4`)\n"]
                 ]
             ]
         ),
@@ -556,7 +572,7 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition] := (
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"\\"] := (
     If[GetTokenPrefix[doc, pos] == "\\\\",
         (* double-triggered *)
         GetAliasCompletion["\\", pos],
@@ -678,6 +694,177 @@ GetLongNameCompletion[prefix_String] := (
 
 )
 
+
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"["] := With[
+    {
+        token = GetTokenPrefix[doc, pos // ReplaceKeyBy["character" -> (# - 1&)]]
+    },
+
+    If[token == "\\",
+        GetIncompleteCompletionAtPosition[doc, pos],
+        GetFunctionSnippet[token]
+    ]
+]
+
+
+(* ::Subsection:: *)
+(*Snippet*)
+
+
+GetFunctionSnippet[token_String] := (
+    If[token // systemIdentifierQ,
+        ToExpression[token<>"::"<>"usage"]
+        // Replace[_Message -> ""],
+        ""
+    ]
+    // Replace[{
+        "" -> {},
+        usageText_String :> (
+            splitUsage[usageText]
+            // MapAt[
+                StringCases[Shortest[(* box: *) "\!\(\*"~~__~~"\)"]]
+                /* Map[GenPlainText]
+                /* Cases[_?(StringMatchQ[token ~~ "[" ~~__~~ "]"])],
+                {All, 1}
+            ]
+            // MapAt[GenMarkdownText, {All, 2}]
+            // Map[Thread]
+            // Catenate
+        )
+    }]
+    // Map[Apply[{label, documentation} \[Function] (
+        CompletionItem[<|
+            "label" -> label,
+            "kind" -> CompletionItemKind["Snippet"],
+            "insertTextFormat" -> InsertTextFormat["Snippet"],
+            "insertText" -> GenSnippet[token, label],
+            "filterText" -> "]",
+            "documentation" -> MarkupContent[<|
+                "kind" -> MarkupKind["Markdown"],
+                "value" -> StringJoin[
+                    "```mathematica\n",
+                    label, "\n",
+                    "```\n",
+                    documentation, "\n"
+                ]
+            |>]
+        |>]
+    )]]
+)
+
+GenSnippet[token_String, usage_String] := (
+    usage
+    // StringReplace[StartOfString ~~ token ~~ signature:("[" ~~__~~ "]") ~~ EndOfString :> (
+        signature
+    )]
+    // genSnippetImpl[1, #]&
+    // Reap
+    // Last
+    // Replace[{} -> {{}}]
+    // Last
+    // (StringRiffle[#, ","]&)
+    // StringTake[#, {2, -2}]&
+    // (# <> "$0")&
+)
+
+genSnippetImpl[tabStop_Integer, signature_String] := (
+    signature
+    // StringCases[{
+        (
+            StartOfString ~~
+            left:(Part[delimiter, All, 1]) ~~
+            operandList___ ~~
+            right:(Part[delimiter, All, -1]) ~~
+            EndOfString
+        ) /; (
+            delimiter // MemberQ[{left, right}]
+        ) :> Block[
+            {
+                innerTabStop = True
+            },
+
+            operandList
+            // splitOperand
+            // Replace[{
+                {operand_} :> (
+                    innerTabStop = False;
+                    operand
+                    // genSnippetImpl[tabStop, #]&
+                ),
+                operands_List :> (
+                    operands
+                    // Fold[genSnippetImpl, tabStop + 1, #]&
+                )
+            }]
+            // Reap
+            // MapAt[
+                Replace[{} -> {{}}]
+                /* Last
+                /* (StringRiffle[#, ","]&),
+                2
+            ]
+            // Apply[{nextTabStop, snippet} \[Function] (
+                {tabStop, snippet, left, right // Replace["}" -> "\\}"]}
+                // If[innerTabStop,
+                    Apply[StringTemplate["`3`${`1`:`2`}`4`"]],
+                    Apply[StringTemplate["`3``2``4`"]]
+                ]
+                // Sow;
+                nextTabStop
+            )]
+        ],
+        (StartOfString ~~ head__ ~~ operands:Longest["[" ~~ ___ ~~ "]"] ~~ EndOfString) :> (
+            {head, operands}
+            // Fold[genSnippetImpl, tabStop, #]&
+            // Reap
+            // MapAt[
+                Replace[{} -> {{}}]
+                /* Last
+                /* StringJoin,
+                2
+            ]
+            // Apply[{nextTabStop, snippet} \[Function] (
+                snippet // Sow;
+                nextTabStop
+            )]
+        ),
+        (StartOfString ~~ ___ ~~ EndOfString) :> Block[
+            {
+                nextTabStop = tabStop
+            },
+            signature
+            // StringReplace[operand:(WordCharacter|"_")..|"..."|"\[Ellipsis]" :> (
+                {nextTabStop++, operand}
+                // Apply[StringTemplate["${`1`:`2`}"]]
+            )]
+            // Sow;
+            nextTabStop
+        ]
+    }]
+    // First
+)
+
+splitOperand[operandList_String] := (
+    operandList
+    // StringPosition[","]
+    // Part[#, All, 1]&
+    // Append[StringLength[operandList] + 1]
+    // Fold[({start, end} \[Function] (
+        StringTake[operandList, {start, end - 1}]
+        // Replace[{
+            operand_?groupBalanceQ :> (
+                Sow[operand];
+                end + 1
+            ),
+            _ :> start
+        }]
+    )), 1, #]&
+    // Reap // Last // Replace[{} -> {{}}] // First
+)
+
+
+(* ::Subsection:: *)
+(*GetIncompleteCompletionAtPosition*)
 
 GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
 

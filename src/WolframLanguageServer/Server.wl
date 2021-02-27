@@ -100,11 +100,11 @@ ServerCapabilities = <|
 	"textDocumentSync" -> TextDocumentSyncKind["Full"],
 	"hoverProvider" -> True,
 	"signatureHelpProvider" -> <|
-		"triggerCharacters" -> {"[", ","}
+		"triggerCharacters" -> {","}
 	|>,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
-		"triggerCharacters" -> {"\\"}
+		"triggerCharacters" -> {"\\", "["}
 	|>,
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
@@ -1237,18 +1237,25 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 				|>
 			|>]]
 		),
-		CompletionTriggerKind["TriggerCharacter"] :> (
+		CompletionTriggerKind["TriggerCharacter"] :> With[
+			{
+				triggerCharacter = msg["params"]["context"]["triggerCharacter"]
+			},
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> <|
-					"isIncomplete" -> True,
+					"isIncomplete" -> If[triggerCharacter == "\\",
+						True,
+						False
+					],
 					"items" -> GetTriggerKeyCompletion[
 						state["openedDocs"][uri],
-						pos
+						pos,
+						triggerCharacter
 					]
 				|>
 			|>]]
-		),
+		],
 		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
