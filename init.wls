@@ -118,6 +118,7 @@ Options:
 (*Version*)
 
 
+WolframLanguageServer`$Name = "Wolfram Language Server"
 WolframLanguageServer`$Version = "0.3.1"
 If[MemberQ[WolframLanguageServer`CommandLine, "-v" | "--version"],
     Print["

@@ -685,10 +685,13 @@ constructRPCBytes[msg_Association] := (
 		ExportByteArray[
 			msg
 			// KeyDrop["result"]
-			// Append["error" -> ServerError[
-				"InternalError",
-				"The request is not handled correctly."
-			]],
+			// Append["error" -> (
+				ServerError[
+					"InternalError",
+					"The request is not handled correctly."
+				]
+				// ToAssociation
+			)],
 			"RawJSON",
 			"Compact" -> True
 		]
@@ -906,7 +909,11 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> <|
-			"capabilities" -> ServerCapabilities
+			"capabilities" -> ServerCapabilities,
+			"serverInfo" -> <|
+				"name" -> WolframLanguageServer`$Name,
+				"version" -> WolframLanguageServer`$Version
+			|>
 		|>
 	|>]];
 
