@@ -3,6 +3,7 @@
 [![Develop with: Wolfram Language](https://img.shields.io/badge/Develop%20with-Wolfram%20Language-%23d81013.svg)](http://www.wolfram.com/language/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/kenkangxgwe/lsp-wl/workflows/CI/badge.svg?branch=develop)](https://github.com/kenkangxgwe/lsp-wl/actions?query=workflow%3ACI+branch%3Adevelop)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/kenkangxgwe/lsp-wl)](https://github.com/kenkangxgwe/lsp-wl/releases)
 
 ![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
 
@@ -80,6 +81,9 @@ for updates.
 
 ## Run the Server
 
+This section is usually handled by the client (editor). If you want to introduce
+lsp-wl to a new client, please continue reading.
+
 Clients can start the server by running the `init.wls` file from Wolfram
 Mathematica executables
 
@@ -89,7 +93,7 @@ wolfram -script /path/to/lsp-wl/init.wls [args]
 wolframscript -f /path/to/lsp-wl/init.wls [args]
 ```
 
-The posible arguments for the server are
+The possible arguments for the server are
 
 - `--help, -h` to print help information.
 - `--socket=port` to assign the port to which the server will connect. (Default:
