@@ -103,7 +103,7 @@ ServerCapabilities = <|
 	"textDocumentSync" -> TextDocumentSyncKind["Full"],
 	"hoverProvider" -> True,
 	"signatureHelpProvider" -> <|
-		"triggerCharacters" -> {","}
+		"triggerCharacters" -> {"[", ","}
 	|>,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
@@ -1326,7 +1326,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 		"Token" :> (
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
-				"result" -> <|
+				"result" -> (
 					msg["params"]
 					// Append[
 						"documentation" -> <|
@@ -1334,17 +1334,24 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 							"value" -> TokenDocumentation[msg["params"]["label"], "usage", "Format" -> markupKind]
 						|>
 					]
-				|>
+				)
+			|>]]
+		),
+		_ :> (
+			sendMessage[state["client"], ResponseMessage[<|
+				"id" -> msg["id"],
+				"result" -> msg["params"]
 			|>]]
 		)
 	}];
 
-	addScheduledTask[state, ServerTask[<|
-		"type" -> "JustContinue",
-		"scheduledTime" -> Now
-	|>]]
-	// List
-	// Prepend["Continue"]
+	{
+		"Continue",
+		addScheduledTask[state, ServerTask[<|
+			"type" -> "JustContinue",
+			"scheduledTime" -> Now
+		|>]]
+	}
 ]
 
 
