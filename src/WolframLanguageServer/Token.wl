@@ -76,7 +76,6 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                             Nothing
                         ],
                         boxText
-                        // (LogDebug[FullForm[#]];#)&
                         // If[(OptionValue["Format"]) === MarkupKind["Markdown"],
                             splitUsage
                             /* MapAt[GenMarkdownCodeBlock, {All, 1}]
@@ -446,13 +445,23 @@ printHoverTextImpl[hoverInfo_List] := (
         HoverInfo["Message", {symbolName_String, tag_String}] :> (
             TokenDocumentation[symbolName, tag]
         ),
+        HoverInfo["String", {stringLiteral_String, stringDisplay_String}] :> (
+            If[StringContainsQ[stringLiteral, {"\\:", "\\["}],
+                StringJoin[
+                    "```\n",
+                    stringDisplay // StringReplace[PUACharactersReplaceRule], "\n",
+                    "```\n"
+                ],
+                ""
+            ]
+        ),
         HoverInfo["Number", {numberString_String, numberValue_}] :> (
             ToString[numberValue]
             // Replace[{
                 numberString :> "",
                 numberValueString_ :> StringJoin[
                     "```mathematica\n",
-                    numberValueString, " (* ", numberString, " *)",  "\n",
+                    numberValueString, "\n",
                     "```\n"
                 ]
             }]
