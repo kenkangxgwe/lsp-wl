@@ -576,12 +576,7 @@ VerificationTest[
 	TestID -> "HoverMessageName 2"
 ],
 
-(*
-	TODO: There's an unreleased commit on CodeParser's master to reveal the
-	source of the message name in Symbol::name form. Enable this test after
-	that is release.
-*)
-(* VerificationTest[
+VerificationTest[
 	GetHoverInfo[
 		TextDocument[<|
 			"text" -> {
@@ -595,7 +590,8 @@ VerificationTest[
 	],
 	{
 		{
-			HoverInfo["Message", {"General", "obspkg"}]
+			HoverInfo["Message", {"General", "obspkg"}],
+			HoverInfo["String", {"\"obspkg\"", "obspkg"}]
 		},
 		LspRange[<|
 			"start" -> LspPosition[<|
@@ -609,7 +605,7 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "HoverMessageName 3"
-], *)
+],
 
 VerificationTest[
 	GetHoverInfo[
