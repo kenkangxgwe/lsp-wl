@@ -1,22 +1,22 @@
 (* ::Package:: *)
 
 BeginPackage["DataTypeTest`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
 Begin["`Private`"]
-Construct[ClearAll, Context[] <> "*"]
+ClearAll[Evaluate[Context[] <> "*"]]
 
 
-TestedContext = "DataType`"
-(*Tests::usage = StringTemplate["Tests for `` context."][TestedContext];*)
-Needs[TestedContext]
+TestingContext = "DataType`"
+CurrentContext = "DataTypeTest`"
+Needs[TestingContext]
 
 
-Tests = {
+{
 
 VerificationTest[
-	AssociationSameQ @@@ {
+	DataType`Test`AssociationSameQ @@@ {
 		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 2, "a" -> 1 |>},
 		{<|"a" -> 1, "b" -> 2|>, <|"b" -> 1, "a" -> 2 |>},
 		{<|"a" -> 1, "b" -> 2|>, <|"a" -> 2 |>},
@@ -58,14 +58,15 @@ VerificationTest[
 VerificationTest[
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Man"|>];
 	stu1["sex"],
-	Missing["PatternMismatch", {"Man", "Male"|"Female"}],
+	"Man",
+	{TypeCheck::mispat},
 	TestID -> "Getter Type Check"
 ],
 
 VerificationTest[
-    TypeCheckOff[];
+    TypeCheck[False];
 	stu1 = Student[<|"id" -> 1, "name" -> "John Doe", "sex" -> "Man"|>];
-	With[{res = stu1["sex"]}, TypeCheckOn[]; res],
+	With[{res = stu1["sex"]}, TypeCheck[True]; res],
 	"Man",
 	TestID -> "Getter Type Check Off"
 ],
@@ -155,7 +156,7 @@ VerificationTest[
 	stu1["courses"],
 	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>,
 	TestID -> "Replace Association",
-	SameTest -> AssociationSameQ
+	SameTest -> DataType`Test`AssociationSameQ
 ],
 
 VerificationTest[
@@ -178,7 +179,7 @@ VerificationTest[
 	stu1["courses"],
 	<|1-> "ECON101", 2->"COMP202", 3->"PHYS201"|>,
 	TestID -> "Replace Association",
-	SameTest -> AssociationSameQ
+	SameTest -> DataType`Test`AssociationSameQ
 ],
 
 VerificationTest[
@@ -250,9 +251,7 @@ VerificationTest[
     TestID -> "Type usage 2"
 ]
 
-}
-
-Sow[#, "WolframLanguageServer`Test`DataTypeTest`"]& /@ Tests
+} // Map[Sow[#, CurrentContext]&]
 
 
 End[]
