@@ -243,7 +243,7 @@ divideCells[doc_TextDocument, o:OptionsPattern[]] := (
 
 constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block[
     {
-        style, title, codeStart
+        style, titleLines, codeRange
     },
 
     style = If[styleLine == 0,
@@ -256,71 +256,58 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
         // Replace["" -> "[empty]"]
     ];
 
-    {title, codeStart} = If[!AnonymousStyleQ[style] &&
+    titleLines = If[!AnonymousStyleQ[style] &&
         (styleLine + 1 != endLine),
-        {
-            (Part[doc["text"], styleLine + 1]
-            // StringCases[
-                StartOfString ~~ (Whitespace | "") ~~
-                "(*" ~~ Longest[t___] ~~ "*)" ~~
-                (Whitespace | "") ~~ EndOfString :> t
-            ]
-            // Replace[
-                {t_, ___} :> t
-            ]),
-            findCodeLine[doc, styleLine + 2]
-        },
-        {
-            Missing["Untitled"],
-            findCodeLine[doc, styleLine + 1]
-        }
+        findTitleLines[doc, styleLine + 1, endLine],
+        {}
     ];
+
+    codeRange = findCodeRange[doc, styleLine + Length[titleLines] + 1, endLine] // Sow;
 
     CellNode[<|
         "level" -> If[HeadingQ[style], HeadingLevel[style], Infinity],
         "style" -> style,
-        "name" -> (title // Replace[(_?MissingQ|"") :> "<anonymous>"]),
+        "name" -> (titleLines // StringRiffle[#, "\n"]& // Replace["" -> "<anonymous>"]),
         "range" -> {styleLine, endLine - 1},
-        "selectionRange" -> If[!MissingQ[title],
-            Part[doc["text"], styleLine + 1]
-            // StringPosition[title]
-            // First
-            // Apply[{startPos, endPos} \[Function] (
-                LspRange[<|
-                    "start" -> LspPosition[<|
-                        "line" -> styleLine,
-                        "character" -> startPos - 1
-                    |>],
-                    "end" -> LspPosition[<|
-                        "line" -> styleLine,
-                        "character" -> endPos
-                    |>]
-                |>]
-            )],
-            LspRange[<|
-                "start" -> LspPosition[<|
-                    "line" -> styleLine - 1,
-                    "character" -> 0
-                |>],
-                "end" -> LspPosition[<|
-                    "line" -> styleLine,
-                    "character" -> 0
-                |>]
-            |>]
+        "selectionRange" -> If[styleLine == 0,
+            Null,
+            ToLspRange[doc, {styleLine, styleLine}]
         ],
-        "codeRange" -> If[codeStart < endLine,
-            {{codeStart, endLine - 1}} // Sow,
-            {}
-        ],
+        "codeRange" -> codeRange,
         "children" -> {}
     |>]
 ]
 
-findCodeLine[doc_TextDocument, currentLine_Integer] := (
-    If[currentLine <= Length[doc["text"]] &&
+
+findTitleLines[doc_TextDocument, currentLine_Integer, endLine_Integer] := (
+    findTitleLinesImpl[doc, currentLine, endLine]
+    // Reap
+    // Last
+    // First[#, {}]&
+)
+
+findTitleLinesImpl[doc_TextDocument, endLine_Integer, endLine_] := Null
+findTitleLinesImpl[doc_TextDocument, currentLine_Integer, endLine_Integer] := (
+    Part[doc["text"], currentLine]
+    // StringCases[
+        StartOfString ~~ (Whitespace | "") ~~
+        "(*" ~~ Longest[title___] ~~ "*)" ~~
+        (Whitespace | "") ~~ EndOfString :> title
+    ]
+    // Replace[{
+        {title_} :> (
+            Sow[title];
+            findTitleLinesImpl[doc, currentLine + 1, endLine]
+        )
+    }]
+)
+
+findCodeRange[doc_TextDocument, endLine_Integer, endLine_] := {}
+findCodeRange[doc_TextDocument, currentLine_Integer, endLine_Integer] := (
+    If[currentLine < endLine &&
         Part[doc["text"], currentLine] === "",
-        findCodeLine[doc, currentLine + 1],
-        currentLine
+        findCodeRange[doc, currentLine + 1, endLine],
+        {{currentLine, endLine - 1}}
     ]
 )
 
@@ -852,18 +839,10 @@ ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<
         "line" -> startLine - 1,
         "character" -> 0
     |>],
-    "end" -> LspPosition[
-        If[endLine == Length[doc["text"]],
-            <|
-                "line" -> endLine - 1,
-                "character" -> StringLength[Last[doc["text"]]]
-            |>,
-            <|
-                "line" -> endLine,
-                "character" -> 0
-            |>
-        ]
-    ]
+    "end" -> LspPosition[<|
+        "line" -> endLine - 1,
+        "character" -> StringLength[Part[doc["text"], endLine]]
+    |>]
 |>]
 
 

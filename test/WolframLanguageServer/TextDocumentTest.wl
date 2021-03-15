@@ -141,12 +141,12 @@ VerificationTest[
 			|>],
 			"selectionRange" -> LspRange[<|
 				"start" -> LspPosition[<|
-					"line" -> 1,
-					"character" -> 2
+					"line" -> 0,
+					"character" -> 0
 				|>],
 				"end" -> LspPosition[<|
-					"line" -> 1,
-					"character" -> 14
+					"line" -> 0,
+					"character" -> 17
 				|>]
 			|>],
 			"children" -> {
@@ -166,12 +166,12 @@ VerificationTest[
 					|>],
 					"selectionRange" -> LspRange[<|
 						"start" -> LspPosition[<|
-							"line" -> 5,
-							"character" -> 2
+							"line" -> 4,
+							"character" -> 0
 						|>],
 						"end" -> LspPosition[<|
-							"line" -> 5,
-							"character" -> 14
+							"line" -> 4,
+							"character" -> 17
 						|>]
 					|>],
 					"children"->{}
@@ -180,6 +180,119 @@ VerificationTest[
 		|>]
 	},
 	TestID -> "ToDocumentSymbolEmptySymbol1"
+],
+
+VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name line 1*)",
+			"(*section name line 2*)",
+			"",
+			"",
+			"(* " ~~ "::nostyle::" ~~ " *)",
+			"(*section name*)",
+			"",
+			""
+		}
+	|>]],
+	{
+		DocumentSymbol[<|
+			"name" -> "section name line 1\nsection name line 2",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 8,
+					"character" -> 0
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 17
+				|>]
+			|>],
+			"children" -> {
+				DocumentSymbol[<|
+					"name" -> "section name",
+					"detail" -> "nostyle",
+					"kind" -> 15,
+					"range" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 8,
+							"character" -> 0
+						|>]
+					|>],
+					"selectionRange" -> LspRange[<|
+						"start" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 0
+						|>],
+						"end" -> LspPosition[<|
+							"line" -> 5,
+							"character" -> 17
+						|>]
+					|>],
+					"children"->{}
+				|>]
+			}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolMultilineTitle1"
+],
+
+VerificationTest[
+	ToDocumentSymbol[TextDocument[<|
+		"text" -> {
+			"(* " ~~ "::Section::" ~~ " *)",
+			"(*section name line 1*)",
+			"(*section name line 2*)",
+			"(*section name line 3*)",
+			"(*section name line 4*)"
+		}
+	|>]],
+	{
+		DocumentSymbol[<|
+			"name" -> "section name line 1\nsection name line 2\nsection name line 3\nsection name line 4",
+			"detail" -> "Section",
+			"kind" -> 15,
+			"range" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 4,
+					"character" -> 23
+				|>]
+			|>],
+			"selectionRange" -> LspRange[<|
+				"start" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 0
+				|>],
+				"end" -> LspPosition[<|
+					"line" -> 0,
+					"character" -> 17
+				|>]
+			|>],
+			"children" -> {}
+		|>]
+	},
+	TestID -> "ToDocumentSymbolMultilineTitle2"
 ],
 
 VerificationTest[
@@ -212,12 +325,12 @@ VerificationTest[
 			|>],
 			"selectionRange" -> LspRange[<|
 				"start" -> LspPosition[<|
-					"line" -> 1,
-					"character" -> 2
+					"line" -> 0,
+					"character" -> 0
 				|>],
 				"end" -> LspPosition[<|
-					"line" -> 1,
-					"character" -> 14
+					"line" -> 0,
+					"character" -> 17
 				|>]
 			|>],
 			"children" -> {
@@ -237,12 +350,12 @@ VerificationTest[
 					|>],
 					"selectionRange" -> LspRange[<|
 						"start" -> LspPosition[<|
-							"line" -> 5,
-							"character" -> 2
+							"line" -> 4,
+							"character" -> 0
 						|>],
 						"end" -> LspPosition[<|
-							"line" -> 5,
-							"character" -> 14
+							"line" -> 4,
+							"character" -> 28
 						|>]
 					|>],
 					"children"->{}
@@ -357,6 +470,7 @@ VerificationTest[
 		"text" -> {
 			"(* " ~~ "::Section::" ~~ " *)",
 			"(*section name*)",
+			"",
 			"(* code range with four lines *)",
 			"",
 			"(* code range with four lines *)",
@@ -366,11 +480,11 @@ VerificationTest[
 	{
 		LspRange[<|
 			"start" -> LspPosition[<|
-				"line" -> 2,
+				"line" -> 3,
 				"character" -> 0
 			|>],
 			"end" -> LspPosition[<|
-				"line" -> 5,
+				"line" -> 6,
 				"character" -> 32
 			|>]
 		|>]
@@ -399,8 +513,8 @@ VerificationTest[
 				"character" -> 0
 			|>],
 			"end" -> LspPosition[<|
-				"line" -> 5,
-				"character" -> 0
+				"line" -> 4,
+				"character" -> 30
 			|>]
 		|>]
 	},
@@ -434,8 +548,8 @@ VerificationTest[
 				"character" -> 0
 			|>],
 			"end" -> LspPosition[<|
-				"line" -> 5,
-				"character" -> 0
+				"line" -> 4,
+				"character" -> 30
 			|>]
 		|>],
 		LspRange[<|
@@ -444,8 +558,8 @@ VerificationTest[
 				"character" -> 0
 			|>],
 			"end" -> LspPosition[<|
-				"line" -> 11,
-				"character" -> 0
+				"line" -> 10,
+				"character" -> 31
 			|>]
 		|>]
 	},
