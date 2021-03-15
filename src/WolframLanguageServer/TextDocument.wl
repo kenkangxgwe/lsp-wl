@@ -828,8 +828,7 @@ ToDocumentSymbolImpl[node_] := (
     }]
     // Reap
     // Last
-    // Replace[{} -> {{}}]
-    // First
+    // First[#, {}]&
 )
 
 
@@ -1565,8 +1564,7 @@ FindFoldingRange[doc_TextDocument] := (
     // findFoldRangeImpl
     // Reap
     // Last
-    // Replace[{} -> {{}}]
-    // First
+    // First[#, {}]&
 )
 
 

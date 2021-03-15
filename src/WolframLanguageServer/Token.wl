@@ -769,8 +769,7 @@ GenSnippet[token_String, usage_String] := (
     // genSnippetImpl[1, #]&
     // Reap
     // Last
-    // Replace[{} -> {{}}]
-    // Last
+    // First[#, {}]&
     // (StringRiffle[#, ","]&)
     // StringTake[#, {2, -2}]&
     // (# <> "$0")&
@@ -807,8 +806,7 @@ genSnippetImpl[tabStop_Integer, signature_String] := (
             }]
             // Reap
             // MapAt[
-                Replace[{} -> {{}}]
-                /* Last
+                First[#, {}]&
                 /* (StringRiffle[#, ","]&),
                 2
             ]
@@ -827,8 +825,7 @@ genSnippetImpl[tabStop_Integer, signature_String] := (
             // Fold[genSnippetImpl, tabStop, #]&
             // Reap
             // MapAt[
-                Replace[{} -> {{}}]
-                /* Last
+                First[#, {}]&
                 /* StringJoin,
                 2
             ]
@@ -868,7 +865,10 @@ splitOperand[operandList_String] := (
             _ :> start
         }]
     )), 1, #]&
-    // Reap // Last // Replace[{} -> {{}}] // First
+    // Reap
+    // Last
+    // First[#, {}]&
+
 )
 
 
