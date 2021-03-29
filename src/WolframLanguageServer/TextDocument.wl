@@ -544,6 +544,21 @@ GetDocumentText[doc_TextDocument, range_LspRange] := (
     // StringRiffle[#, "\n"]&
 )
 
+(* Private usage *)
+GetDocumentText[doc_TextDocument, data_Association] := (
+    data
+    // Key[CodeParser`Source]
+    // Replace[{
+        {{startLine_, startChracter_}, {endLine_, endCharacter_}} :> (
+            Take[doc["text"], {startLine, endLine}]
+            // MapAt[StringTake[#, endCharacter]&, -1]
+            // MapAt[StringDrop[#, startCharacter]&, 1]
+            // StringRiffle[#, "\n"]&
+        ),
+        _?MissingQ -> ""
+    }]
+)
+
 
 (* ::Subsection:: *)
 (*AST utils*)
@@ -677,7 +692,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
         // Replace[_?MissingQ -> {}]
         // rangeToAst[doc, #]&
         // Flatten
-        // Map[ToDocumentSymbolImpl],
+        // Map[ToDocumentSymbolImpl[doc, #]&],
         node["children"]
         // Replace[_?MissingQ -> {}]
         // Map[ToDocumentSymbolImpl[doc, #]&]
@@ -700,7 +715,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
     ]
 )
 
-ToDocumentSymbolImpl[node_] := (
+ToDocumentSymbolImpl[doc_, node_] := (
     node
     // ReplaceAll[{
         AstPattern["Definable"][head_, func_, key_, body_, data_] :> (
@@ -730,7 +745,7 @@ ToDocumentSymbolImpl[node_] := (
                 ),
                 "children" -> (
                     {head, body}
-                    // Map[ToDocumentSymbolImpl]
+                    // Map[ToDocumentSymbolImpl[doc, #]&]
                     // Catenate
                 )
             |>] // Sow
@@ -760,7 +775,7 @@ ToDocumentSymbolImpl[node_] := (
                         ),
                         "children" -> (
                             {head, body}
-                            // Map[ToDocumentSymbolImpl]
+                            // Map[ToDocumentSymbolImpl[doc, #]&]
                             // Catenate
                         )
                     |>] // Sow
@@ -788,11 +803,11 @@ ToDocumentSymbolImpl[node_] := (
                     _ -> SymbolKind["Function"]
                 }],
                 "detail" -> (
-                    tag
-                    // List
-                    // Replace[{
-                        {tagName_String} :> tagName,
-                        {} -> ""
+                    Part[head, 3]
+                    // GetDocumentText[doc, #]&
+                    // Replace[{tag}, {
+                        {tagName_String} :> (tagName <> " /: " <> #&),
+                        {} -> Identity
                     }]
                 ),
                 "range" -> (
@@ -808,7 +823,7 @@ ToDocumentSymbolImpl[node_] := (
                 ),
                 "children" -> (
                     {head, body}
-                    // Map[ToDocumentSymbolImpl]
+                    // Map[ToDocumentSymbolImpl[doc, #]&]
                     // Catenate
                 )
             |>]
@@ -817,7 +832,7 @@ ToDocumentSymbolImpl[node_] := (
 
         (* AstPattern["CompoundExpression"][exprs_] :> (
             exprs
-            // Map[ToDocumentSymbolImpl]
+            // Map[ToDocumentSymbolImpl[doc, #]&]
         ), *)
         (* lhsNode[CodeParser`CallNode[caller_, {callees__}, _]] :> ({}),
         lhsNode[CodeParser`LeafNode[Symbol, symbolName_String, _]] :> ({}), *)
