@@ -107,7 +107,7 @@ ServerCapabilities = <|
 	|>,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
-		"triggerCharacters" -> {"\\", "["}
+		"triggerCharacters" -> {"\\", "[", ":"}
 	|>,
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
@@ -1321,7 +1321,7 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
 				"result" -> msg["params"]
-			|>]] 
+			|>]]
 		),
 		"Token" :> (
 			sendMessage[state["client"], ResponseMessage[<|
@@ -1332,6 +1332,24 @@ handleRequest["completionItem/resolve", msg_, state_] := With[
 						"documentation" -> <|
 							"kind" -> markupKind,
 							"value" -> TokenDocumentation[msg["params"]["label"], "usage", "Format" -> markupKind]
+						|>
+					]
+				)
+			|>]]
+		),
+		"MessageName" :> (
+			sendMessage[state["client"], ResponseMessage[<|
+				"id" -> msg["id"],
+				"result" -> (
+					msg["params"]
+					// Append[
+						"documentation" -> <|
+							"kind" -> markupKind,
+							"value" -> TokenDocumentation[
+								msg["params"]["data"]["symbol"],
+								msg["params"]["data"]["tag"],
+								"Format" -> markupKind
+							]
 						|>
 					]
 				)

@@ -33,9 +33,26 @@ Needs["WolframLanguageServer`ColorTable`"]
 Needs["WolframLanguageServer`TextDocument`"]
 
 
+(* ::Section:: *)
+(*Initialization*)
+
+
 $DocumentedContext = {
     $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
 } // FileNameJoin // Get
+
+
+(* Run Messages and Usages for completion. *)
+Quiet[
+    {
+        $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Messages.m"
+    } // FileNameJoin // Get;
+    {
+        $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Usage.m"
+    } // FileNameJoin // Get,
+    {Get::noopen}
+]
+
 
 systemIdentifierQ[token_String] := (
     token
@@ -60,14 +77,17 @@ Options[TokenDocumentation] = {
 }
 
 TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
-
     If[token // systemIdentifierQ,
         ToExpression[token<>"::"<>tag]
         // Replace[_MessageName -> ""],
         ""
     ]
     // Replace[{
-        boxText:Except["", _String] :> (
+        "" :> (If[tag =!= "usage",
+            TokenDocumentation["General", tag, o],
+            ""
+        ]),
+        boxText_String :> (
             tag // Replace[{
                 "usage" :> (
                     {
@@ -259,9 +279,7 @@ Options[GenOptions] = {
     "Format" -> MarkupKind["Markdown"] (* | MarkupKind["Plaintext"] *)
 }
 GenOptions[token_String, o:OptionsPattern[]] := (
-    token
-    // StringTemplate["Options[``]"]
-    // ToExpression
+    ToExpression["Options@"<>token]
     // Quiet
     // Replace[_Options|_?FailureQ -> {}]
     // Map[ToString[#, InputForm]&]
@@ -487,8 +505,8 @@ GetSignatureHelp[doc_TextDocument, pos_LspPosition] := (
 
 printSignatureHelp[functionName_String] := (
     If[functionName // systemIdentifierQ,
-        ToExpression[functionName<>"::"<>"usage"]
-        // Replace[_Message -> ""],
+        ToExpression[functionName<>"::usage"]
+        // Replace[_MessageName -> ""],
         ""
     ]
     // Replace[{
@@ -716,14 +734,58 @@ GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"["]
 ]
 
 
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:":"] := Block[
+    {
+        token = GetTokenPrefix[doc, pos // ReplaceKeyBy["character" -> (# - 1&)]]
+    },
+
+    token
+    // Replace[{
+        "\\" :> GetIncompleteCompletionAtPosition[doc, pos],
+        "(* :" :> GetCellStyleSnippet[ToLspRange[doc, {pos["line"] + 1, pos["line"] + 1}]],
+        ":" :> With[
+            {
+                symbol = GetTokenPrefix[doc, pos // ReplaceKeyBy["character" -> (# - 2&)]] // LogDebug
+            },
+
+            (
+                ToExpression["Messages@" <> symbol]
+                // LogDebug
+                // Part[#, All, 1, 1, 2]&
+                // Map[tag \[Function] (CompletionItem[<|
+                    "label" -> (symbol <> "::" <> tag),
+                    "kind" -> CompletionItemKind["Text"],
+                    "insertTextFormat" -> InsertTextFormat["PlainText"],
+                    "insertText" -> tag,
+                    "sortText" -> tag,
+                    "filterText" -> tag,
+                    "data" -> <|
+                        "type" -> "MessageName",
+                        "symbol" -> symbol,
+                        "tag" -> tag
+                    |>
+                |>])]
+            )
+            /; (symbol // systemIdentifierQ)
+        ],
+        _ -> {}
+    }]
+]
+
+
 (* ::Subsection:: *)
 (*Snippet*)
 
 
+(* ::Subsubsection:: *)
+(*Function Snippet*)
+
+
+
 GetFunctionSnippet[token_String] := (
     If[token // systemIdentifierQ,
-        ToExpression[token<>"::"<>"usage"]
-        // Replace[_Message -> ""],
+        ToExpression[token<>"::usage"]
+        // Replace[_MessageName -> ""],
         ""
     ]
     // Replace[{
@@ -869,6 +931,40 @@ splitOperand[operandList_String] := (
     // Last
     // First[#, {}]&
 
+)
+
+
+(* ::Subsubsection:: *)
+(*Cell Style Snippet*)
+
+
+$CellStyles = {
+    "Title",
+    "Chapter",
+    "Section",
+    "Subsection",
+    "Subsubsection"
+}
+
+
+GetCellStyleSnippet[range_LspRange] := (
+    $CellStyles
+    // Map[(style \[Function] (
+        CompletionItem[<|
+            "label" -> style,
+            "kind" -> CompletionItemKind["Text"],
+            "detail" -> style,
+            "insertTextFormat" -> InsertTextFormat["Snippet"],
+            "filterText" -> ("(* " <> "::" <> style),
+            "textEdit" -> TextEdit[<|
+                "range" -> range,
+                "newText" -> (
+                    style
+                    // StringTemplate["(* " <> "::`1`::" <> " *)\n(*${1:title}*)\n$0"]
+                )
+            |>]
+        |>]
+    ))]
 )
 
 

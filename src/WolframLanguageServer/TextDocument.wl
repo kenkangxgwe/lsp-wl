@@ -20,6 +20,7 @@ GetFunctionName::usage = "GetFunctionName[doc_TextDocument, pos_LspPosition] giv
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
+ToLspRange::usage = "ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] converts the line range of the given document to LSP Range."
 FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
@@ -832,7 +833,6 @@ ToDocumentSymbolImpl[node_] := (
 )
 
 
-(* Convert the line range of the given document to LSP Range. *)
 ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] := LspRange[<|
     "start" -> LspPosition[<|
         "line" -> startLine - 1,
