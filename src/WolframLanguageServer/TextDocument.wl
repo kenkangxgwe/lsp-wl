@@ -527,7 +527,7 @@ FindAllCodeRanges[doc_TextDocument] := (
     // Map[ToLspRange[doc, #]&]
 )
 
-GetDocumentText[doc_TextDocument] := (
+GetDocumentText[doc_TextDocument, _:All] := (
     doc["text"]
     // Replace[{_String?(StringStartsQ["#!"]), restLines___} :> ({"", restLines})]
     // StringRiffle[#, "\n"]&
@@ -736,9 +736,9 @@ ToDocumentSymbolImpl[node_] := (
             |>] // Sow
         ),
 
-        AstPattern["Set"][head_, op:"Set", body_, data_] :> Block[
+        AstPattern["Set"][head_, op:"Set", body_, data_] :> With[
             {
-                symbolList
+                symbolList = head // GetSymbolList
             },
 
             Replace[symbolList, {
@@ -768,13 +768,7 @@ ToDocumentSymbolImpl[node_] := (
                 _ -> Nothing
             }, {1}]
 
-            /; (
-                head
-                // GetSymbolList
-                // ((symbolList = #)&)
-                // MissingQ
-                // Not
-            )
+            /; (symbolList // MissingQ // Not)
         ],
 
         AstPattern["Set"][head_, op_, tag_, body_, data_] :> (
@@ -1100,12 +1094,13 @@ FindDefinitions[doc_TextDocument, pos_LspPosition] := (
 
 
 Options[FindReferences] = {
+    "GlobalSearch" -> True,
     "IncludeDeclaration" -> True
 }
 
 
 FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := (
-    FindScopeOccurence[doc, pos, "GlobalSearch" -> True]
+    FindScopeOccurence[doc, pos, "GlobalSearch" -> OptionValue["GlobalSearch"]]
     // If[OptionValue["IncludeDeclaration"],
         MapAt[Map[source \[Function] Location[<|
             "uri" -> doc["uri"],
@@ -1173,7 +1168,12 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Wit
                         ?(NodeContainsPosition[{line, character}])
                 ) :> Block[
                     {
-                        headSource
+                        headSource = Replace[op, {
+                            FunctionPattern["Scope"] :>
+                                ScopeHeadSymbolSource[op, head, name],
+                            FunctionPattern["Delayed"] :>
+                                DelayedHeadPatternNameSource[head, name]
+                        }]
                     },
 
                     {
@@ -1188,17 +1188,8 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Wit
                             {}
                         ]
                     }
-                    (* a pattern test with inner side effect *)
-                    /; (
-                        Replace[op, {
-                            FunctionPattern["Scope"] :>
-                                ScopeHeadSymbolSource[op, head, name],
-                            FunctionPattern["Delayed"] :>
-                                DelayedHeadPatternNameSource[head, name]
-                        }]
-                        // ((headSource = #)&)
-                        // MatchQ[Except[{}, _List]]
-                    )
+
+                    /; (headSource // MatchQ[Except[{}, _List]])
                 ],
                 (* search it the whole doc as a dynamic local *)
                 ast = rangeToAst[doc, All];
@@ -1351,26 +1342,22 @@ DynamicLocalSource[node_, name_String] := (
         Cases[
             node,
             AstPattern["Scope"][head_, body_, op_] |
-            AstPattern["Delayed"][head_, body_, op_] :> Block[
+            AstPattern["Delayed"][head_, body_, op_] :> With[
                 {
-                    headSource
+                    headSource = Replace[op, {
+                        FunctionPattern["Scope"] :>
+                            ScopeHeadSymbolSource[op, head, name],
+                        FunctionPattern["Delayed"] :>
+                            DelayedHeadPatternNameSource[head, name]
+                    }]
                 },
 
                 Join[
                     headSource,
                     StaticLocalSource[body, name]
                 ]
-                (* a pattern test with inner side effect *)
-                /; (
-                    Replace[op, {
-                        FunctionPattern["Scope"] :>
-                            ScopeHeadSymbolSource[op, head, name],
-                        FunctionPattern["Delayed"] :>
-                            DelayedHeadPatternNameSource[head, name]
-                    }]
-                    // ((headSource = #)&)
-                    // MatchQ[Except[{}, _List]]
-                )
+
+                /; (headSource // MatchQ[Except[{}, _List]])
             ],
             AstLevelspec["CallNodeWithArgs"],
             Heads -> False
@@ -1382,56 +1369,50 @@ DynamicLocalSource[node_, name_String] := (
 FindTopLevelSymbols[node_, name_String] := (
     node
     // Replace[{
-        AstPattern["Set"][head_, op:"Set"] :> Block[
+        AstPattern["Set"][head_, op:"Set"] :> With[
             {
-                symbolSource
-            },
-
-            {symbolSource}
-            /; (
-                head
+                symbolSource = head
                 // GetSymbolList
                 // FirstCase[
                     AstPattern["Symbol"][symbolName:name, data_] :> (
                         data[CodeParser`Source]
                     )
                 ]
-                // ((symbolSource = #)&)
-                // MissingQ
-                // Not
-            )
-        ],
-
-        AstPattern["Set"][head_] :> Block[
-            {
-                symbolSource
             },
 
             {symbolSource}
-            /; (
-                FirstCase[
-                    head,
-                    AstPattern["Symbol"][],
-                    Missing["NotFound"],
-                    AstLevelspec["LeafNodeWithSource"]
-                ]
-                // Replace[{
-                    AstPattern["Symbol"][symbolName:name, data_] :> (
-                        data[CodeParser`Source]
-                        // Replace[{
-                            source_ :> (
-                                LogDebug[symbolName];
-                                LogDebug[data];
-                                source
-                            )
-                        }]
-                    ),
-                    _ -> Missing["NotFound"]
-                }]
-                // ((symbolSource = #)&)
-                // MissingQ
-                // Not
-            )
+
+            /; (symbolSource // MissingQ // Not)
+        ],
+
+        AstPattern["Set"][head_] :> With[
+            {
+                symbolSource = (
+                    FirstCase[
+                        head,
+                        AstPattern["Symbol"][],
+                        Missing["NotFound"],
+                        AstLevelspec["LeafNodeWithSource"]
+                    ]
+                    // Replace[{
+                        AstPattern["Symbol"][symbolName:name, data_] :> (
+                            data[CodeParser`Source]
+                            // Replace[{
+                                source_ :> (
+                                    LogDebug[symbolName];
+                                    LogDebug[data];
+                                    source
+                                )
+                            }]
+                        ),
+                        _ -> Missing["NotFound"]
+                    }]
+                )
+            },
+
+            {symbolSource}
+
+            /; (symbolSource // MissingQ // Not)
         ],
 
         AstPattern["CompoundExpression"][exprs_] :> (
@@ -1470,10 +1451,8 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
         startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
         endPos = {range["end"]["line"] + 1, range["end"]["character"]}
     },
-
-    GetAstAtPosition[doc, range["start"]]
-    // FirstCase[
-        #,
+    {FirstCase[
+        GetAstAtPosition[doc, range["start"]],
         AstPattern["Token"][tokenString_]?((
             (* The token node overlaps the range *)
             CompareNodePosition[#, startPos, -1] >= 0 &&
@@ -1495,8 +1474,7 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
         Missing["NotFound"],
         AstLevelspec["DataWithSource"],
         Heads -> False
-    ]&
-    // List
+    ]}
     // DeleteMissing
 ]
 
@@ -1701,7 +1679,6 @@ FindSelectionRange[doc_TextDocument, pos_LspPosition] := With[
     // Reverse
     // Replace[{} -> {None}]
     // Fold[ReplaceKey[#2, "parent" -> #1]&]
-    // LogDebug
  ]
 
 
