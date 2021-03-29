@@ -105,6 +105,11 @@ DiagnosticSeverity = <|
     "Hint" -> 4
 |>
 
+DiagnosticTag = <|
+    "Unnecessary" -> 1,
+    "Deprecated" -> 2
+|>
+
 CompletionTriggerKind = <|
     "Invoked" -> 1,
     "TriggerCharacter" -> 2,
@@ -278,7 +283,7 @@ DeclareType[TextEdit, <|
 
 DeclareType[WorkspaceEdit, <|
     "changes" -> <|
-        (_DocumentUri -> TextEdit)...
+        (_DocumentUri -> {___TextEdit})...
     |>,
     "documentChanges" -> _ (* not implemented *)
 |>]
@@ -327,7 +332,9 @@ DeclareType[Diagnostic, <|
     "code" -> _Integer|_String,
     "source" -> _String,
     "message" -> _String,
-    "relatedInformation" -> {___DiagnosticRelatedInformation}
+    "tags" -> {_?(MemberQ[DiagnosticTag, #]&)},
+    "relatedInformation" -> {___DiagnosticRelatedInformation},
+    "data" -> _
 |>]
 
 DeclareType[DiagnosticRelatedInformation, <|
@@ -393,7 +400,14 @@ DeclareType[DocumentHighlight, <|
 DeclareType[LspCodeAction, <|
     "title" -> _String,
     "kind" -> _?(MemberQ[CodeActionKind, #]&),
-    "command" -> _Command
+    "diagnostics" -> {___Diagnostic},
+    "isPreferred" -> _?BooleanQ,
+    "disabled" -> <|
+        "reason" -> _String
+    |>,
+    "edit" -> _WorkspaceEdit,
+    "command" -> _Command,
+    "data" -> _
 |>]
 
 DeclareType[CodeLens, <|

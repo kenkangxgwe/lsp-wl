@@ -1503,17 +1503,27 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 handleRequest["textDocument/codeAction", msg_, state_] := With[
 	{
 		uri = msg["params"]["textDocument"]["uri"],
-		range = ConstructType[msg["params"]["range"], LspRange]
+		range = ConstructType[msg["params"]["range"], LspRange],
+		diagnostics = ConstructType[msg["params"]["context"]["diagnostics"], {___Diagnostic}]
 	},
-
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> (
+		"result" -> Join[
+			diagnostics
+			// Map[(diagnostic \[Function] (
+				diagnostic["data"]
+				// ConstructType[#, {___LspCodeAction}]&
+				// Map[(# -> diagnostic)&]
+			))]
+			// Catenate
+			// Merge[Identity]
+			// KeyValueMap[ReplaceKey[#1, "diagnostics" -> #2]&],
 			GetCodeActionsInRange[
 				state["openedDocs"][uri],
 				range
-			] // If[state["debugSession"]["initialized"],
-				Append[
+			],
+			If[state["debugSession"]["initialized"],
+				{
 					LspCodeAction[<|
 						"title" -> "Evaluate in Debug Console",
 						"kind" -> CodeActionKind["Empty"],
@@ -1526,10 +1536,10 @@ handleRequest["textDocument/codeAction", msg_, state_] := With[
 							|>}
 						|>
 					|>]
-				],
-				Identity
+				},
+				{}
 			]
-		)
+		]
 	|>]];
 
 	{"Continue", state}

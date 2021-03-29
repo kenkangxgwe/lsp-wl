@@ -18,7 +18,8 @@ HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to
 GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
 GetFunctionName::usage = "GetFunctionName[doc_TextDocument, pos_LspPosition] gives the function being called at the position."
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
-DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument] gives diagnostic information of the doc."
+DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument, range_LspRange:All] gives diagnostic information of the specified range in the doc."
+GetDiagnosticSuggestionEdits::usage = "GetDiagnosticSuggestionEdits[doc_TextDocument, diagnostic_Diagnostic] retuns the suggested action of the specified diagnostic."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
 ToLspRange::usage = "ToLspRange[doc_TextDocument, {startLine_Integer, endLine_Integer}] converts the line range of the given document to LSP Range."
 FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
@@ -946,10 +947,8 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
 (*Diagnostics*)
 
 
-DiagnoseDoc[doc_TextDocument] := (
-
-    doc
-    // GetDocumentText
+DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
+    GetDocumentText[doc, range]
     // Replace[err:Except[_String] :> (LogError[doc]; "")]
     // CodeInspector`CodeInspect[#, "TabWidth" -> 1]&
     // Replace[_?FailureQ -> {}]
@@ -975,6 +974,7 @@ DiagnoseDoc[doc_TextDocument] := (
                 tag
                 // Replace[{
                     "ExperimentalSymbol" -> "Hint",
+                    (* "UnexpectedLetterlikeCharacter" -> "Hint", *)
                     _ -> newSeverity
                 }]
             ))
@@ -990,9 +990,89 @@ DiagnoseDoc[doc_TextDocument] := (
                 )}] *)
                 // StringReplace["``"|"**" -> "\""]
             ]
+        ),
+        "tags" -> {
+            If[tag // StringStartsQ["Unused"],
+                DiagnosticTag["Unnecessary"],
+                Nothing
+            ]
+        },
+        "data" -> (
+            DiagnosticDataToCodeActions[doc, data]
         )
     |>]]
+)
 
+DiagnosticDataToCodeActions[doc_TextDocument, diagnosticData_Association] := (
+    Replace[diagnosticData[CodeParser`CodeActions] // Replace[_?MissingQ -> {}], {
+        CodeParser`CodeAction[action_String, CodeParser`DeleteNode, data_] :> (
+            LspCodeAction[<|
+                "title" -> (action // StringReplace["``" -> "\""]),
+                "kind" -> CodeActionKind["QuickFix"],
+                "disabled" -> <|
+                    "reason" -> "NotImplemented"
+                |>
+            |>]
+            (* GetCstAtPosition[doc, data[CodeParser`Source]]
+            // (cst \[Function] (
+                FirstPosition[
+                    cst,
+                    _Association?(NodeDataContainsPosition[data[CodeParser`Source]]),
+                    {{{(* Will be Discarded by Most *)}}},
+                    AstLevelspec["DataWithSource"],
+                    Heads -> False
+                ]
+                // Most
+                // Most
+                // Replace[InfixNode[CodeParser`Comma]]
+            )) *)
+        ),
+        CodeParser`CodeAction[action_String, CodeParser`ReplaceText, data_] :> (
+            LspCodeAction[<|
+                "title" -> (action // StringReplace["``" -> "\""]),
+                "kind" -> CodeActionKind["QuickFix"],
+                "edit" -> WorkspaceEdit[<|
+                    "changes" -> <|
+                        doc["uri"] -> {TextEdit[<|
+                            "range" -> (data[CodeParser`Source] // SourceToRange),
+                            "newText" -> data["ReplacementText"]
+                        |>]}
+                    |>
+                |>]
+            |>]
+        ),
+        CodeParser`CodeAction[action_String, CodeParser`InsertNode, data_] :> (
+            LspCodeAction[<|
+                "title" -> (action // StringReplace["``" -> "\""]),
+                "kind" -> CodeActionKind["QuickFix"],
+                "edit" -> WorkspaceEdit[<|
+                    "changes" -> <|
+                        doc["uri"] -> {TextEdit[<|
+                            "range" -> (data[CodeParser`Source] // SourceToRange),
+                            "newText" -> (
+                                data["InsertionNode"]
+                                // Replace[{
+                                    CodeParser`LeafNode[_, nodeString_String, _] :> (
+                                        nodeString
+                                    )
+                                }]
+                            )
+                        |>]}
+                    |>
+                |>]
+            |>]
+        ),
+        CodeParser`CodeAction[action_String, _, data_] :> (
+            LspCodeAction[<|
+                "title" -> (action // StringReplace["``" -> "\""]),
+                "kind" -> CodeActionKind["QuickFix"],
+                "disabled" -> <|
+                    "reason" -> "NotImplemented"
+                |>
+            |>]
+        ),
+        _ -> Nothing
+    }, {1}]
 )
 
 
