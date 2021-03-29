@@ -35,13 +35,12 @@ ToUri[path_String] := path // FileNameSplit // Prepend[""] // <|"Scheme" -> "fil
 FindDocumentLink[doc_TextDocument, workspaceFolder:{___WorkspaceFolder}] := With[
     {
         links = GetDocumentLink[doc],
-        workspacePaths = workspaceFolder["uri"] // Through// Map[FromUri] // LogDebug
+        workspacePaths = workspaceFolder["uri"] // Through// Map[FromUri]
     },
 
     Block[
         {
             $Path = Join[
-                WolframLanguageServer`$DefaultPath,
                 workspacePaths,
                 NestWhileList[
                     ParentDirectory,
@@ -51,7 +50,8 @@ FindDocumentLink[doc_TextDocument, workspaceFolder:{___WorkspaceFolder}] := With
                     FileNameDepth[doc["uri"] // FromUri]
                 ]
                 // Most
-                // Reverse
+                // Reverse,
+                WolframLanguageServer`$DefaultPath
             ]
         },
         links
