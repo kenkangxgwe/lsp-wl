@@ -121,6 +121,9 @@ ServerCapabilities = <|
 		"resolveProvider" -> False
 	|>,
 	"colorProvider" -> True,
+	"renameProvider" -> <|
+		"prepareProvider" -> True
+	|>,
 	"foldingRangeProvider" -> True,
 	"selectionRangeProvider" -> True,
 	"executeCommandProvider" -> <|
@@ -1768,6 +1771,62 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 		|>]]
 	}
 
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/rename*)
+
+
+handleRequest["textDocument/rename", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"],
+		pos = LspPosition[msg["params"]["position"]],
+		newName = msg["params"]["newName"]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> (
+			FindReferences[
+				state["openedDocs"][uri],
+				pos,
+				"IncludeDeclaration" -> True
+			]
+			// Map[<|
+				#["uri"] ->  TextEdit[<|
+					"range" -> #["range"],
+					"newText" -> newName
+				|>]
+			|>&]
+			// Merge[Identity]
+			// (WorkspaceEdit[<|"changes" -> #|>])&
+		)
+	|>]];
+
+	{"Continue", state}
+]
+
+
+(* ::Subsection:: *)
+(*textDocument/prepareRename*)
+
+
+handleRequest["textDocument/prepareRename", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"],
+		pos = LspPosition[msg["params"]["position"]]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		"result" -> If[GetSymbolAtPosition[state["openedDocs"][uri], pos] // MissingQ,
+			Null,
+			<|"defaultBehavior" -> True|>
+		]
+	|>]];
+
+	{"Continue", state}
 ]
 
 
