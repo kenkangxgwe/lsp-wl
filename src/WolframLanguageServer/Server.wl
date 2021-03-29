@@ -155,7 +155,7 @@ ServerConfig = <|
 		"textDocument/signatureHelp" -> 0.5,
 		"textDocument/documentSymbol" -> 4.0,
 		"textDocument/documentHighlight" -> 0.5,
-		"textDocument/documentLink" -> 4.0,
+		(* "textDocument/documentLink" -> 0.0, *)
 		"textDocument/documentColor" -> 5.0
 	|>
 |>
@@ -851,24 +851,38 @@ sendCachedResult[method_String, msg_, state_WorkState] := With[
 	},
 
 	sendMessage[state["client"],
-		ResponseMessage[<|"id" -> msg["id"]|>]
-		// ReplaceKey[
-			If[MissingQ[cache],
-				(* File closed, sends Null. *)
-				"result" -> Null,
-				If[!MissingQ[cache["result"]],
-					"result" -> cache["result"],
-					"error" -> cache["error"]
+		msg["id"]
+		// Replace[{
+			_?MissingQ -> NotificationMessage[<|
+				"method" -> msg["method"],
+				If[!MissingQ[cache] && !MissingQ[cache["result"]],
+					"params" -> cache["result"],
+					(* File closed or error occured, sends Null. *)
+					"params" -> Null
 				]
-			]
-		]
+			|>],
+			id_ :> ResponseMessage[<|
+				"id" -> id,
+				If[MissingQ[cache],
+					(* File closed, sends Null. *)
+					"result" -> Null,
+					If[!MissingQ[cache["result"]],
+						"result" -> cache["result"],
+						"error" -> cache["error"]
+					]
+				]
+			|>]
+		}]
 	];
 
 	{"Continue", state}
 ]
 
 
-scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
+Options[scheduleDelayedRequest] = {
+	"DuplicatedFallback" -> Missing["NotSpecified"]
+}
+scheduleDelayedRequest[method_String, msg_, state_WorkState, OptionsPattern[]] := (
 	{
 		"Continue",
 		
@@ -880,7 +894,8 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState] := (
 			}],
 			"id" -> (msg["id"] // Replace[Except[_Integer] -> Missing["NoIdNeeded"]]),
 			"params" -> getScheduleTaskParameter[method, msg, state],
-			"callback" -> (handleRequest[method, msg, #1]&)
+			"callback" -> (handleRequest[method, msg, #1]&),
+			"duplicatedFallback" -> OptionValue["DuplicatedFallback"]
 		|>]]
 	}
 )
@@ -1140,20 +1155,33 @@ executeCommand["dap-wl.evaluate-range", msg_, state_WorkState] := Block[
 (*textDocument/publishDiagnostics*)
 
 
-handleRequest["textDocument/publishDiagnostics", uri_String, state_WorkState] := (
-	sendMessage[state["client"], ResponseMessage[<|
+constructRequest[method:"textDocument/publishDiagnostics", uri_String] := (
+	<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
-			"uri" -> uri,
-			"diagnostics" -> DiagnoseDoc[state["openedDocs"][uri]]
+			"textDocument" -> <|
+				"uri" -> uri
+			|>
 		|>
-	|>]];
-	{"Continue", state}
+	|>
+)
+
+handleRequest[method:"textDocument/publishDiagnostics", msg_, state_] := (
+	state
+	// If[cacheAvailableQ[method, msg, state],
+		Identity,
+		cacheResponse[method, msg]
+	]
+	// sendCachedResult[method, msg, #]&
 )
 
 
-handleRequest["textDocument/clearDiagnostics", uri_String, state_WorkState] := (
-	sendMessage[state["client"], ResponseMessage[<|
+handleRequest["textDocument/clearDiagnostics", msg_, state_] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	sendMessage[state["client"], NotificationMessage[<|
 		"method" -> "textDocument/publishDiagnostics",
 		"params" -> <|
 			"uri" -> uri,
@@ -1161,10 +1189,46 @@ handleRequest["textDocument/clearDiagnostics", uri_String, state_WorkState] := (
 		|>
 	|>]];
 	{"Continue", state}
+]
+
+
+cacheResponse[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"]
+	},
+
+	state
+	// If[MissingQ[state["openedDocs"][uri]],
+		Identity,
+		ReplaceKey[
+			{"caches", method, uri} -> RequestCache[<|
+				"cachedTime" -> Now,
+				"result" -> <|
+					"uri" -> uri,
+					"diagnostics" -> DiagnoseDoc[state["openedDocs"][uri]]
+				|>
+			|>]
+		]
+	]
+]
+
+
+cacheAvailableQ[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := With[
+	{
+		uri = msg["params"]["textDocument"]["uri"],
+		cachedTime = getCache[method, msg, state]["cachedtime"]
+	},
+
+	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
+]
+
+
+getCache[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := (
+	state["caches"][method][msg["params"]["textDocument"]["uri"]]
 )
 
 
-getScheduleTaskParameter[method:"textDocument/publishDiagnostics", uri_String, state_WorkState] := (
+getScheduleTaskParameter[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := (
 	uri
 )
 
@@ -1444,7 +1508,7 @@ handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] :=
 ]
 
 
-getScheduleTaskParameter["textDocument/documentHighlight", msg_, state_WorkState] := (
+getScheduleTaskParameter[method:"textDocument/documentHighlight", msg_, state_WorkState] := (
 	msg
 )
 
@@ -1480,17 +1544,12 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 
 cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := With[
 	{
+		uri = msg["params"]["textDocument"]["uri"],
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
 
 	!MissingQ[cachedTime] &&
-	!(
-		cachedTime <
-		state["openedDocs"][
-			msg["params"]["textDocument"]["uri"]
-		]["lastUpdate"] <
-		DateDifference[{ServerConfig["requestDelays"][method], "Second"}, Now]
-	)
+	(state["openedDocs"][uri]["lastUpdate"] < cachedTime)
 ]
 
 
@@ -1676,13 +1735,11 @@ cacheResponse[method:"textDocument/documentLink", msg_, state_WorkState] := With
 
 cacheAvailableQ[method:"textDocument/documentLink", msg_, state_WorkState] := With[
 	{
+		uri = msg["params"]["textDocument"]["uri"],
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
 
-	!MissingQ[cachedTime] &&
-	(state["openedDocs"][
-		msg["params"]["textDocument"]["uri"]
-	]["lastUpdate"] < cachedTime)
+	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
 ]
 
 
@@ -1692,7 +1749,7 @@ getCache[method:"textDocument/documentLink", msg_, state_WorkState] := (
 
 
 getScheduleTaskParameter[method:"textDocument/documentLink", msg_, state_WorkState] := (
-	msg["params"]["textDocument"]["uri"]
+	msg
 )
 
 
@@ -1727,13 +1784,11 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 
 cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := With[
 	{
+		uri = msg["params"]["textDocument"]["uri"],
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
 
-	!MissingQ[cachedTime] &&
-	(state["openedDocs"][
-		msg["params"]["textDocument"]["uri"]
-	]["lastUpdate"] < cachedTime)
+	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
 ]
 
 
@@ -1967,27 +2022,33 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 (* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
 handleNotification["textDocument/didOpen", msg_, state_] := With[
 	{
-		textDocumentItem = TextDocumentItem[msg["params"]["textDocument"]]
+		uri = msg["params"]["textDocument"]["uri"]
 	},
 
 	(* get the association, modify and reinsert *)
 	state
 	// ReplaceKeyBy["openedDocs" ->
-		Append[textDocumentItem["uri"] -> CreateTextDocument[textDocumentItem]]
+		Append[uri -> (
+			ConstructType[msg["params"]["textDocument"], _TextDocumentItem]
+			// CreateTextDocument
+		)]
 	]
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
 		"textDocument/signatureHelp" ->
-			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+			Append[uri -> RequestCache[<||>]],
 		"textDocument/documentSymbol" ->
-			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+			Append[uri -> RequestCache[<||>]],
 		"textDocument/documentColor" ->
-			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+			Append[uri -> RequestCache[<||>]],
 		"textDocument/codeLens" ->
-			Append[textDocumentItem["uri"] -> RequestCache[<||>]],
+			Append[uri -> RequestCache[<||>]],
 		"textDocument/publishDiagnostics" ->
-			Append[textDocumentItem["uri"] -> <|"scheduledQ" -> False|>]
+			Append[uri -> RequestCache[<||>]]
 	 }]&)]
-	// handleRequest["textDocument/publishDiagnostics", textDocumentItem["uri"], #]&
+	// handleRequest[
+		"textDocument/publishDiagnostics",
+		constructRequest["textDocument/publishDiagnostics", uri],
+	#]&
 ]
 
 
@@ -2010,7 +2071,10 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 		"textDocument/codeLens" -> KeyDrop[uri],
 		"textDocument/publishDiagnostics" -> KeyDrop[uri]
 	}]&)]
-	// handleRequest["textDocument/clearDiagnostics", uri, #]&
+	// handleRequest[
+		"textDocument/clearDiagnostics",
+		constructRequest["textDocument/publishDiagnostics", uri],
+	#]&
 ]
 
 
@@ -2021,11 +2085,8 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 	{
         doc = msg["params"]["textDocument"],
-		uri = msg["params"]["textDocument"]["uri"],
+		uri = msg["params"]["textDocument"]["uri"]
 		(* lastUpdate = state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"] *)
-		diagScheduledQ = state["caches"]["textDocument/publishDiagnostics"][
-			msg["params"]["textDocument"]["uri"]
-		]["scheduledQ"]
 	},
 
 	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
@@ -2067,12 +2128,13 @@ handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
 	|>]]&
-	// If[diagScheduledQ,
-		List
-		/* Prepend["Continue"],
-		ReplaceKey[{"caches", "textDocument/publishDiagnostics", uri, "scheduledQ"} -> True]
-		/* (scheduleDelayedRequest["textDocument/publishDiagnostics", uri, #]&)
-	]
+	// {"Continue", #}&
+	(* // scheduleDelayedRequest[
+		"textDocument/publishDiagnostics",
+		constructRequest["textDocument/publishDiagnostics", uri],
+		#,
+		"DuplicatedFallback" -> ({"Continue", #}&)
+	]& *)
 	(* // If[DatePlus[lastUpdate, {
 			ServerConfig["requestDelays"]["textDocument/publishDiagnostics"],
 			"Second"
@@ -2092,10 +2154,13 @@ handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 
 handleNotification["textDocument/didSave", msg_, state_] := With[
 	{
-		(* uri = msg["params"]["textDocument"]["uri"] *)
+		uri = msg["params"]["textDocument"]["uri"]
 	},
-	(* do nothing *)
-	{"Continue", state}
+	state
+	// handleRequest[
+		"textDocument/publishDiagnostics",
+		constructRequest["textDocument/publishDiagnostics", uri],
+	#]&
 ]
 
 
@@ -2556,7 +2621,7 @@ DeclareType[ServerTask, <|
 	"params" -> _,
 	"scheduledTime" -> _DateObject,
 	"callback" -> _,
-	"duplicateFallback" -> _
+	"duplicatedFallback" -> _
 |>]
 
 
@@ -2592,7 +2657,7 @@ doNextScheduledTask[state_WorkState] := (
 			{task["type"], Chop[DateDifference[task["scheduledTime"], Now, "Second"], 10*^-6] // InputForm} // LogInfo;
 			task["type"]
 			// Replace[{
-				method:"textDocument/publishDiagnostics" :> (
+				(* method:"textDocument/publishDiagnostics" :> (
 					newState["openedDocs"][task["params"]]
 					// Replace[{
 						(* File closed, does nothing *)
@@ -2615,7 +2680,7 @@ doNextScheduledTask[state_WorkState] := (
 							// task["callback"][#, task["params"]]&
 						)
 					}]
-				),
+				), *)
 				"InitialCheck" :> (
 					newState
 					// initialCheck
@@ -2636,9 +2701,9 @@ doNextScheduledTask[state_WorkState] := (
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
-							task["callback"][newState, task["params"]]
+							(task["callback"] // LogDebug)[newState, task["params"] // LogDebug]
 							// AbsoluteTiming
-							// Apply[(LogInfo[{task["type"], #1}];#2)&],
+							// Apply[(LogInfo[{task["type"], #1}]; #2)&],
 							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
@@ -2649,9 +2714,9 @@ doNextScheduledTask[state_WorkState] := (
 							{"Continue", newState}
 						],
 						(* find a recent duplicate request *)
-						_ :> If[!MissingQ[task["duplicateFallback"]],
+						_ :> If[!MissingQ[task["duplicatedFallback"]],
 							(* execute fallback function if applicable *)
-							task["duplicateFallback"][newState, task["params"]],
+							task["duplicatedFallback"][newState, task["params"]],
 							(* otherwise, return ContentModified error *)
 							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
