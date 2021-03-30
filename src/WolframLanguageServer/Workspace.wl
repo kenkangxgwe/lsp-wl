@@ -24,7 +24,7 @@ Needs["WolframLanguageServer`TextDocument`"]
 (*URI*)
 
 
-FromUri[uri_String] := URLParse[uri] // Key["Path"] // Rest // FileNameJoin
+FromUri[uri_String] := URLParse[uri] // Key["Path"] // If[$OperatingSystem == "Windows", Rest, Identity] // FileNameJoin
 ToUri[path_String] := path // FileNameSplit // Prepend[""] // <|"Scheme" -> "file", "Path" -> #|>& // URLBuild
 
 
