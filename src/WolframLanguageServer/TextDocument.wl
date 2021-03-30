@@ -549,7 +549,7 @@ GetDocumentText[doc_TextDocument, data_Association] := (
     data
     // Key[CodeParser`Source]
     // Replace[{
-        {{startLine_, startChracter_}, {endLine_, endCharacter_}} :> (
+        {{startLine_, startCharacter_}, {endLine_, endCharacter_}} :> (
             Take[doc["text"], {startLine, endLine}]
             // MapAt[StringTake[#, endCharacter]&, -1]
             // MapAt[StringDrop[#, startCharacter]&, 1]
