@@ -150,18 +150,14 @@ ServerConfig = <|
 		"textDocument/documentColor"
 		(* "textDocument/codeLens" *)
 	},
-	"delayedRequests" -> {
-		"textDocument/documentHighlight",
-		"textDocument/documentColor"
-	},
 	(* default delays (seconds) *)
 	"requestDelays" -> <|
-		"textDocument/publishDiagnostics" -> 2.5,
+		(* "textDocument/publishDiagnostics" -> 2.5,
 		"textDocument/signatureHelp" -> 0.5,
 		"textDocument/documentSymbol" -> 4.0,
 		"textDocument/documentHighlight" -> 0.5,
-		(* "textDocument/documentLink" -> 0.0, *)
-		"textDocument/documentColor" -> 5.0
+		"textDocument/documentLink" -> 4.0,
+		"textDocument/documentColor" -> 5.0 *)
 	|>
 |>
 
@@ -426,6 +422,24 @@ TcpSocketHandler[state_WorkState] := With[
 		client = state["client"],
 		debugSession = state["debugSession"]
 	},
+
+	TimeConstrained[
+		SocketWaitNext[{client,debugSession["client"] // Replace[Null -> Nothing]}],
+		state
+		// getNextTaskTime
+		// Replace[{
+			_?MissingQ :> (
+				0.5
+			),
+			_?(GreaterThan[DatePlus[Now, {0.5, "Second"}]]) :> (
+				0.5
+			),
+			nextTime_?(GreaterThan[Now]) :> (
+				nextTime - Now
+			),
+			_ :> $TimeUnit
+		}]
+	];
 
 	Which[
 		SocketReadyQ[client],
@@ -781,7 +795,7 @@ handleMessage[msg_Association, state_WorkState] := With[
 			cacheAvailableQ[method, msg, state],
 			LogInfo["Sending cached results of " <> ToString[method]];
 			sendCachedResult[method, msg, state],
-			MemberQ[ServerConfig["delayedRequests"], method],
+			KeyExistsQ[ServerConfig["requestDelays"], method],
 			scheduleDelayedRequest[method, msg, state],
 			True,
 			handleRequest[method, msg, state]
@@ -2607,27 +2621,34 @@ DeclareType[ServerTask, <|
 
 
 addScheduledTask[state_WorkState, task_ServerTask] := (
-	state["scheduledTasks"]
-	// Map[Key["scheduledTime"]]
-	// FirstPosition[_DateObject?(GreaterThan[task["scheduledTime"]])]
-	// Replace[{
-		_?MissingQ :> (
-			state
-			// ReplaceKeyBy["scheduledTasks" -> Append[task]]
-		),
-		{pos_Integer} :> (
-			state
-			// ReplaceKeyBy["scheduledTasks" -> Insert[task, pos]]
+	state
+	// ReplaceKeyBy["scheduledTasks" -> (
+		tasklist \[Function] (
+			tasklist
+			// (
+				FirstPosition[tasklist, _ServerTask?((
+					"scheduledTime"
+					// (# > task)
+					// Through
+				)&), {-1}]
+				// Insert[task, #]&
+			)
 		)
-	}]
+	)]
 )
 
+
+getNextTaskTime[state_WorkState] := (
+	state["scheduledTasks"]
+	// First[#, <||>]&
+	// Key["scheduledTime"]
+)
 
 doNextScheduledTask[state_WorkState] := (
 	SelectFirst[state["scheduledTasks"], Key["scheduledTime"] /* LessThan[Now]]
 	// Replace[{
 		_?MissingQ :> (
-			Pause[0.001];
+			(* Pause[0.01]; *)
 			{"Continue", state}
 		),
 		task_ServerTask :> With[
@@ -2686,7 +2707,7 @@ doNextScheduledTask[state_WorkState] := (
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
-							(task["callback"] // LogDebug)[newState, task["params"] // LogDebug]
+							task["callback"][newState, task["params"]]
 							// AbsoluteTiming
 							// Apply[(LogInfo[{task["type"], #1}]; #2)&],
 							sendMessage[newState["client"], ResponseMessage[<|
