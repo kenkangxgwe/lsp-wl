@@ -551,8 +551,8 @@ GetDocumentText[doc_TextDocument, data_Association] := (
     // Replace[{
         {{startLine_, startCharacter_}, {endLine_, endCharacter_}} :> (
             Take[doc["text"], {startLine, endLine}]
-            // MapAt[StringTake[#, endCharacter]&, -1]
-            // MapAt[StringDrop[#, startCharacter]&, 1]
+            // MapAt[StringTake[#, endCharacter - 1]&, -1]
+            // MapAt[StringDrop[#, startCharacter - 1]&, 1]
             // StringRiffle[#, "\n"]&
         ),
         _?MissingQ -> ""
