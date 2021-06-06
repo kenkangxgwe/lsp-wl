@@ -13,6 +13,11 @@ Please see the help info below.
 *)
 
 
+Block[{PacletManager`Package`getPacletWithProgress=Quiet},
+    Get["ZeroMQLink`"]
+]
+
+
 (* For Windows, this should be set for Print to correctly format outputs. *)
 If[$OperatingSystem == "Windows" && $FrontEnd === Null,
     SetOptions[$Output, FormatType -> OutputForm]

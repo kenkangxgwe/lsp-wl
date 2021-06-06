@@ -1952,6 +1952,7 @@ handleRequest[_, msg_, state_] := (
 
 
 handleNotification["initialized", msg_, state_] := (
+	LogInfo["The server is initialized in " <> ToString[SessionTime[]] <> " s."];
 	{
 		"Continue",
 		state
@@ -2805,7 +2806,8 @@ If[FindFile["PacletManager`"] // FailureQ,
 		{
 			dependencies = {
 				{"CodeParser", "1.*"},
-				{"CodeInspector", "1.*"}
+				{"CodeInspector", "1.*"},
+				{"ZeroMQLink", "1.1.*"}
 			}
 		},
 
