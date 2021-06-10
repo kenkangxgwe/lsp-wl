@@ -127,7 +127,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Block[
                             GenPlainText
                         ],
                         If[msgOffQ,
-                            "\n *(Message is switched off.)*\n",
+                            "\n*(Message is switched off.)*\n",
                             Nothing
                         ]
                     } // Flatten

@@ -110,7 +110,9 @@ VerificationTest[
 		"```mathematica\n",
 		"Syntax::stresc\n",
 		"```\n",
-		"Unknown string escape \\\\\\`1\\`."
+		"Unknown string escape \\\\\\`1\\`.\n",
+		"\n",
+		"*(Message is switched off.)*\n"
 	],
 	TestID -> "KnownMessageName"
 ]
