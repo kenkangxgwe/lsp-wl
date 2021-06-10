@@ -990,13 +990,13 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
             // Replace[{
                 "Fatal" -> "Error",
                 "Error" -> "Warning",
-                "Warning" -> "Information",
-                "Formatting"|"Remark" -> "Hint"
+                "Warning"|"ImplicitTimes"|"Scoping"|"Formatting"|"Remark" -> "Information"
             }]
             // (newSeverity \[Function] (
                 tag
                 // Replace[{
                     "ExperimentalSymbol" -> "Hint",
+                    _?(StringStartsQ["Unused"]) -> "Hint",
                     (* "UnexpectedLetterlikeCharacter" -> "Hint", *)
                     _ -> newSeverity
                 }]
