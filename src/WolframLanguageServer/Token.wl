@@ -76,10 +76,18 @@ Options[TokenDocumentation] = {
     "Header" -> True
 }
 
-TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
+TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Block[
+    {
+        msgOffQ = False
+    },
+
     If[token // systemIdentifierQ,
         ToExpression[token<>"::"<>tag]
-        // Replace[_MessageName -> ""],
+        // Replace[{
+            _MessageName -> "",
+            $Off[] -> (msgOffQ = True; ""),
+            $Off[message_String] :> (msgOffQ = True; message)
+        }],
         ""
     ]
     // Replace[{
@@ -117,6 +125,10 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
                         // If[OptionValue["Format"] === MarkupKind["Markdown"],
                             GenMarkdownText,
                             GenPlainText
+                        ],
+                        If[msgOffQ,
+                            "\n *(Message is switched off.)*\n",
+                            Nothing
                         ]
                     } // Flatten
                     // StringRiffle[#, "\n"]&
@@ -124,7 +136,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := (
             }]
         )
     }]
-)
+]
 
 
 splitUsage[usageText_String] := (
