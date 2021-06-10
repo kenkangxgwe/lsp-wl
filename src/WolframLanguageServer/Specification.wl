@@ -37,7 +37,9 @@ SignatureHelp::usage = "is the type of SignatureHelp interface in LSP."
 SignatureInformation::usage = "is the type of SignatureInformation interface in LSP."
 ParameterInformation::usage = "is the type of ParameterInformation interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
+CompletionList::usage = "is the type of CompletionList interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
+InsertReplaceEdit::usage = "is the type of InsertReplaceEdit interface in LSP."
 DocumentHighlight ::usage = "is the type of Location interface in LSP."
 LspCodeAction::usage = "is the type of CodeAction interface in LSP."
 CodeLens::usage = "is type of CodeLens Interface in LSP."
@@ -347,6 +349,11 @@ DeclareType[DiagnosticRelatedInformation, <|
 (*Language Features*)
 
 
+DeclareType[CompletionList, <|
+    "isIncomplete" -> _?BooleanQ,
+    "items" -> {___CompletionItem}
+|>]
+
 DeclareType[CompletionItem, <|
     "label" -> _String,
     "kind" -> _Integer,
@@ -355,10 +362,18 @@ DeclareType[CompletionItem, <|
     "preselect" -> _?BooleanQ,
     "filterText" -> _String,
     "insertText" -> _String,
+    "sortText" -> _String,
     "insertTextFormat" -> _?(MemberQ[InsertTextFormat, #]&),
-    "textEdit" -> _TextEdit,
+    "textEdit" -> _TextEdit | _InsertReplaceEdit,
     "commitCharacters" -> {___String}
 |>]
+
+DeclareType[InsertReplaceEdit, <|
+    "newText" -> _String,
+    "insert" -> _LspRange,
+    "replace" -> _LspRange
+|>]
+
 
 DeclareType[Hover, <|
     "contents" -> _MarkupContent,

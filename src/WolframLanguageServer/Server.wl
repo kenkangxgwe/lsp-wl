@@ -107,7 +107,7 @@ ServerCapabilities = <|
 	|>,
 	"completionProvider" -> <|
 		"resolveProvider" -> True,
-		"triggerCharacters" -> {"\\", "[", ":"}
+		"triggerCharacters" -> Union[$CompletionTriggerKey, {"\\", "[", ":"}]
 	|>,
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
@@ -1317,16 +1317,16 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 
 	msg["params"]["context"]["triggerKind"]
 	// Replace[{
-		CompletionTriggerKind["Invoked"] :> (
+		(
+			CompletionTriggerKind["Invoked"] |
+			CompletionTriggerKind["TriggerForIncompleteCompletions"]
+		) :> (
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> False,
-					"items" -> GetTokenCompletionAtPostion[
-						state["openedDocs"][uri],
-						pos
-					]
-				|>
+				"result" -> GetInvokedCompletionAtPosition[
+					state["openedDocs"][uri],
+					pos
+				]
 			|>]]
 		),
 		CompletionTriggerKind["TriggerCharacter"] :> With[
@@ -1335,34 +1335,15 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			},
 			sendMessage[state["client"], ResponseMessage[<|
 				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> If[triggerCharacter == "\\",
-						True,
-						False
-					],
-					"items" -> GetTriggerKeyCompletion[
-						state["openedDocs"][uri],
-						pos,
-						triggerCharacter
-					]
-				|>
+				"result" -> GetTriggerKeyCompletion[
+					state["openedDocs"][uri],
+					pos,
+					triggerCharacter
+				]
 			|>]]
-		],
-		CompletionTriggerKind["TriggerForIncompleteCompletions"] :> (
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> <|
-					"isIncomplete" -> False,
-					"items" -> GetIncompleteCompletionAtPosition[
-						state["openedDocs"][uri],
-						pos
-					]
-				|>
-			|>]];
-		)
+		]
 	}];
 
-	
 	{"Continue", state}
 ]
 

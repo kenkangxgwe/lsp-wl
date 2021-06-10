@@ -12,6 +12,7 @@ ClearAll[Evaluate[Context[] <> "*"]]
 
 
 GenerateUnicodeTable::usage = "GenerateUnicodeTable[file_] generates unicode table to file."
+GenerateCompletionTable::usage = "GenerateCompletionTable[file_] generates completion table to file."
 
 
 Begin["`Private`"]
@@ -63,18 +64,14 @@ GenerateUnicodeTable[file_] := Block[
         Non-letters which are only used as prefix of aliases that contains letters.
         We know there is only one such leader, i.e. `$`, but we generate it here.
     *)
-    NonLetterLeaders = Complement[
-        (* all non-letter prefix *)
-        Keys[AliasToLongName]
-        // Map[StringTake[#, 1]&]
-        // Prepend["["] (* for long names `[` is a prefix *)
-        // DeleteDuplicates
-        // DeleteCases[_?LetterQ],
-        (* non-letter prefix *)
-        NonLetterAliases
-        // Map[StringTake[#, 1]&]
-        // DeleteDuplicates
-    ];
+    NonLetterLeaders = AliasToLongName
+    // Keys
+    // Map[StringTake[#, 1] &]
+    // StringCases[Except[LetterCharacter]]
+    // Catenate
+    // Counts
+    // Select[# >= 100&]
+    // Keys;
 
     {
         {WolframLanguageServer`UnicodeTable`NonLetterLeaders, NonLetterLeaders},

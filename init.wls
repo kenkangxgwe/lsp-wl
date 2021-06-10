@@ -115,6 +115,7 @@ Options:
     --socket=port                  Connect to a socket server on port (default: 6536)
     --tcp-server=port              Start a socket server on port (default: 6536)
     --pipe=pipeName                Connect via a named pipe (Windows only)
+    --generate-table               Re-generate the tables (unicode and completion tables)
     --version, -v                  Print the version.
     --help, -h                     Print this help message
 
@@ -156,6 +157,23 @@ If[MemberQ[WolframLanguageServer`CommandLine, "-t" | "--test"],
         Print[testResult];
         Exit[If[testAllPass, 0, 1]]
     )]
+]
+
+
+(* ::Subsection:: *)
+(*Generate Table*)
+
+
+If[MemberQ[WolframLanguageServer`CommandLine, "--generate-table"],
+    Needs["WolframLanguageServer`TableGenerator`"];
+    Print["\nGenerating UnicodeTable.\n"];
+    FindFile["WolframLanguageServer`UnicodeTable`"]
+    // WolframLanguageServer`TableGenerator`GenerateUnicodeTable;
+    Print["\nGenerating CompletionsTable.\n"];
+    FindFile["WolframLanguageServer`CompletionTable`"]
+    // WolframLanguageServer`TableGenerator`GenerateCompletionTable;
+    Print["\nDone.\n"];
+    Quit[]
 ]
 
 

@@ -17,9 +17,9 @@ TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] ret
 "
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
 GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] gives the signature help at the position."
-GetTokenCompletionAtPostion::usage = "GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
+$CompletionTriggerKey::usage = "$CompletionTriggerKey is a list of characters that should trigger completions."
+GetInvokedCompletionAtPosition::usage = "GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
-GetIncompleteCompletionAtPosition::usage = "GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition, leader_String] gives a list of completion items according to the leader key."
 
 
 Begin["`Private`"]
@@ -551,11 +551,65 @@ TokenKind[token_String] := (
 )
 
 
-GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
+$CompletionTriggerKey = NonLetterLeaders
+
+
+GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] := With[
     {
-        prefix = GetTokenPrefix[doc, pos]
+        backslashPrefixes = GetCompletionPrefix[doc, "\\", pos],
+        commentColonPrefixes = GetCompletionPrefix[doc, "(* " ~~ "::", pos] // LogDebug,
+        colonPrefixes = GetCompletionPrefix[doc, (LetterCharacter | "$") ~~ "::", pos] // LogDebug,
+        tokenPrefix = GetTokenPrefix[doc, pos] // LogDebug
     },
 
+    Join[
+        backslashPrefixes
+        // Map[
+            StringDrop[#, 1]&
+            /* (If[# // StringMatchQ[$CompletionTriggerKey],
+                NonLetterAliasCompletion[#, pos],
+                GetAliasCompletion[#, pos]
+            ]&)
+        ]
+        // Catenate,
+        backslashPrefixes
+        // Cases[prefix_?(StringStartsQ["\\["(*]*)]) :> (
+            StringDrop[prefix, 2]
+            // GetLongNameCompletion
+        )]
+        // Catenate,
+        commentColonPrefixes
+        // Map[
+            StringDrop[#, 5]&
+            /* (GetCellStyleCompletion[#, pos]&)
+        ]
+        // Catenate,
+        If[colonPrefixes =!= {},
+            colonPrefixes
+            // Last
+            // StringDrop[#, 3]&
+            // GetMessageCompletion[doc, #, pos]&,
+            {}
+        ],
+        tokenPrefix
+        // GetTokenCompletion[#, pos]&
+    ]
+    // Take[#, UpTo[16^^FFFF]]&
+    // MapIndexed[{completionItem, index} \[Function] (
+        completionItem
+        // ReplaceKey[
+            "sortText" -> (
+                index // First // IntegerString[#, 16, 4]&
+        )]
+    )]
+    // CompletionList[<|
+        "isIncomplete" -> (backslashPrefixes // MemberQ[_?(StringMatchQ["\\" ~~ ($CompletionTriggerKey|"")])]),
+        "items" -> #
+    |>]&
+]
+
+
+GetTokenCompletion[prefix_String, pos_LspPosition] := (
     If[prefix == "",
         {},
         Join[
@@ -568,51 +622,45 @@ GetTokenCompletionAtPostion[doc_TextDocument, pos_LspPosition] := With[
             Cases[$DocumentedContext, _?(StringStartsQ[prefix])]
         ]
     ]
-    // Take[#, UpTo[16^^FFFF]]&
-    // MapIndexed[{item, index} \[Function] With[
-        {
-            kind = TokenKind[item]
-        },
-
-        CompletionItem[<|
-            "label" -> item,
-            "kind" -> kind,
-            "sortText" -> (index // First // IntegerString[#, 16, 4]&),
-            "textEdit" -> TextEdit[<|
-                "range" -> LspRange[<|
-                    "start" -> LspPosition[<|
-                        "line" -> pos["line"],
-                        "character" -> pos["character"] - StringLength[prefix]
+    // Map[{item} \[Function] (
+            CompletionItem[<|
+                "label" -> item,
+                "kind" -> TokenKind[item],
+                "textEdit" -> TextEdit[<|
+                    "range" -> LspRange[<|
+                        "start" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"] - StringLength[prefix]
+                        |>],
+                        "end" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"]
+                        |>]
                     |>],
-                    "end" -> LspPosition[<|
-                        "line" -> pos["line"],
-                        "character" -> pos["character"]
-                    |>]
+                    "newText" -> item
                 |>],
-                "newText" -> item
-            |>],
-            "data" -> <|
-                "type" -> "Token"
-            |>
-        |>]
-    ]]
-]
-
-
-GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"\\"] := (
-    If[GetTokenPrefix[doc, pos] == "\\\\",
-        (* double-triggered *)
-        GetAliasCompletion["\\", pos],
-        NonLetterAliasCompletionItems
+                "data" -> <|
+                    "type" -> "Token"
+                |>
+            |>]
+        )
     ]
 )
 
 
+GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:($CompletionTriggerKey // Apply[Alternatives])] := (
+    GetInvokedCompletionAtPosition[doc, pos]
+)
+
+
 (* SetDelayed is not needed. Cache it when define it. *)
-NonLetterAliasCompletionItems = (
+NonLetterAliasCompletion[prefix_, pos_LspPosition] := (
     Join[
         AliasToLongName
-        // KeyTake[NonLetterAliases]
+        // KeyTake[
+            NonLetterAliases
+            // Cases[_?(StringStartsQ[prefix])]
+        ]
         // KeyValueMap[{alias, longName} \[Function] With[
             {
                 unicode = LongNameToUnicode[longName]
@@ -631,13 +679,26 @@ NonLetterAliasCompletionItems = (
                 "detail" -> StringJoin["0x", StringPadLeft[IntegerString[unicode, 16] // ToUpperCase, 4, "0"]],
                 "filterText" -> alias,
                 "sortText" -> alias,
-                "insertText" -> "[" <> longName <> "]",
+                "textEdit" -> TextEdit[<|
+                    "range" -> LspRange[<|
+                        "start" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"] - StringLength[prefix]
+                        |>],
+                        "end" -> LspPosition[<|
+                            "line" -> pos["line"],
+                            "character" -> pos["character"]
+                        |>]
+                    |>],
+                    "newText" -> StringJoin["[", longName, "]"]
+                |>],
                 "data" -> <|
                     "type" -> "Alias"
                 |>
             |>]
         ]],
-        Table[
+        {}
+        (* Table[
             CompletionItem[<|
                 "label" -> leader <> "...",
                 "kind" -> CompletionItemKind["Text"],
@@ -649,12 +710,13 @@ NonLetterAliasCompletionItems = (
                     "type" -> "Alias"
                 |>
             |>], {leader, NonLetterLeaders}
-        ]
+        ] *)
     ]
 )
 
 
-GetAliasCompletion[prefix_String, pos_LspPosition] := (
+GetAliasCompletion[prefix:"", pos_LspPosition] := NonLetterAliasCompletion["", pos]
+GetAliasCompletion[prefix_String:Except[""], pos_LspPosition] := (
     AliasToLongName
     // KeySelect[StringStartsQ[prefix]]
     // KeyValueMap[{alias, longName} \[Function] With[
@@ -695,10 +757,10 @@ GetAliasCompletion[prefix_String, pos_LspPosition] := (
 )
 
 
-GetLongNameCompletion[prefix_String] := (
-
+GetLongNameCompletion[prefix:""] := Nothing
+GetLongNameCompletion[prefix_String:Except[""]] := (
     LongNameToUnicode
-    // KeySelect[StringStartsQ[prefix]]
+    // KeySelect[StringStartsQ[prefix, IgnoreCase -> True]]
     // KeyValueMap[{longName, unicode} \[Function] (
         CompletionItem[<|
             "label" -> StringJoin[
@@ -722,15 +784,46 @@ GetLongNameCompletion[prefix_String] := (
 )
 
 
+GetMessageCompletion[doc_TextDocument, prefix_String, pos_LspPosition] := With[
+    {
+        symbol = pos
+        // ReplaceKeyBy["character" -> (# - StringLength[prefix] - 2&)]
+        // GetTokenPrefix[doc, #]&
+    },
+
+    (
+        ToExpression["Messages@" <> symbol]
+        // Part[#, All, 1, 1, 2]&
+        // Cases[_?(StringStartsQ[prefix, IgnoreCase -> True])]
+        // Map[tag \[Function] (CompletionItem[<|
+            "label" -> tag,
+            "kind" -> CompletionItemKind["Text"],
+            "insertTextFormat" -> InsertTextFormat["PlainText"],
+            "insertText" -> tag,
+            "sortText" -> tag,
+            "filterText" -> tag,
+            "data" -> <|
+                "type" -> "MessageName",
+                "symbol" -> symbol,
+                "tag" -> tag
+            |>
+        |>])]
+    )
+    /; (symbol // systemIdentifierQ)
+]
+
 GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"["] := With[
     {
         token = GetTokenPrefix[doc, pos // ReplaceKeyBy["character" -> (# - 1&)]]
     },
 
-    If[token == "\\",
-        GetIncompleteCompletionAtPosition[doc, pos],
-        GetFunctionSnippet[token]
-    ]
+    CompletionList[<|
+        "isIncomplete" -> False,
+        "items" -> If[token == "\\",
+            GetInvokedCompletionAtPosition[doc, pos]["items"],
+            GetFunctionSnippet[token]
+        ]
+    |>]
 ]
 
 
@@ -741,35 +834,15 @@ GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:":"]
 
     token
     // Replace[{
-        "\\" :> GetIncompleteCompletionAtPosition[doc, pos],
+        "\\" :> GetInvokedCompletionAtPosition[doc, pos]["items"],
         "(* :" :> GetCellStyleSnippet[ToLspRange[doc, {pos["line"] + 1, pos["line"] + 1}]],
-        ":" :> With[
-            {
-                symbol = GetTokenPrefix[doc, pos // ReplaceKeyBy["character" -> (# - 2&)]] // LogDebug
-            },
-
-            (
-                ToExpression["Messages@" <> symbol]
-                // LogDebug
-                // Part[#, All, 1, 1, 2]&
-                // Map[tag \[Function] (CompletionItem[<|
-                    "label" -> (symbol <> "::" <> tag),
-                    "kind" -> CompletionItemKind["Text"],
-                    "insertTextFormat" -> InsertTextFormat["PlainText"],
-                    "insertText" -> tag,
-                    "sortText" -> tag,
-                    "filterText" -> tag,
-                    "data" -> <|
-                        "type" -> "MessageName",
-                        "symbol" -> symbol,
-                        "tag" -> tag
-                    |>
-                |>])]
-            )
-            /; (symbol // systemIdentifierQ)
-        ],
+        ":" :> GetMessageCompletion[doc, "", pos],
         _ -> {}
     }]
+    // CompletionList[<|
+        "isIncomplete" -> False,
+        "items" -> #
+    |>]&
 ]
 
 
@@ -967,29 +1040,30 @@ GetCellStyleSnippet[range_LspRange] := (
     ))]
 )
 
-
-(* ::Subsection:: *)
-(*GetIncompleteCompletionAtPosition*)
-
-GetIncompleteCompletionAtPosition[doc_TextDocument, pos_LspPosition] := (
-
-    StringTake[Part[doc["text"], pos["line"] + 1], pos["character"]]
-    // StringReverse
-    // StringCases[StartOfString ~~ Shortest[prefix__] ~~ "\\" :> prefix]
-    // First
-    // StringReverse
-    // Replace[{
-        (* for long name characters *)
-        prefix_?(StringStartsQ["["]) :> (
-            StringDrop[prefix, 1]
-            // GetLongNameCompletion
-        ),
-        (* other aliases *)
-        prefix_ :> (
-            GetAliasCompletion[prefix, pos]
-        )
-    }]
-
+GetCellStyleCompletion[prefix_String, pos_LspPostion] := (
+    $CellStyles
+    // Cases[_?(StringStartsQ[prefix ~~ ___, IgnoreCase -> True])]
+    // Map[{style} \[Function] (
+        CompletionItem[<|
+            "label" -> style,
+            "kind" -> CompletionItemKind["Text"],
+            "detail" -> style,
+            "textEdit" -> TextEdit[<|
+                "range" -> LspRange[<|
+                    "start" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"] - StringLength[prefix]
+                    |>],
+                    "end" -> LspPosition[<|
+                        "line" -> pos["line"],
+                        "character" -> pos["character"]
+                    |>]
+                |>],
+                "newText" -> style
+            |>],
+            "insertTextFormat" -> InsertTextFormat["PlainText"]
+        |>]
+    )]
 )
 
 

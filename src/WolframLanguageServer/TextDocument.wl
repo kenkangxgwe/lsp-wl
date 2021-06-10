@@ -18,6 +18,7 @@ HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to
 GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
 GetFunctionName::usage = "GetFunctionName[doc_TextDocument, pos_LspPosition] gives the function being called at the position."
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
+GetCompletionPrefix::usage = "GetCompletionPrefix[doc_TextDocument, leader_String, pos_LspPosition] returns a string from the doc, starting with leader and ending at pos"
 DiagnoseDoc::usage = "DiagnoseDoc[doc_TextDocument, range_LspRange:All] gives diagnostic information of the specified range in the doc."
 GetDiagnosticSuggestionEdits::usage = "GetDiagnosticSuggestionEdits[doc_TextDocument, diagnostic_Diagnostic] retuns the suggested action of the specified diagnostic."
 ToDocumentSymbol::usage = "ToDocumentSymbol[doc_TextDocument] gives the DocumentSymbol structure of a document."
@@ -658,7 +659,7 @@ getFunctionNameImpl[ast_, indices_] := (
 
 
 (* ::Section:: *)
-(*GetTokenPrefix*)
+(*Get Prefixes*)
 
 
 GetTokenPrefix[doc_TextDocument, pos_LspPosition] := (
@@ -672,6 +673,18 @@ GetTokenPrefix[doc_TextDocument, pos_LspPosition] := (
         err_ :> (LogError["Unknown token node " <> ToString[err]]; "")
     }]
 )
+
+
+GetCompletionPrefix[doc_TextDocument, leader:(_String|_StringExpression), pos_LspPosition] := With[
+    {
+        lineText = Part[doc["text"], pos["line"] + 1]
+            // StringTake[#, pos["character"]]&
+    },
+
+    lineText
+    // StringPosition[leader]
+    // Map[Most /* Append[pos["character"]] /* (StringTake[lineText, #]&)]
+]
 
 
 (* ::Section:: *)

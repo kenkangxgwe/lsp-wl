@@ -7,7 +7,7 @@ BeginPackage["WolframLanguageServer`UnicodeTable`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
-WolframLanguageServer`UnicodeTable`NonLetterLeaders = {"$"}
+WolframLanguageServer`UnicodeTable`NonLetterLeaders = {"&", "\\", "$", "."}
 
 
 WolframLanguageServer`UnicodeTable`NonLetterAliases = 
