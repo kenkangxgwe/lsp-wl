@@ -37,6 +37,12 @@ Needs["WolframLanguageServer`TextDocument`"]
 (*Initialization*)
 
 
+(* Set $Language to FrontEnd's initial value, if the default provides empty Message Name. *)
+List::usage // Replace[_MessageName :> (
+    $Language = UsingFrontEnd[CurrentValue[$FrontEnd, Language]]
+)]
+
+
 $DocumentedContext = {
     $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
 } // FileNameJoin // Get
@@ -85,7 +91,7 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Block[
         ToExpression[token<>"::"<>tag]
         // Replace[{
             _MessageName -> "",
-            $Off[] -> (msgOffQ = True; ""),
+            $Off[] :> (msgOffQ = True; ""),
             $Off[message_String] :> (msgOffQ = True; message)
         }],
         ""
@@ -139,6 +145,16 @@ TokenDocumentation[token_String, tag_String, o: OptionsPattern[]] := Block[
 ]
 
 
+$docComma = $Language // Replace[{
+    "ChineseSimplified" | "ChineseTraditional" -> "\:ff0c",
+    _ -> ","
+}]
+
+$docOr = $Language // Replace[{
+    "ChineseSimplified" | "ChineseTraditional" -> "\:6216",
+    _ -> "or"
+}]
+
 splitUsage[usageText_String] := (
     StringSplit[usageText, "\n"]
     (* concate unbalanced parts *)
@@ -153,11 +169,11 @@ splitUsage[usageText_String] := (
     // Map[{
         StringCases[StartOfString ~~
             (header:(
-                Shortest[(* box: *) "\!\(\*"~~__~~"\)"] ~~ ((
+                Shortest[(* box: *) "\!\("~~__~~"\)"] ~~ ((
                     (Whitespace|"") ~~
-                    (","|"or"|("," ~~ Whitespace ~~ "or")) ~~
-                    Whitespace ~~
-                    Shortest[(* box: *) "\!\(\*"~~__~~"\)"]
+                    ($docComma|$docOr|($docComma ~~ Whitespace ~~ $docOr)) ~~
+                    (Whitespace|"") ~~
+                    Shortest[(* box: *) "\!\("~~__~~"\)"]
                 )...))
             ) ~~
             content__ ~~
@@ -384,14 +400,14 @@ BoxToText[input_, o:OptionsPattern[]] := Block[
                 recursiveCall[x] <> "_" <> recursiveCall[y] <> "^" <> recursiveCall[z]
             ]
         ),
-        (Underscript|UnderscriptBox)[x_, y_] :> "Underscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]",
-        (Overscript|OverscriptBox)[x_, y_] :> "Overscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]",
-        (Underoverscript|UnderoverscriptBox)[x_,y_,z_] :> "Underoverscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> ", " <> recursiveCall[z] <> "]",
+        (Underscript|UnderscriptBox)[x_, y_] :> ("Underscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]"),
+        (Overscript|OverscriptBox)[x_, y_] :> ("Overscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> "]"),
+        (Underoverscript|UnderoverscriptBox)[x_,y_,z_] :> ("Underoverscript[" <> recursiveCall[x] <> ", " <> recursiveCall[y] <> ", " <> recursiveCall[z] <> "]"),
         FractionBox[x_, y_] :> (recursiveCall[x] <> "/" <> recursiveCall[y]),
         (Sqrt|SqrtBox)[x_] :> ("Sqrt[" <> recursiveCall[x] <> "]"),
         RadicalBox[x_, y_] :> (recursiveCall[x] <> "^{1/" <> recursiveCall[y] <> "}"),
-        _String?(StringContainsQ["\!\(\*"~~__~~"\)"]) :> (
-            StringSplit[input, {Shortest["\!\(\*"~~box__~~"\)"] :> BoxString[box]}]
+        _String?(StringContainsQ["\!\("~~__~~"\)"]) :> (
+            StringSplit[input, {Shortest["\!\("~~(box__ /; groupBalanceQ[box])~~"\)"] :> BoxString[box]}]
             // Map[recursiveCall]
             // StringJoin
         ),
@@ -408,7 +424,7 @@ BoxToText[input_, o:OptionsPattern[]] := Block[
             ]
         ),
         BoxString[box_String] :> (
-            ToString["\!\(\*" <> ToString[recursiveCall[ToExpression[box, StandardForm]], InputForm] <> "\)"]
+            ToString[recursiveCall[ToExpression["\(" <> box <> "\)"]]]
         ),
         _ :> (
             ToString[input]
@@ -430,6 +446,8 @@ PUACharactersReplaceRule = {
     "\[Null]" -> "",
     "\[ExponentialE]" -> "\[ScriptE]",
     "\[Function]" -> "|->",
+    "\[DifferentialD]" -> "d",
+    "\[EscapeKey]" -> "[ESC]",
     "\[Application]" -> "\[CenterDot]"
 }
 
@@ -878,7 +896,7 @@ GetFunctionSnippet[token_String] := (
         usageText_String :> (
             splitUsage[usageText]
             // MapAt[
-                StringCases[Shortest[(* box: *) "\!\(\*"~~__~~"\)"]]
+                StringCases[Shortest[(* box: *) "\!\("~~__~~"\)"]]
                 /* Map[GenPlainText]
                 /* Cases[_?(StringMatchQ[token ~~ "[" ~~__~~ "]"])],
                 {All, 1}
