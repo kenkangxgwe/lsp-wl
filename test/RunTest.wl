@@ -34,10 +34,12 @@ TestRunAll[] := (
 )
 
 
-
 TestRunContext[context_String] := (
 	Reap[Get[context], context, Rule]
-	// Replace[{_, {ctx_ -> tests_}} :> ShowTestReport[TestReport[tests], ctx]]
+	// Replace[{
+		{_, {ctx_ -> tests_}} :> ShowTestReport[TestReport[tests], ctx],
+		{_, {}} :> ShowTestReport[TestReport[{}], context]
+	}]
 )
 
 

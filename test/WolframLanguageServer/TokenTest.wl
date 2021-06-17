@@ -23,6 +23,7 @@ Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 
 
+If[List::usage // MatchQ["" | _MessageName] // Not,
 {
 
 VerificationTest[
@@ -105,19 +106,21 @@ Nothing
 ],
 
 VerificationTest[
-	TokenDocumentation["Syntax", "stresc"],
+	TokenDocumentation["Integrate", "gener"],
 	StringJoin[
 		"```mathematica\n",
-		"Syntax::stresc\n",
+		"Integrate::gener\n",
 		"```\n",
-		"Unknown string escape \\\\\\`1\\`.\n",
+		"Unable to check convergence.\n",
 		"\n",
 		"*(Message is switched off.)*\n"
 	],
 	TestID -> "KnownMessageName"
 ]
 
-} // Map[Sow[#, CurrentContext]&]
+},
+{}
+] // Map[Sow[#, CurrentContext]&]
 
 
 End[]
