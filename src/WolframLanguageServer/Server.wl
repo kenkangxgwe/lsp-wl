@@ -41,6 +41,10 @@ If[$VersionNumber < 12.2,
 ]
 
 
+NestedLookup[keys_][assoc_] := NestedLookup[assoc, keys]
+NestedLookup[assoc_Association, keys_List | key_] := Fold[Replace[#1, _?MissingQ -> <||>][#2]&, assoc, Join[keys, {key}]]
+
+
 (* ::Section:: *)
 (*Start Server*)
 
@@ -49,6 +53,7 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
+	"parentProcessId" -> _Integer,
 	"clientCapabilities" -> _Association,
 	"workspaceFolders" -> _Association,
 	"debugSession" -> _DebugSession,
@@ -932,9 +937,8 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 			],
 			{___WorkspaceFolder}
 		],
-        debugPort = Fold[Replace[#1, _?MissingQ -> <||>][#2]&,
-            msg, {"params", "initializationOptions", "debuggerPort"}
-        ]
+		ppid = msg // NestedLookup[{"params", "processId"}],
+        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
     },
 
 	sendMessage[state["client"], ResponseMessage[<|
@@ -952,6 +956,7 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 	{
 		"Continue",
 		Fold[ReplaceKey, state, {
+			"parentProcessId" -> ppid,
 			"clientCapabilities" -> msg["params"]["capabilities"],
 			"workspaceFolders" -> (
 				workspaceFolders
@@ -964,6 +969,10 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 				Nothing
 			]
 		}]
+		// addScheduledTask[#, ServerTask[<|
+			"type" -> "ParentProcessCheck",
+			"scheduledTime" -> DatePlus[Now, {10, "Second"}]
+		|>]]&
 	}
 ]
 
@@ -2667,6 +2676,10 @@ doNextScheduledTask[state_WorkState] := (
 					newState
 					// initialCheck
 				),
+				"ParentProcessCheck" :> (
+					newState
+					// parentProcessCheck
+				),
 				"JustContinue" :> {"Continue", newState},
 				_ :> (
 					FirstPosition[
@@ -2874,6 +2887,26 @@ Check[
 		Null
 	)
 ] // Quiet;
+
+(* ::Subsection:: *)
+(*parentProcessCheck*)
+
+
+parentProcessCheck[state_WorkState] := (
+	Check[
+		ProcessObject[state["parentProcessId"]];
+		{
+			"Continue",
+			state
+			// addScheduledTask[#, ServerTask[<|
+				"type" -> "ParentProcessCheck",
+				"scheduledTime" -> DatePlus[Now, {10, "Second"}]
+			|>]]&
+		},
+		LogInfo["Parent process is no longer alive. Exiting..."];
+		{"Stop", state}
+	]
+)
 
 
 (* ::Subsection:: *)
