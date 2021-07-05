@@ -53,7 +53,7 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
-	"parentProcessId" -> _Integer,
+	"clientProcessId" -> _Integer,
 	"clientCapabilities" -> _Association,
 	"workspaceFolders" -> _Association,
 	"debugSession" -> _DebugSession,
@@ -189,8 +189,7 @@ WLServerStart[o:OptionsPattern[]] := Module[
 	},
 
 	{stream, clientPid, port, pipe, workingDir} = OptionValue[WLServerStart, {o}, {"Stream", "ClientPid", "Port", "Pipe", "WorkingDir"}];
-    If[clientPid === Null, clientPid = GetParentPid[]];
-	(* If[FileExistsQ[Last @ $Path <> "Cache"], LogError @ "Please delete a file named cache in working directory first."]; *)
+    If[clientPid === Null, clientPid = getParentProcessId[]];
     
 	(*Temporary cache.*)
 	tempDirPath = FileNameJoin[{workingDir, "wlServerCache"}];
@@ -323,15 +322,6 @@ waitForClient[server_SocketObject] := waitForClient[Replace[server["ConnectedCli
     {} :> (Pause[1]; (* LogInfo["Waiting for connection from client"]; *) server),
     {client_SocketObject} :> {client}
 }]]
-
-
-GetParentPid[] := (
-    SystemProcesses["PID" -> $ProcessID]
-    // Replace[{
-        {} :> Null,
-        {proc_} :> proc["PPID"]
-    }]
-)
 
 
 (* ::Subsection:: *)
@@ -937,8 +927,8 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 			],
 			{___WorkspaceFolder}
 		],
-		ppid = msg // NestedLookup[{"params", "processId"}],
         debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
+		clientPid = msg // NestedLookup[{"params", "processId"}],
     },
 
 	sendMessage[state["client"], ResponseMessage[<|
@@ -956,7 +946,7 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 	{
 		"Continue",
 		Fold[ReplaceKey, state, {
-			"parentProcessId" -> ppid,
+			"clientProcessId" -> clientPid,
 			"clientCapabilities" -> msg["params"]["capabilities"],
 			"workspaceFolders" -> (
 				workspaceFolders
@@ -970,7 +960,7 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 			]
 		}]
 		// addScheduledTask[#, ServerTask[<|
-			"type" -> "ParentProcessCheck",
+			"type" -> "ClientProcessCheck",
 			"scheduledTime" -> DatePlus[Now, {10, "Second"}]
 		|>]]&
 	}
@@ -2676,9 +2666,9 @@ doNextScheduledTask[state_WorkState] := (
 					newState
 					// initialCheck
 				),
-				"ParentProcessCheck" :> (
+				"ClientProcessCheck" :> (
 					newState
-					// parentProcessCheck
+					// clientProcessCheck
 				),
 				"JustContinue" :> {"Continue", newState},
 				_ :> (
@@ -2888,23 +2878,35 @@ Check[
 	)
 ] // Quiet;
 
+
 (* ::Subsection:: *)
-(*parentProcessCheck*)
+(*Parent Process*)
 
 
-parentProcessCheck[state_WorkState] := (
+getParentProcessId[] := (
 	Check[
-		ProcessObject[state["parentProcessId"]];
-		{
-			"Continue",
-			state
-			// addScheduledTask[#, ServerTask[<|
-				"type" -> "ParentProcessCheck",
-				"scheduledTime" -> DatePlus[Now, {10, "Second"}]
-			|>]]&
-		},
-		LogInfo["Parent process is no longer alive. Exiting..."];
-		{"Stop", state}
+		ProcessObject[$ProcessID]["PPID"],
+		Null
+	]
+)
+
+
+clientProcessCheck[state_WorkState] := (
+	If[state["clientProcessId"] // MissingQ,
+		{"Continue", state},
+		Check[
+			ProcessObject[state["clientProcessId"]];
+			{
+				"Continue",
+				state
+				// addScheduledTask[#, ServerTask[<|
+					"type" -> "ClientProcessCheck",
+					"scheduledTime" -> DatePlus[Now, {10, "Second"}]
+				|>]]&
+			},
+			LogInfo["Client process is no longer alive. Exiting..."];
+			{"Stop", state}
+		]
 	]
 )
 
