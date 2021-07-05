@@ -44,7 +44,11 @@ TestRunContext[context_String] := (
 
 
 ShowTestReport[report_TestReportObject, context_String] := {
-	report["AllTestsSucceeded"],
+	If[report["TestsSucceededCount"] == report["TestsFailedCount"] == 0,
+		(* Return True if no tests in the report *)
+		True,
+		report["AllTestsSucceeded"]
+	],
 	Column[{
 		Grid[{
 			{"Test Context: ", context},
