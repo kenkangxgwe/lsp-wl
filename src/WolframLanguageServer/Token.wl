@@ -821,26 +821,27 @@ GetMessageCompletion[doc_TextDocument, prefix_String, pos_LspPosition] := With[
         // GetTokenPrefix[doc, #]&
     },
 
-    (
+    If[symbol // systemIdentifierQ,
         ToExpression["Messages@" <> symbol]
-        // Part[#, All, 1, 1, 2]&
-        // Cases[_?(StringStartsQ[prefix, IgnoreCase -> True])]
-        // Map[tag \[Function] (CompletionItem[<|
-            "label" -> tag,
-            "kind" -> CompletionItemKind["Text"],
-            "insertTextFormat" -> InsertTextFormat["PlainText"],
-            "insertText" -> tag,
-            "sortText" -> tag,
-            "filterText" -> tag,
-            "data" -> <|
-                "type" -> "MessageName",
-                "symbol" -> symbol,
-                "tag" -> tag
-            |>
-        |>])]
-    )
-    /; (symbol // systemIdentifierQ)
+        // Part[#, All, 1, 1, 2]&,
+        {}
+    ]
+    // Cases[_?(StringStartsQ[prefix, IgnoreCase -> True])]
+    // Map[tag \[Function] (CompletionItem[<|
+        "label" -> tag,
+        "kind" -> CompletionItemKind["Text"],
+        "insertTextFormat" -> InsertTextFormat["PlainText"],
+        "insertText" -> tag,
+        "sortText" -> tag,
+        "filterText" -> tag,
+        "data" -> <|
+            "type" -> "MessageName",
+            "symbol" -> symbol,
+            "tag" -> tag
+        |>
+    |>])]
 ]
+
 
 GetTriggerKeyCompletion[doc_TextDocument, pos_LspPosition, triggerCharacter:"["] := With[
     {
