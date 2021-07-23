@@ -4,6 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/kenkangxgwe/lsp-wl/workflows/CI/badge.svg?branch=develop)](https://github.com/kenkangxgwe/lsp-wl/actions?query=workflow%3ACI+branch%3Adevelop)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/kenkangxgwe/lsp-wl)](https://github.com/kenkangxgwe/lsp-wl/releases)
+[![Open in Visual Studio Code](https://open.vscode.dev/badges/open-in-vscode.svg)](https://open.vscode.dev/kenkangxgwe/lsp-wl)
 
 ![WolframLanguageServerLogo](images/wolfram-language-server-logo-clipped.png)
 

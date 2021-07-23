@@ -941,8 +941,8 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 			],
 			{___WorkspaceFolder}
 		],
-        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
 		clientPid = msg // NestedLookup[{"params", "processId"}],
+        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
     },
 
 	sendMessage[state["client"], ResponseMessage[<|
