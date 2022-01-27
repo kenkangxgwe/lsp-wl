@@ -2811,8 +2811,7 @@ If[FindFile["PacletManager`"] // FailureQ,
 		{
 			dependencies = {
 				{"CodeParser", "1.*"},
-				{"CodeInspector", "1.*"},
-				{"ZeroMQLink", "1.1.*"}
+				{"CodeInspector", "1.*"}
 			}
 		},
 

@@ -62,12 +62,12 @@ would certainly work too.
     git clone https://github.com/kenkangxgwe/lsp-wl.git
     ```
 
-2. Install the dependent paclets with the correct versions (currently 1.0 or
-later) from the Wolfram kernel / Mathematica.
+2. Install the dependent paclets with the latest versions from the Wolfram kernel / Mathematica.
 (_This will cost some time for the first time_) :  
     ``` mathematica
     PacletInstall["CodeParser"]
     PacletInstall["CodeInspector"]
+    PacletInstall["ZeroMQLink"] (* 1.2.6+ *)
     ```
 
 3. Install the client. Currently, we provide the VS Code extension on [Visual
@@ -75,10 +75,6 @@ Studio Marketplace: Wolfram Language
 Server](https://marketplace.visualstudio.com/items?itemName=lsp-wl.lsp-wl-client)
 For other editors, please refer to the
 [wiki](https://github.com/kenkangxgwe/lsp-wl/wiki).
-
-4. You may also want to install
-[GitLink](https://github.com/WolframResearch/GitLink) packet in order to check
-for updates.
 
 ## Run the Server
 

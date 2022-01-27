@@ -13,21 +13,6 @@ Please see the help info below.
 *)
 
 
-PacletFind["ZeroMQLink", <|"Enabled" -> True|>] // {
-    Select[(#["Version"] // StringMatchQ["1.1.*"] // Not )&]
-    /* Map[PacletDisable],
-    Select[(#["Version"] // StringMatchQ["1.1.*"])&]
-    /* Replace[{} -> {
-        PacletInstall["ZeroMQLink" -> "1.1.22", ForceVersionInstall -> True, AllowVersionUpdate -> False]
-    }]
-} // Through
-
-
-Block[{PacletManager`Package`getPacletWithProgress=Quiet},
-    Get["ZeroMQLink`"]
-]
-
-
 (* For Windows, this should be set for Print to correctly format outputs. *)
 If[$OperatingSystem == "Windows" && $FrontEnd === Null,
     SetOptions[$Output, FormatType -> OutputForm]
