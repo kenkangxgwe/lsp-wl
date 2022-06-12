@@ -124,6 +124,12 @@ InitialState = WorkState[<|
 
 ServerCapabilities = <|
 	"textDocumentSync" -> TextDocumentSyncKind["Full"],
+	"notebookDocumentSync" -> <|
+		"notebookSelector" -> {<|
+			"notebook" -> "wolfram-language-notebook",
+			"cells" -> {<| "language" -> "wolfram" |>}
+		|>}
+	|>,
 	"hoverProvider" -> True,
 	"signatureHelpProvider" -> <|
 		"triggerCharacters" -> {"[", ","}
