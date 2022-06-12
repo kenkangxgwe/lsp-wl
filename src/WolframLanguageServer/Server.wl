@@ -61,7 +61,7 @@ DeclareType[WorkState, <|
 	"initialized" -> _?BooleanQ,
 	"openedDocs" -> _Association, (* (_DocumentUri -> _DocumentText)... *)
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
-	"clientProcessId" -> _Integer,
+	"clientProcessId" -> (_Integer | Null),
 	"clientCapabilities" -> _Association,
 	"workspaceFolders" -> _Association,
 	"debugSession" -> _DebugSession,
