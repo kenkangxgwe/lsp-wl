@@ -41,8 +41,16 @@ If[$VersionNumber < 12.2,
 ]
 
 
+NestedLookup::NotAssoc = "`1` is not an association and cannot lookup for key `2`."
+
+(* Returns Missing["KeyAbsent"] if the Association is not long enough. *)
 NestedLookup[keys_][assoc_] := NestedLookup[assoc, keys]
-NestedLookup[assoc_Association, keys_List | key_] := Fold[Replace[#1, _?MissingQ -> <||>][#2]&, assoc, Join[keys, {key}]]
+NestedLookup[assoc_Association, keys_List | key_] := Fold[
+	Replace[#1, (_?(AssociationQ /* Not)) :> (
+		Message[NestedLookup::NotAssoc, #1, #2];
+		<||>
+	)][#2]&, assoc, Join[keys, {key}]
+]
 
 
 (* ::Section:: *)
@@ -936,11 +944,9 @@ sendMessage[client_, res:(_DapEvent|_DapResponse)] := (
 handleRequest["initialize", msg_, state_WorkState] := With[
     {
 		workspaceFolders = ConstructType[
-			Fold[Replace[#1, _?MissingQ -> <||>][#2]&,
-				msg, {"params", "workspaceFolders"}
-			],
+			msg // NestedLookup[{"params", "workspaceFolders"}],
 			{___WorkspaceFolder}
-		],
+		] // Replace[_?MissingQ -> {}],
 		clientPid = msg // NestedLookup[{"params", "processId"}],
         debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
     },
