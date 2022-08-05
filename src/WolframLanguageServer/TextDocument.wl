@@ -428,14 +428,14 @@ rangeToAst[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
             // Position[#, _?MissingQ, {1}]&
         ]
     ]
-    // Rule[
-        Identity,
-        Map[rangeToCode[doc, #]&]
-        /* (CodeParser`CodeParse[#, "TabWidth" -> 1]&)
-        /* (Part[#, All, 2]&)
-    ]
-    // Through
-    // Thread
+    // Map[range \[Function] (
+        range -> Part[
+            CodeParser`CodeParse[
+                rangeToCode[doc, range],
+                "TabWidth" -> 1
+            ],
+        2]
+    )]
     // If[doc["uri"] // MissingQ,
         Values,
         Replace[{} -> <||>]
@@ -969,6 +969,14 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
 (* ::Section:: *)
 (*Diagnostics*)
 
+severityOverrideRules = {
+    (
+        "ExperimentalSymbol" |
+        _?(StringStartsQ["Unused"]) |
+        (* "UnexpectedLetterlikeCharacter" |*)
+        "DifferentLine"
+    ) -> "Hint"
+}
 
 DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
     GetDocumentText[doc, range]
@@ -994,12 +1002,10 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
             }]
             // (newSeverity \[Function] (
                 tag
-                // Replace[{
-                    "ExperimentalSymbol" -> "Hint",
-                    _?(StringStartsQ["Unused"]) -> "Hint",
-                    (* "UnexpectedLetterlikeCharacter" -> "Hint", *)
+                // Replace[Append[
+                    severityOverrideRules,
                     _ -> newSeverity
-                }]
+                ]]
             ))
             // DiagnosticSeverity
         ),

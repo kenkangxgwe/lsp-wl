@@ -746,7 +746,7 @@ NonLetterAliasCompletion[prefix_, pos_LspPosition] := (
 
 
 GetAliasCompletion[prefix:"", pos_LspPosition] := NonLetterAliasCompletion["", pos]
-GetAliasCompletion[prefix_String:Except[""], pos_LspPosition] := (
+GetAliasCompletion[prefix:Except["", _String], pos_LspPosition] := (
     AliasToLongName
     // KeySelect[StringStartsQ[prefix]]
     // KeyValueMap[{alias, longName} \[Function] With[
@@ -788,7 +788,7 @@ GetAliasCompletion[prefix_String:Except[""], pos_LspPosition] := (
 
 
 GetLongNameCompletion[prefix:""] := Nothing
-GetLongNameCompletion[prefix_String:Except[""]] := (
+GetLongNameCompletion[prefix:Except["", _String]] := (
     LongNameToUnicode
     // KeySelect[StringStartsQ[prefix, IgnoreCase -> True]]
     // KeyValueMap[{longName, unicode} \[Function] (
