@@ -168,6 +168,37 @@ you [@bostick](https://github.com/bostick).
 
 ![diagnostics](images/diagnostics.png)
 
+To adjust how some of the diagnostics are reported, adding their corresponding
+tags under the `diagnosticsOverrides` in `initializationOptions`. There are two
+kinds of ways to override the reporting rule:
+
+- `mitigated`: The tags under this category will not be considered as an issue,
+and shown in the lowest severity, i.e. "hint". E.g. In VSCode, this will result
+in a elipesis under the reporting position but will not listed under the
+`Problem` tab.
+- `suppressed`: The tags under this category will be completely ignored and not
+reported.
+
+An example of configuration in JSON format is shown below:
+
+``` json
+"initializationOptions": {
+    ...
+    "diagnosticsOverrides": {
+        "mitigated": [
+            "ExperimentalSymbol",
+            "UnusedParameter",
+            "UnusedVariable",
+        ],
+        "suppressed": [
+            "SuspiciousSessionSymbol"
+            "DifferentLine",
+        ]
+    }
+    ...
+}
+```
+
 ### Definition / References / Document Highlight
 
 It is now able to look up the definition and references of a local variable in a

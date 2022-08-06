@@ -64,11 +64,17 @@ DeclareType[WorkState, <|
 	"clientProcessId" -> (_Integer | Null),
 	"clientCapabilities" -> _Association,
 	"workspaceFolders" -> _Association,
+	"diagnosticsOverrides" -> _DiagnosticsOverrides,
 	"debugSession" -> _DebugSession,
 	"scheduledTasks" -> {___ServerTask},
 	"caches" -> _Association,
 	"pendingServerRequests" -> _Association,
 	"config" -> _Association
+|>]
+
+DeclareType[DiagnosticsOverrides, <|
+	"mitigated" -> {___String},
+	"suppressed" -> {___String}
 |>]
 
 DeclareType[DebugSession, <|
@@ -99,6 +105,10 @@ InitialState = WorkState[<|
 	"initialized" -> False,
 	"openedDocs" -> <||>,
 	"client" -> Null,
+	"diagnosticsOverrides" -> DiagnosticsOverrides[<|
+		"mitigated" -> {},
+		"suppressed" -> {}
+	|>],
 	"debugSession" -> DebugSession[<|
 		"initialized" -> False,
 		"server" -> Null,
@@ -948,7 +958,8 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 			{___WorkspaceFolder}
 		] // Replace[_?MissingQ -> {}],
 		clientPid = msg // NestedLookup[{"params", "processId"}],
-        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
+        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}],
+        diagnosticsOverrides = msg // NestedLookup[{"params", "initializationOptions", "diagnosticsOverrides"}]
     },
 
 	sendMessage[state["client"], ResponseMessage[<|
@@ -973,6 +984,13 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 				// Map[(#["uri"] -> #)&]
 				// Association
 			),
+			If[!MissingQ[diagnosticsOverrides],
+				"diagnosticsOverrides" -> ConstructType[
+					diagnosticsOverrides,
+					DiagnosticsOverrides
+				],
+				Nothing
+			],
 			If[!MissingQ[debugPort],
 				LogInfo["Debugger listening at port " <> ToString[debugPort]];
 				{"debugSession", "server"} -> SocketOpen[debugPort],
@@ -1225,7 +1243,11 @@ cacheResponse[method:"textDocument/publishDiagnostics", msg_, state_WorkState] :
 				"cachedTime" -> Now,
 				"result" -> <|
 					"uri" -> uri,
-					"diagnostics" -> DiagnoseDoc[doc]
+					"diagnostics" -> DiagnoseDoc[
+						doc,
+						"mitigated" -> state["diagnosticsOverrides"]["mitigated"],
+						"suppressed" -> state["diagnosticsOverrides"]["suppressed"]
+					]
 				|>
 			|>]]
 		)

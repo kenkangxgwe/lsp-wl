@@ -990,21 +990,22 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
 (* ::Section:: *)
 (*Diagnostics*)
 
-severityOverrideRules = {
-    (
-        "ExperimentalSymbol" |
-        _?(StringStartsQ["Unused"]) |
-        (* "UnexpectedLetterlikeCharacter" |*)
-        "DifferentLine"
-    ) -> "Hint"
+
+Options[DiagnoseDoc] = {
+    "mitigated" -> {},
+    "suppressed" -> {}
 }
 
-DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
+DiagnoseDoc[doc_TextDocument, range_LspRange:All, o:OptionsPattern[]] := With[
+    {
+        droppedPatterns = OptionValue["mitigated"] // Apply[Alternatives],
+        hiddenPatterns = OptionValue["suppressed"] // Apply[Alternatives]
+    },
     GetDocumentText[doc, range]
     // Replace[err:Except[_String] :> (LogError[doc]; "")]
     // CodeInspector`CodeInspect[#, "TabWidth" -> 1]&
     // Replace[_?FailureQ -> {}]
-    // Cases[CodeInspector`InspectionObject[tag:Except["BadSymbol"], description_, severity_, data_] :> Diagnostic[<|
+    // Cases[CodeInspector`InspectionObject[tag:Except[hiddenPatterns, _String], description_, severity_, data_] :> Diagnostic[<|
         "range" -> (
             data
             // Key[CodeParser`Source]
@@ -1017,16 +1018,16 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
         "severity" -> (
             severity
             // Replace[{
-                "Fatal" -> "Error",
-                "Error" -> "Warning",
-                "Warning"|"ImplicitTimes"|"Scoping"|"Formatting"|"Remark" -> "Information"
+                "Fatal"|"Error" -> "Error",
+                "ImplicitTimes"|"Warning" -> "Warning",
+                "Scoping"|"Formatting"|"Remark" -> "Information"
             }]
             // (newSeverity \[Function] (
                 tag
-                // Replace[Append[
-                    severityOverrideRules,
+                // Replace[{
+                    droppedPatterns -> "Hint",
                     _ -> newSeverity
-                ]]
+                }]
             ))
             // DiagnosticSeverity
         ),
@@ -1051,7 +1052,7 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All] := (
             DiagnosticDataToCodeActions[doc, data]
         )
     |>]]
-)
+]
 
 DiagnosticDataToCodeActions[doc_TextDocument, diagnosticData_Association] := (
     Replace[diagnosticData[CodeParser`CodeActions] // Replace[_?MissingQ -> {}], {
