@@ -1216,19 +1216,20 @@ cacheResponse[method:"textDocument/publishDiagnostics", msg_, state_WorkState] :
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	state
-	// If[MissingQ[state["openedDocs"][uri]],
-		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
+	state["openedDocs"][uri]
+	// Replace[{
+		_?MissingQ -> state,
+		doc_ :> (
+			state
+			// ReplaceKey[{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
 				"result" -> <|
 					"uri" -> uri,
-					"diagnostics" -> DiagnoseDoc[state["openedDocs"][uri]]
+					"diagnostics" -> DiagnoseDoc[doc]
 				|>
-			|>]
-		]
-	]
+			|>]]
+		)
+	}]
 ]
 
 
@@ -1238,7 +1239,11 @@ cacheAvailableQ[method:"textDocument/publishDiagnostics", msg_, state_WorkState]
 		cachedTime = getCache[method, msg, state]["cachedtime"]
 	},
 
-	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
+	!MissingQ[cachedTime] &&
+	Replace[state["openedDocs"][uri], {
+		_?MissingQ -> False,
+		doc_ :> (doc["lastUpdate"] < cachedTime)
+	}]
 ]
 
 
@@ -1262,13 +1267,22 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> GetHoverAtPosition[
-			state["openedDocs"][uri],
-			pos
-		]
-	|>]];
+	sendMessage[state["client"],
+		ResponseMessage[<|
+			"id" -> msg["id"],
+			state["openedDocs"][uri]
+			// Replace[{
+				_?MissingQ :> (
+					"error" -> ServerError["InvalidParams",
+						msg
+						// ErrorMessageTemplates["InvalidParams"]
+						// LogError
+					]
+				),
+				doc_ :> ("result" -> GetHoverAtPosition[doc, pos])
+			}]
+		|>]
+	];
 	{"Continue", state}
 ]
 
@@ -1291,19 +1305,17 @@ cacheResponse[method:"textDocument/signatureHelp", msg_, state_WorkState] := Wit
 
 	},
 
-	state
-	// If[MissingQ[state["openedDocs"][uri]],
-		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
+	state["openedDocs"][uri]
+	// Replace[{
+		_?MissingQ -> state,
+		doc_ :> (
+			state
+			// ReplaceKey[{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> GetSignatureHelp[
-					state["openedDocs"][uri],
-					pos
-				]
-			|>]
-		]
-	]
+				"result" -> GetSignatureHelp[doc, pos]
+			|>]]
+		)
+	}]
 ]
 
 
@@ -1334,34 +1346,36 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 		pos = LspPosition[msg["params"]["position"]]
 	},
 
-	msg["params"]["context"]["triggerKind"]
-	// Replace[{
-		(
-			CompletionTriggerKind["Invoked"] |
-			CompletionTriggerKind["TriggerForIncompleteCompletions"]
-		) :> (
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> GetInvokedCompletionAtPosition[
-					state["openedDocs"][uri],
-					pos
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> msg["id"],
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
 				]
-			|>]]
-		),
-		CompletionTriggerKind["TriggerCharacter"] :> With[
-			{
-				triggerCharacter = msg["params"]["context"]["triggerCharacter"]
-			},
-			sendMessage[state["client"], ResponseMessage[<|
-				"id" -> msg["id"],
-				"result" -> GetTriggerKeyCompletion[
-					state["openedDocs"][uri],
-					pos,
-					triggerCharacter
-				]
-			|>]]
-		]
-	}];
+			),
+			doc_ :> (
+				msg["params"]["context"]["triggerKind"]
+				// Replace[{
+					(
+						CompletionTriggerKind["Invoked"] |
+						CompletionTriggerKind["TriggerForIncompleteCompletions"]
+					) :> (
+						"result" -> GetInvokedCompletionAtPosition[doc, pos]
+					),
+					CompletionTriggerKind["TriggerCharacter"] :> With[
+						{
+							triggerCharacter = msg["params"]["context"]["triggerCharacter"]
+						},
+						"result" -> GetTriggerKeyCompletion[doc, pos, triggerCharacter]
+					]
+				}]
+			)
+		}]
+	|>]];
 
 	{"Continue", state}
 ]
@@ -1452,10 +1466,19 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindDefinitions[
-			state["openedDocs"][uri],
-			pos
-		]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> FindDefinitions[doc, pos]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1475,11 +1498,19 @@ handleRequest["textDocument/references", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindReferences[
-			state["openedDocs"][uri],
-			pos,
-			"IncludeDeclaration" -> includeDeclaration
-		]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> FindReferences[doc, pos, "IncludeDeclaration" -> includeDeclaration]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1498,10 +1529,19 @@ handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] :=
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindDocumentHighlight[
-			state["openedDocs"][uri],
-			pos
-		]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> FindDocumentHighlight[doc, pos]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1529,16 +1569,17 @@ cacheResponse[method:"textDocument/documentSymbol", msg_, state_WorkState] := Wi
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	state
-	// If[MissingQ[state["openedDocs"][uri]],
-		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
+	state["openedDocs"][uri]
+	// Replace[{
+		_?MissingQ :> state,
+		doc_ :> (
+			state
+			// ReplaceKey[{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> ToDocumentSymbol[state["openedDocs"][uri]]
-			|>]
-		]
-	]
+				"result" -> ToDocumentSymbol[doc]
+			|>]]
+		)
+	}]
 ]
 
 
@@ -1549,7 +1590,10 @@ cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := 
 	},
 
 	!MissingQ[cachedTime] &&
-	(state["openedDocs"][uri]["lastUpdate"] < cachedTime)
+	Replace[state["openedDocs"][uri], {
+		_?MissingQ -> False,
+		doc_ :> (doc["lastUpdate"] < cachedTime)
+	}]
 ]
 
 
@@ -1564,44 +1608,55 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 
 handleRequest["textDocument/codeAction", msg_, state_] := With[
 	{
+		id = msg["id"],
 		uri = msg["params"]["textDocument"]["uri"],
 		range = ConstructType[msg["params"]["range"], LspRange],
 		diagnostics = ConstructType[msg["params"]["context"]["diagnostics"], {___Diagnostic}]
 	},
+
 	sendMessage[state["client"], ResponseMessage[<|
-		"id" -> msg["id"],
-		"result" -> Join[
-			diagnostics
-			// Map[(diagnostic \[Function] (
-				diagnostic["data"]
-				// ConstructType[#, {___LspCodeAction}]&
-				// Map[(# -> diagnostic)&]
-			))]
-			// Catenate
-			// Merge[Identity]
-			// KeyValueMap[ReplaceKey[#1, "diagnostics" -> #2]&],
-			GetCodeActionsInRange[
-				state["openedDocs"][uri],
-				range
-			],
-			If[state["debugSession"]["initialized"],
-				{
-					LspCodeAction[<|
-						"title" -> "Evaluate in Debug Console",
-						"kind" -> CodeActionKind["Empty"],
-						"command" -> <|
-							"title" -> "Evaluate in Debug Console",
-							"command" -> "dap-wl.evaluate-range",
-							"arguments" -> {<|
-								"uri" -> uri,
-								"range" -> range
-							|>}
-						|>
-					|>]
-				},
-				{}
-			]
-		]
+		"id" -> id,
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> Join[
+					diagnostics
+					// Map[(diagnostic \[Function] (
+						diagnostic["data"]
+						// ConstructType[#, {___LspCodeAction}]&
+						// Map[(# -> diagnostic)&]
+					))]
+					// Catenate
+					// Merge[Identity]
+					// KeyValueMap[ReplaceKey[#1, "diagnostics" -> #2]&],
+					GetCodeActionsInRange[doc, range],
+					If[state["debugSession"]["initialized"],
+						{
+							LspCodeAction[<|
+								"title" -> "Evaluate in Debug Console",
+								"kind" -> CodeActionKind["Empty"],
+								"command" -> <|
+									"title" -> "Evaluate in Debug Console",
+									"command" -> "dap-wl.evaluate-range",
+									"arguments" -> {<|
+										"uri" -> uri,
+										"range" -> range
+									|>}
+								|>
+							|>]
+						},
+						{}
+					]
+				]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1620,57 +1675,65 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> id,
-		"result" -> (
-			If[state["debugSession"]["initialized"],
-				{
-					CodeLens[<|
-						"range" -> <|
-							"start" -> <|
-								"line" -> 0,
-								"character" -> 0
-							|>,
-							"end" -> <|
-								"line" -> 0,
-								"character" -> 0
-							|>
-						|>,
-						"data" -> <|
-							"title" -> "$(workflow) Evaluate File",
-							"command" -> "dap-wl.evaluate-file",
-							"arguments" -> {<|
-								"uri" -> uri
-							|>}
-						|>
-					|>],
-					Table[
-						CodeLens[<|
-							(* range can only span one line *)
-							"range" -> (
-								codeRange
-								// ReplaceKey["end" -> codeRange["start"]]
-								(* // ReplaceKey[{"end", "line"} -> codeRange["start"]["line"]]
-								// ReplaceKey[{"end", "character"} -> 1] *)
-							),
-							"data" -> <|
-								"title" -> "$(play) Evaluate",
-								"command" -> "dap-wl.evaluate-range",
-								"arguments" -> {<|
-									"uri" -> uri,
-									"range" -> codeRange
-								|>}
-							|>
-						|>],
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> (
+					If[state["debugSession"]["initialized"],
 						{
-							codeRange,
-							state["openedDocs"][uri]
-							// FindAllCodeRanges
-						}
+							CodeLens[<|
+								"range" -> <|
+									"start" -> <|
+										"line" -> 0,
+										"character" -> 0
+									|>,
+									"end" -> <|
+										"line" -> 0,
+										"character" -> 0
+									|>
+								|>,
+								"data" -> <|
+									"title" -> "$(workflow) Evaluate File",
+									"command" -> "dap-wl.evaluate-file",
+									"arguments" -> {<|
+										"uri" -> uri
+									|>}
+								|>
+							|>],
+							Table[
+								CodeLens[<|
+									(* range can only span one line *)
+									"range" -> (
+										codeRange
+										// ReplaceKey["end" -> codeRange["start"]]
+										(* // ReplaceKey[{"end", "line"} -> codeRange["start"]["line"]]
+										// ReplaceKey[{"end", "character"} -> 1] *)
+									),
+									"data" -> <|
+										"title" -> "$(play) Evaluate",
+										"command" -> "dap-wl.evaluate-range",
+										"arguments" -> {<|
+											"uri" -> uri,
+											"range" -> codeRange
+										|>}
+									|>
+								|>],
+								{codeRange, doc // FindAllCodeRanges}
+							]
+						},
+						{}
 					]
-				},
-				{}
-			]
-			// Flatten
-		)
+					// Flatten
+				)
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1716,20 +1779,19 @@ cacheResponse[method:"textDocument/documentLink", msg_, state_WorkState] := With
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	state
-	// If[MissingQ[state["openedDocs"][uri]],
-		Identity,
-		ReplaceKey[
-			{"caches", method, uri} -> RequestCache[<|
-				"cachedTime" -> Now,
-				"result" -> FindDocumentLink[
-					state["openedDocs"][uri],
-					state["workspaceFolders"]
-					// Values
-				]
-			|>]
-		]
-	]
+	state["openedDocs"][uri]
+	// Replace[{
+		_?MissingQ -> state,
+		doc_ :> (
+			state
+			// ReplaceKey[
+				{"caches", method, uri} -> RequestCache[<|
+					"cachedTime" -> Now,
+					"result" -> FindDocumentLink[doc, state["workspaceFolders"] // Values]
+				|>]
+			]
+		)
+	}]
 ]
 
 
@@ -1739,7 +1801,11 @@ cacheAvailableQ[method:"textDocument/documentLink", msg_, state_WorkState] := Wi
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
 
-	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
+	!MissingQ[cachedTime] &&
+	Replace[state["openedDocs"][uri], {
+		_?MissingQ -> False,
+		doc_ :> (doc["lastUpdate"] < cachedTime)
+	}]
 ]
 
 
@@ -1769,16 +1835,15 @@ cacheResponse[method:"textDocument/documentColor", msg_, state_WorkState] := Wit
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	state
-	// If[MissingQ[state["openedDocs"][uri]],
-		Identity,
-		ReplaceKey[
+	Replace[state["openedDocs"][uri], {
+		_?MissingQ :> state,
+		doc_ :> (state // ReplaceKey[
 			{"caches", method, uri} -> RequestCache[<|
 				"cachedTime" -> Now,
-				"result" -> FindDocumentColor[state["openedDocs"][uri]]
+				"result" -> FindDocumentColor[doc]
 			|>]
-		]
-	]
+		])
+	}]
 ]
 
 
@@ -1788,7 +1853,11 @@ cacheAvailableQ[method:"textDocument/documentColor", msg_, state_WorkState] := W
 		cachedTime = getCache[method, msg, state]["cachedTime"]
 	},
 
-	!MissingQ[cachedTime] && (state["openedDocs"][uri]["lastUpdate"] < cachedTime)
+	!MissingQ[cachedTime] &&
+	Replace[state["openedDocs"][uri], {
+		_?MissingQ -> False,
+		doc_ :> (doc["lastUpdate"] < cachedTime)
+	}]
 ]
 
 
@@ -1808,14 +1877,26 @@ getScheduleTaskParameter[method:"textDocument/documentColor", msg_, state_WorkSt
 
 handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 	{
-		doc = state["openedDocs"][msg["params"]["textDocument"]["uri"]],
+		uri = msg["params"]["textDocument"]["uri"],
 		color = ConstructType[msg["params"]["color"], LspColor],
 		range = ConstructType[msg["params"]["range"], LspRange]
 	},
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> GetColorPresentation[doc, color, range]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> GetColorPresentation[doc, color, range]
+			)
+		}]
 	|>]];
 
 	{
@@ -1842,21 +1923,29 @@ handleRequest["textDocument/rename", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> (
-			FindReferences[
-				state["openedDocs"][uri],
-				pos,
-				"IncludeDeclaration" -> True
-			]
-			// Map[<|
-				#["uri"] ->  TextEdit[<|
-					"range" -> #["range"],
-					"newText" -> newName
-				|>]
-			|>&]
-			// Merge[Identity]
-			// (WorkspaceEdit[<|"changes" -> #|>])&
-		)
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> (
+					FindReferences[doc, pos, "IncludeDeclaration" -> True]
+					// Map[<|
+						#["uri"] ->  TextEdit[<|
+							"range" -> #["range"],
+							"newText" -> newName
+						|>]
+					|>&]
+					// Merge[Identity]
+					// (WorkspaceEdit[<|"changes" -> #|>])&
+				)
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1875,10 +1964,22 @@ handleRequest["textDocument/prepareRename", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> If[GetSymbolAtPosition[state["openedDocs"][uri], pos] // MissingQ,
-			Null,
-			<|"defaultBehavior" -> True|>
-		]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> If[GetSymbolAtPosition[doc] // MissingQ,
+					Null,
+					<|"defaultBehavior" -> True|>
+				]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1896,7 +1997,19 @@ handleRequest["textDocument/foldingRange", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> FindFoldingRange[state["openedDocs"][uri]]
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> FindFoldingRange[doc]
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -1915,10 +2028,22 @@ handleRequest["textDocument/selectionRange", msg_, state_] := With[
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
-		"result" -> (
-			posList
-			// Map[FindSelectionRange[state["openedDocs"][uri], #]&]
-		)
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["InvalidParams"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> (
+					posList
+					// Map[FindSelectionRange[doc, #]&]
+				)
+			)
+		}]
 	|>]];
 
 	{"Continue", state}
@@ -2112,6 +2237,14 @@ handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 	]; *)
 	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
 
+	If[doc["openedDocs"][uri] // MissingQ,
+		LogWarning[StringJoin[
+			"Cannot find document uri=\"", uri,
+			" while handling notification \"textDocument/didChange\""
+		]];
+		Return[state]
+	];
+
 	LogDebug @ ("Change Document " <> uri);
 	(* Clean the diagnostics only if lastUpdate time is before delay *)
 
@@ -2157,11 +2290,19 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 	{
 		uri = msg["params"]["textDocument"]["uri"]
 	},
+
 	state
-	// handleRequest[
-		"textDocument/publishDiagnostics",
-		constructRequest["textDocument/publishDiagnostics", uri],
-	#]&
+	// If[doc["openedDocs"][uri] // MissingQ,
+		LogWarning[StringJoin[
+			"Cannot find document uri=\"", uri,
+			" while handling notification \"textDocument/didSave\""
+		]];
+		Identity,
+		handleRequest[
+			"textDocument/publishDiagnostics",
+			constructRequest["textDocument/publishDiagnostics", uri], #
+		]&
+	]
 ]
 
 
