@@ -26,7 +26,8 @@ ToLspRange::usage = "ToLspRange[doc_TextDocument, {startLine_Integer, endLine_In
 FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
-GetSymbolAtPosition::usage = "GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] returns the symbol a the given location, otherwise Missing[\"NotFound\"]."
+GetSymbolAtPosition::usage = "GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] returns the symbol at the given location, otherwise Missing[\"NotFound\"]."
+GetSymbolRangeAtPosition::usage = "GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] returns the range of the symbol at the given location, otherwise Missing[\"NotFound\"]."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
 GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
 GetDocumentText::usage = "GetDocumentText[doc_TextDocument] returns the text of the whole doc except for the shebang line (if exists).\n\
@@ -514,6 +515,26 @@ GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] := With[
         AstPattern["Symbol"][symbolName_]
             ?(NodeContainsPosition[{line, character}]) :> (
             symbolName
+        ),
+        Missing["NotFound"],
+        AstLevelspec["LeafNodeWithSource"]
+    ]&
+]
+
+
+GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
+    {
+        line = pos["line"] + 1, character = pos["character"] + 1
+    },
+
+    GetAstAtPosition[doc, pos]
+    // FirstCase[
+        #,
+        AstPattern["Symbol"][data_]
+            ?(NodeContainsPosition[{line, character}]) :> (
+            data
+            // Key[CodeParser`Source]
+            // SourceToRange
         ),
         Missing["NotFound"],
         AstLevelspec["LeafNodeWithSource"]

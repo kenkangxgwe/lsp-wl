@@ -1974,10 +1974,13 @@ handleRequest["textDocument/prepareRename", msg_, state_] := With[
 				]
 			),
 			doc_ :> (
-				"result" -> If[GetSymbolAtPosition[doc] // MissingQ,
-					Null,
-					<|"defaultBehavior" -> True|>
-				]
+				"result" -> (
+					GetSymbolRangeAtPosition[doc, pos]
+					// Replace[{
+						_?MissingQ -> Null,
+						range_ :> range
+					}]
+				)
 			)
 		}]
 	|>]];
