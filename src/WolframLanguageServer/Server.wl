@@ -2107,7 +2107,7 @@ handleRequest[_, msg_, state_] := (
 
 
 (* ::Section:: *)
-(*Handle Notifications*)
+(*Lifecycle Messages*)
 
 
 (* ::Subsection:: *)
@@ -2179,24 +2179,19 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 ]
 
 
-(* ::Subsection:: *)
-(*textSync/didOpen*)
+(* ::Section:: *)
+(*Document Synchronization*)
 
 
-(* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
-handleNotification["textDocument/didOpen", msg_, state_] := With[
+openTextDocument[textDocument_TextDocumentItem, state_WorkState] := With[
 	{
-		uri = msg["params"]["textDocument"]["uri"]
+		uri = textDocument["uri"]
 	},
 
 	(* get the association, modify and reinsert *)
+	LogDebug["Opening textDocument " <> uri];
 	state
-	// ReplaceKeyBy["openedDocs" ->
-		Append[uri -> (
-			ConstructType[msg["params"]["textDocument"], _TextDocumentItem]
-			// CreateTextDocument
-		)]
-	]
+	// ReplaceKeyBy["openedDocs" -> Append[uri -> CreateTextDocument[textDocument]]]
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
 		"textDocument/signatureHelp" ->
 			Append[uri -> RequestCache[<||>]],
@@ -2216,16 +2211,46 @@ handleNotification["textDocument/didOpen", msg_, state_] := With[
 ]
 
 
-(* ::Subsection:: *)
-(*textSync/didClose*)
+changeTextDocument[didChangeParam:KeyValuePattern[{
+	("textDocument"|"document") -> KeyValuePattern[{
+		"uri" -> uri_DocumentUri,
+		"version" -> newVersion_Integer
+	}],
+	("contentChanges"|"changes") -> contentChanges_List
+}], state_WorkState] := (
+	state["openedDocs"][uri]
+	// Replace[{
+		_?MissingQ :> (
+			LogWarning[StringJoin[
+				"Cannot find document uri=\"", uri,
+				" while handling notification \"textDocument/didChange\""
+			]];
+			{"Continue", state}
+		),
+		doc_ :> (
+			LogDebug["Changing textDocument " <> uri];
+			(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
+			If[True, (*newVersion == doc["version"] + 1,*)
+				state
+				(* ReplaceKey will have no effect if uri doesn't exist in state["openedDocs"]. *)
+				// ReplaceKey[{"openedDocs", uri} -> (
+					contentChanges
+					// ConstructType[#, {__TextDocumentContentChangeEvent}]&
+					// Prepend[doc]
+					// Fold[ChangeTextDocument]
+					// ReplaceKey["version" -> newVersion]
+				)]
+				// {"Continue", #}&,
+				showMessage[ErrorMessageTemplates["VersionMismatched"], "Error", state];
+				{"Stop", state}
+			]
+		)
+	}]
+)
 
 
-handleNotification["textDocument/didClose", msg_, state_] := With[
-	{
-		uri = msg["params"]["textDocument"]["uri"]
-	},
-
-	LogInfo @ ("Close Document " <> uri);
+closeTextDocument[didCloseParam:KeyValuePattern[{"uri" -> uri_DocumentUri}], state_WorkState] := (
+	LogInfo["Closing textDocument " <> uri];
 
 	state
 	// ReplaceKeyBy[{"openedDocs"} -> KeyDrop[uri]]
@@ -2239,74 +2264,52 @@ handleNotification["textDocument/didClose", msg_, state_] := With[
 		"textDocument/clearDiagnostics",
 		constructRequest["textDocument/publishDiagnostics", uri],
 	#]&
-]
+)
 
 
 (* ::Subsection:: *)
-(*textSync/didChange*)
+(*textDocument*)
 
 
-handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
-	{
-        doc = msg["params"]["textDocument"],
-		uri = msg["params"]["textDocument"]["uri"]
-		(* lastUpdate = state["openedDocs"][msg["params"]["textDocument"]["uri"]]["lastUpdate"] *)
-	},
+(* ::Subsubsection:: *)
+(*textDocument/didOpen*)
 
-	(* Because of concurrency, we have to make sure the changed message brings a newer version. *)
-	(* With[
-		{
-			expectedVersion = state["openedDocs"][uri]["version"] + 1
-		},
 
-		If[expectedVersion != doc["version"],
-			showMessage[
-				StringJoin[
-					"The version number is not correct.\n",
-					"Expect version: ", ToString[expectedVersion], ", ",
-					"Actual version: ", ToString[doc["version"]], ".",
-					"Please restart the server."
-				],
-				"Error",
-				state
-			];
-			Return[{"Stop", state}]
-		]
-	]; *)
-	(* newState["openedDocs"][uri]["version"] = doc["version"]; *)
+(* This gets the initial state of the text, including document string, version number and the start position of each line in the string.*)
+handleNotification["textDocument/didOpen", msg_, state_] := (
+	msg["params"]["textDocument"]
+	// ConstructType[#, _TextDocumentItem]&
+	// openTextDocument[#, state]&
+)
 
-	If[doc["openedDocs"][uri] // MissingQ,
-		LogWarning[StringJoin[
-			"Cannot find document uri=\"", uri,
-			" while handling notification \"textDocument/didChange\""
-		]];
-		Return[state]
-	];
 
-	LogDebug @ ("Change Document " <> uri);
-	(* Clean the diagnostics only if lastUpdate time is before delay *)
+(* ::Subsubsection:: *)
+(*textDocument/didClose*)
 
+
+handleNotification["textDocument/didClose", msg_, state_] := (
+	closeTextDocument[msg["params"]["textDocument"], state]
+)
+
+
+(* ::Subsubsection:: *)
+(*textDocument/didChange*)
+
+
+handleNotification["textDocument/didChange", msg_, state_WorkState] := (
 	state
-	// ReplaceKey[{"openedDocs", uri} -> (
-		(* Apply all the content changes. *)
-		Fold[
-			ChangeTextDocument,
-			state["openedDocs"][uri],
-			ConstructType[msg["params"]["contentChanges"], {__TextDocumentContentChangeEvent}]
-		]
-		// ReplaceKey["version" -> doc["version"]]
-	)]
-	// addScheduledTask[#, ServerTask[<|
+	// changeTextDocument[msg["params"], #]&
+	// MapAt[addScheduledTask[#, ServerTask[<|
 		"type" -> "JustContinue",
 		"scheduledTime" -> Now
-	|>]]&
-	// {"Continue", #}&
+	|>]]&, 2]
 	(* // scheduleDelayedRequest[
 		"textDocument/publishDiagnostics",
 		constructRequest["textDocument/publishDiagnostics", uri],
 		#,
 		"DuplicatedFallback" -> ({"Continue", #}&)
 	]& *)
+	(* Clean the diagnostics only if lastUpdate time is before delay *)
 	(* // If[DatePlus[lastUpdate, {
 			ServerConfig["requestDelays"]["textDocument/publishDiagnostics"],
 			"Second"
@@ -2317,11 +2320,11 @@ handleNotification["textDocument/didChange", msg_, state_WorkState] := With[
 		/* scheduleDelayedRequest["textDocument/publishDiagnostics", uri, #]&
 		/* Last,
 	] *)
-]
+)
 
 
-(* ::Subsection:: *)
-(*textSync/didSave*)
+(* ::Subsubsection:: *)
+(*textDocument/didSave*)
 
 
 handleNotification["textDocument/didSave", msg_, state_] := With[
@@ -2345,13 +2348,86 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 
 
 (* ::Subsection:: *)
+(*notebookDocument*)
+
+
+(* ::Subsubsection:: *)
+(*notebookDocument/didOpen*)
+
+
+handleNotification["notebookDocument/didOpen", msg_, state_] := (
+	msg["params"]["cellTextDocuments"]
+	// ConstructType[#, {___TextDocumentItem}]&
+	// Prepend[{"Continue", state}]
+	// FoldWhile[{continueState, textDocument} \[Function] (
+		openTextDocument[textDocument, continueState // Last]
+	), MatchQ[{"Continue", _}]]
+)
+
+
+(* ::Subsubsection:: *)
+(*notebookDocument/didChange*)
+
+
+handleNotification["notebookDocument/didChange", msg_, state_] := (
+	{"Continue", state}
+	// Prepend[
+		msg
+		// NestedLookup[{"params", "change", "cells", "textContent"}]
+		// Replace[_?MissingQ -> {}],
+		#
+	]&
+	// FoldWhile[{continueState, changeParams} \[Function] (
+		changeTextDocument[changeParams, continueState // Last]
+	), MatchQ[{"Continue", _}]]
+	// Prepend[
+		msg
+		// NestedLookup[{"params", "change", "cells", "structure", "didOpen"}]
+		// Replace[_?MissingQ -> {}]
+		// ConstructType[#, {___TextDocumentItem}]&,
+		#
+	]&
+	// FoldWhile[{continueState, textDocument} \[Function] (
+		openTextDocument[textDocument, continueState // Last]
+	), MatchQ[{"Continue", _}]]
+	// Prepend[
+		msg
+		// NestedLookup[{"params", "change", "cells", "structure", "didClose"}]
+		// Replace[_?MissingQ -> {}],
+		#
+	]&
+	// FoldWhile[{continueState, closeParams} \[Function] (
+		closeTextDocument[closeParams, continueState // Last]
+	), MatchQ[{"Continue", _}]]
+	// MapAt[addScheduledTask[#, ServerTask[<|
+		"type" -> "JustContinue",
+		"scheduledTime" -> Now
+	|>]]&, 2]
+)
+
+
+(* ::Subsubsection:: *)
+(*notebookDocument/didClose*)
+
+
+handleNotification["notebookDocument/didClose", msg_, state_] := (
+	msg["params"]["cellTextDocuments"]
+	// Prepend[{"Continue", state}]
+	// FoldWhile[{continueState, closeParams} \[Function] (
+		closeTextDocument[closeParams, continueState // Last]
+	), MatchQ[{"Continue", _}]]
+)
+
+
+(* ::Section:: *)
 (*Invalid Notification*)
 
 
 handleNotification[_, msg_, state_] := (
 	msg
 	// ErrorMessageTemplates["MethodNotFound"]
-	// LogError;
+	// LogError
+	// showMessage[#, "Error", state]&;
 
 	{"Continue", state}
 )
@@ -2789,7 +2865,8 @@ ErrorMessageTemplates = <|
 	"MethodNotFound" -> StringTemplate["The requested method \"`method`\" is invalid or not implemented."],
 	"DapRequestNotFound" -> StringTemplate["The request \"`command`\" is invalid or not implemented."],
 	"UriNotFound" -> StringTemplate["The specified URI \"`uri`\" is not found in opened documents."],
-	"PosInvalid" -> StringTemplate["The position `pos` specified is invalid for doc \"`uri`\"."]
+	"PosInvalid" -> StringTemplate["The position `pos` specified is invalid for doc \"`uri`\"."],
+	"VersionMismatched" -> StringTemplate["The version number is not correct, actual vs. expected: `actual` vs. `version`."]
 |>
 
 
