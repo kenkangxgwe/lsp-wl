@@ -26,6 +26,7 @@ ToLspRange::usage = "ToLspRange[doc_TextDocument, {startLine_Integer, endLine_In
 FindDefinitions::usage = "FindDefinitions[doc_TextDocument, pos_LspPosition] gives the definitions of the symbol at the position in the Top level."
 FindReferences::usage = "FindReferences[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] gives the references of the symbol at the position."
 FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspPosition] gives a list of DocumentHighlight."
+PositionValidQ::usage = "PositionValidQ[doc_TextDocument, pos_LspPosition] returns true if the pos is valid in the doc."
 GetSymbolAtPosition::usage = "GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] returns the symbol at the given location, otherwise Missing[\"NotFound\"]."
 GetSymbolRangeAtPosition::usage = "GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] returns the range of the symbol at the given location, otherwise Missing[\"NotFound\"]."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
@@ -467,6 +468,12 @@ rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
 
 (* ::Subsection:: *)
 (*GetAtPosition*)
+
+
+PositionValidQ[doc_TextDocument, pos_LspPosition] := (
+    Length[doc["text"]] > pos["line"] &&
+    StringLength[Part[doc["text"], pos["line"] + 1]] >= pos["character"]
+)
 
 
 GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[

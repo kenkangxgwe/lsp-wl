@@ -1303,7 +1303,7 @@ handleRequest["textDocument/hover", msg_, state_] := With[
 				_?MissingQ :> (
 					"error" -> ServerError["InvalidParams",
 						msg
-						// ErrorMessageTemplates["InvalidParams"]
+						// ErrorMessageTemplates["UriNotFound"]
 						// LogError
 					]
 				),
@@ -1368,7 +1368,7 @@ getCache[method:"textDocument/signatureHelp", msg_, state_WorkState] := (
 (*textDocument/completion*)
 
 
-handleRequest["textDocument/completion", msg_, state_] := Module[
+handleRequest["textDocument/completion", msg_, state_] := With[
 	{
 		uri = msg["params"]["textDocument"]["uri"],
 		pos = LspPosition[msg["params"]["position"]]
@@ -1381,26 +1381,33 @@ handleRequest["textDocument/completion", msg_, state_] := Module[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
 			doc_ :> (
-				msg["params"]["context"]["triggerKind"]
-				// Replace[{
-					(
-						CompletionTriggerKind["Invoked"] |
-						CompletionTriggerKind["TriggerForIncompleteCompletions"]
-					) :> (
-						"result" -> GetInvokedCompletionAtPosition[doc, pos]
-					),
-					CompletionTriggerKind["TriggerCharacter"] :> With[
-						{
-							triggerCharacter = msg["params"]["context"]["triggerCharacter"]
-						},
-						"result" -> GetTriggerKeyCompletion[doc, pos, triggerCharacter]
+				If[PositionValidQ[doc, pos],
+					msg["params"]["context"]["triggerKind"]
+					// Replace[{
+						(
+							CompletionTriggerKind["Invoked"] |
+							CompletionTriggerKind["TriggerForIncompleteCompletions"]
+						) :> (
+							"result" -> GetInvokedCompletionAtPosition[doc, pos]
+						),
+						CompletionTriggerKind["TriggerCharacter"] :> With[
+							{
+								triggerCharacter = msg["params"]["context"]["triggerCharacter"]
+							},
+							"result" -> GetTriggerKeyCompletion[doc, pos, triggerCharacter]
+						]
+					}],
+					"error" -> ServerError["InvalidParams",
+						<|"uri" -> uri, "pos" -> ExportString[ToAssociation[pos], "RawJSON", "Compact" -> True]|>
+						// ErrorMessageTemplates["PosInvalid"]
+						// LogError
 					]
-				}]
+				]
 			)
 		}]
 	|>]];
@@ -1499,7 +1506,7 @@ handleRequest["textDocument/definition", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1531,7 +1538,7 @@ handleRequest["textDocument/references", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1562,7 +1569,7 @@ handleRequest[method:"textDocument/documentHighlight", msg_, state_WorkState] :=
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1649,7 +1656,7 @@ handleRequest["textDocument/codeAction", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1708,7 +1715,7 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1917,7 +1924,7 @@ handleRequest["textDocument/colorPresentation", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1956,7 +1963,7 @@ handleRequest["textDocument/rename", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -1997,7 +2004,7 @@ handleRequest["textDocument/prepareRename", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -2032,8 +2039,8 @@ handleRequest["textDocument/foldingRange", msg_, state_] := With[
 		// Replace[{
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
-					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					<|"uri" -> uri|>
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -2064,7 +2071,7 @@ handleRequest["textDocument/selectionRange", msg_, state_] := With[
 			_?MissingQ :> (
 				"error" -> ServerError["InvalidParams",
 					msg
-					// ErrorMessageTemplates["InvalidParams"]
+					// ErrorMessageTemplates["UriNotFound"]
 					// LogError
 				]
 			),
@@ -2779,8 +2786,10 @@ ServerError[errorType_String, msg_String] := ResponseError[
 
 
 ErrorMessageTemplates = <|
-	"MethodNotFound" -> StringTemplate["The requested method \"`method`\" is invalid or not implemented"],
-	"DapRequestNotFound" -> StringTemplate["The request \"`command`\" is invalid or not implemented"]
+	"MethodNotFound" -> StringTemplate["The requested method \"`method`\" is invalid or not implemented."],
+	"DapRequestNotFound" -> StringTemplate["The request \"`command`\" is invalid or not implemented."],
+	"UriNotFound" -> StringTemplate["The specified URI \"`uri`\" is not found in opened documents."],
+	"PosInvalid" -> StringTemplate["The position `pos` specified is invalid for doc \"`uri`\"."]
 |>
 
 
