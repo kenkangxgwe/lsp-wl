@@ -319,7 +319,6 @@ DeclareType[WorkspaceFolder, <|
 
 DeclareType[TextDocumentContentChangeEvent, <|
     "range" -> _LspRange,
-    "rangeLength" -> _Integer,
     "text" -> _String
 |>]
 
