@@ -115,14 +115,27 @@ TextDocument /: Format[textDocument_TextDocument] := ToString[textDocument]
 (*CreateTextDocument*)
 
 
-CreateTextDocument[textDocumentItem_TextDocumentItem] := (
-    TextDocument[<|
-        "uri" -> textDocumentItem["uri"],
-	    "text" -> StringSplit[textDocumentItem["text"], EOL, All],
-        "version" -> textDocumentItem["version"],
-        "lastUpdate" -> DatePlus[Now, {-5.0, "Second"}]
-    |>]
-)
+CreateTextDocument[textDocumentItem_TextDocumentItem] := With[ 
+    {
+        doc = TextDocument[<|
+            "uri" -> textDocumentItem["uri"],
+            "text" -> StringSplit[textDocumentItem["text"], EOL, All],
+            "version" -> textDocumentItem["version"],
+            "lastUpdate" -> DatePlus[Now, {-5.0, "Second"}]
+        |>]
+    },
+    doc
+    // divideCells
+    // Apply[{cell, codeRanges} \[Function] (
+        AssociateTo[$Cell, doc["uri"] -> cell];
+        AssociateTo[$CodeRange, doc["uri"] -> (
+            codeRanges
+            // Map[# -> Missing["NotParsed"]&]
+            // Association
+        )];
+        doc
+    )]
+ ]
 
 
 (* ::Subsection:: *)
@@ -138,7 +151,6 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
 
     
     KeyDropFrom[$Cell, doc["uri"]];
-    KeyDropFrom[$CodeRange, doc["uri"]];
     ReplaceKey[doc, "text" -> (
         contextChange["range"]
         // Replace[{
@@ -179,6 +191,28 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
     // ReplaceKey["lastUpdate" -> (
         Now
     )]
+    // (newDoc \[Function] Block[
+        {
+            textDiff = SequenceAlignment[oldtext, newtext],
+            cells, codeRanges
+        },
+
+        {cells, codeRanges} = newDoc // divideCells;
+        AssociateTo[$Cell, newDoc["uri"] -> cells];
+        {
+            codeRanges
+            // Map[# -> Missing["NotParsed"]&]
+            // Association,
+            If[$CodeRange // KeyExistsQ[newDoc["uri"]],
+                matchCodeRanges[textDiff, $CodeRange[newDoc["uri"]] // Keys, codeRanges]
+                // Map[$CodeRange[newDoc["uri"]][#]&],
+                <||>
+            ]
+        } // Merge[Last]
+        // AssociateTo[$CodeRange, newDoc["uri"] -> #]&;
+        LogDebug[$CodeRange[newDoc["uri"]]];
+        newDoc
+    ])
 ]
 
 
@@ -201,49 +235,29 @@ DeclareType[CellNode, <|
 |>]
 
 
-Options[divideCells] = {
-    "CodeRange" -> False
-}
-
-divideCells[doc_TextDocument, o:OptionsPattern[]] := (
-    If[$Cell[doc["uri"]] // MissingQ,
-        LogDebug["NewDivide!"];
-        Position[
-            doc["text"],
-            (* matches style line *)
-            _?(StringContainsQ["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]),
-            {1}, Heads -> False
-        ]
-        // Flatten
-        // Append[Length[doc["text"]] + 1]
-        // Prepend[0]
-        // BlockMap[Apply[constructCellNode[doc, #1, #2]&], #, 2, 1]&
-        // Fold[InsertCell]
-        // TerminateCell
-        // Reap
-        // MapAt[
-            Replace[{codeRange_List} :> codeRange]
-            /* Catenate
-            /* (Thread[# -> Missing["NotParsed"]]&)
-            /* Association,
-            2
-        ]
-        // Apply[{cell, codeRange} \[Function] (
-            If[doc["uri"] // MissingQ // Not,
-                (* cache if the URI is not missing *)
-                AssociateTo[$CodeRange, doc["uri"] -> codeRange];
-                AssociateTo[$Cell, doc["uri"] -> cell]
-            ];
-            If[OptionValue["CodeRange"],
-                {cell, codeRange},
-                cell
-            ]
-        )],
-        If[OptionValue["CodeRange"],
-            {$Cell[doc["uri"]] , $CodeRange[doc["uri"]]},
-            $Cell[doc["uri"]]
-        ]
+getCell[doc_TextDocument] := (
+    If[(doc["uri"] // MissingQ) || ($Cell[doc["uri"]] // MissingQ),
+        doc // divideCells // First,
+        $Cell[doc["uri"]]
     ]
+)
+
+
+divideCells[doc_TextDocument] := (
+    Position[
+        doc["text"],
+        (* matches style line *)
+        _?(StringContainsQ["(* " ~~ "::" ~~ Shortest[style___] ~~ "::" ~~ " *)"]),
+        {1}, Heads -> False
+    ]
+    // Flatten
+    // Prepend[0]
+    // Append[Length[doc["text"]] + 1]
+    // BlockMap[Apply[constructCellNode[doc, #1, #2]&], #, 2, 1]&
+    // Fold[InsertCell]
+    // TerminateCell
+    // Reap
+    // MapAt[Replace[{codeRanges_List} :> codeRanges], 2]
 )
 
 
@@ -268,7 +282,7 @@ constructCellNode[doc_TextDocument, styleLine_Integer, endLine_Integer] := Block
         {}
     ];
 
-    codeRange = findCodeRange[doc, styleLine + Length[titleLines] + 1, endLine] // Sow;
+    codeRange = findCodeRange[doc, styleLine + Length[titleLines] + 1, endLine] // Map[Sow];
 
     CellNode[<|
         "level" -> If[HeadingQ[style], HeadingLevel[style], Infinity],
@@ -395,8 +409,51 @@ ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // Equ
 
 
 getCodeRanges[doc_TextDocument] := (
-    divideCells[doc, "CodeRange" -> True]
+    If[(doc["uri"] // MissingQ) || ($CodeRange[doc["uri"]] // MissingQ),
+        doc
+        // divideCells
+        // Last
+        // Map[# -> Missing["NotParsed"]&]
+        // Association,
+        $CodeRange[doc["uri"]]
+    ]
+)
+
+
+matchCodeRanges[textDiff_, oldCodeRanges_List, newCodeRanges_List] := (
+    textDiff
+    // Prepend[{1, 1}]
+    // Fold[{startLines, diff} \[Function] (
+        diff
+        // Replace[{
+            commonLines:{__String} :> (
+                <|
+                    "type" -> "common",
+                    "oldRange" -> ({0, (commonLines // Length) - 1} + (startLines // First)),
+                    "newRange" -> ({0, (commonLines // Length) - 1} + (startLines // Last))
+                |> // Sow;
+                startLines + (commonLines // Length)
+            ),
+            {oldDiff:{___String}, newDiff:{___String}} :> (
+                (* <|
+                    "type" -> "diff",
+                    "oldBegin" -> ({0, (oldDiff // Length) - 1} + (startLines // First)),
+                    "newBegin" -> ({0, (newDiff // Length) - 1} + (startLines // Last))
+                |> // Sow; *)
+                startLines + ({oldDiff, newDiff} // Map[Length])
+            )
+        }]
+    )]
+    // Reap 
     // Last
+    // Last[#, {}]&
+    (* // Select[(#type == "common"&)] *)
+    // Map[Cases[newCodeRanges//LogDebug, codeRange_?(Interval /* IntervalMemberQ[#newRange // Interval]) :> (
+        {codeRange, (codeRange - (#newRange // First) + (#oldRange // First))}
+    )]&]
+    // Catenate
+    // Cases[{newRange_, oldRange_?(MemberQ[oldCodeRanges, #]&)} :> (newRange -> oldRange)]
+    // Association
 )
 
 
@@ -721,7 +778,7 @@ GetCompletionPrefix[doc_TextDocument, leader:(_String|_StringExpression), pos_Ls
 
 ToDocumentSymbol[doc_TextDocument] := (
     doc
-    // divideCells
+    // getCell
     // ToDocumentSymbolImpl[doc, #]&
     // Flatten
 )
@@ -1682,7 +1739,7 @@ ToRGBA[colorName_String] := With[
 
 FindFoldingRange[doc_TextDocument] := (
     doc
-    // divideCells
+    // getCell
     // findFoldRangeImpl
     // Reap
     // Last
