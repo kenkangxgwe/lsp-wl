@@ -18,7 +18,7 @@ TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] ret
 GetHoverAtPosition::usage = "GetHoverAtPosition[doc_TextDocument, pos_LspPosition] gives the text to be shown when hover at the given position."
 GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] gives the signature help at the position."
 $CompletionTriggerKey::usage = "$CompletionTriggerKey is a list of characters that should trigger completions."
-GetInvokedCompletionAtPosition::usage = "GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] gives a list of suggestions for completion."
+GetInvokedCompletionAtPosition::usage = "GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition, extraSource_AutocompletionFunction] gives a list of suggestions for completion."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
 
 
@@ -584,7 +584,7 @@ TokenKind[token_String] := (
 $CompletionTriggerKey = NonLetterLeaders
 
 
-GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] := With[
+GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition, extraSource_AutocompletionFunction:Autocomplete[{}]] := With[
     {
         backslashPrefixes = GetCompletionPrefix[doc, "\\", pos],
         commentColonPrefixes = GetCompletionPrefix[doc, "(* " ~~ "::", pos] // LogDebug,
@@ -622,7 +622,7 @@ GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] := With[
             {}
         ],
         tokenPrefix
-        // GetTokenCompletion[#, pos]&
+        // GetTokenCompletion[#, pos, extraSource]&
     ]
     // Take[#, UpTo[16^^FFFF]]&
     // MapIndexed[{completionItem, index} \[Function] (
@@ -639,10 +639,11 @@ GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition] := With[
 ]
 
 
-GetTokenCompletion[prefix_String, pos_LspPosition] := (
+GetTokenCompletion[prefix_String, pos_LspPosition, extraSource_AutocompletionFunction:Autocomplete[{}]] := (
     If[prefix == "",
         {},
         Join[
+            prefix // ToLowerCase // extraSource,
             Names[prefix ~~ ___, SpellingCorrection -> True, IgnoreCase -> True]
             // Select[Context /* (MemberQ[$DocumentedContext, #]&)]
             // Join[

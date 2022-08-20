@@ -98,7 +98,8 @@ initialCaches = <|
 	"textDocument/documentLink" -> <||>,
 	"textDocument/documentColor" -> <||>,
 	"textDocument/codeLens" -> <||>,
-	"textDocument/publishDiagnostics" -> <||>
+	"textDocument/publishDiagnostics" -> <||>,
+	"textDocument/autocompletionFunction" -> <||>
 |>
 
 InitialState = WorkState[<|
@@ -1393,7 +1394,9 @@ handleRequest["textDocument/completion", msg_, state_] := With[
 							CompletionTriggerKind["Invoked"] |
 							CompletionTriggerKind["TriggerForIncompleteCompletions"]
 						) :> (
-							"result" -> GetInvokedCompletionAtPosition[doc, pos]
+							"result" -> GetInvokedCompletionAtPosition[doc, pos,
+								state["caches"]["textDocument/autocompletionFunction"][uri]
+							]
 						),
 						CompletionTriggerKind["TriggerCharacter"] :> With[
 							{
@@ -2185,13 +2188,14 @@ handleNotification["$/cancelRequest", msg_, state_] := With[
 
 openTextDocument[textDocument_TextDocumentItem, state_WorkState] := With[
 	{
-		uri = textDocument["uri"]
+		uri = textDocument["uri"],
+		doc = CreateTextDocument[textDocument]
 	},
 
 	(* get the association, modify and reinsert *)
 	LogDebug["Opening textDocument " <> uri];
 	state
-	// ReplaceKeyBy["openedDocs" -> Append[uri -> CreateTextDocument[textDocument]]]
+	// ReplaceKeyBy["openedDocs" -> Append[uri -> doc]]
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
 		"textDocument/signatureHelp" ->
 			Append[uri -> RequestCache[<||>]],
@@ -2202,8 +2206,18 @@ openTextDocument[textDocument_TextDocumentItem, state_WorkState] := With[
 		"textDocument/codeLens" ->
 			Append[uri -> RequestCache[<||>]],
 		"textDocument/publishDiagnostics" ->
-			Append[uri -> RequestCache[<||>]]
-	 }]&)]
+			Append[uri -> RequestCache[<||>]],
+		"textDocument/autocompletionFunction" ->
+			Append[uri -> (
+				doc["text"]
+				// StringCases[(LetterCharacter | "$" | "`") ~~ (WordCharacter | "$" | "`")...]
+				// Catenate
+				// DeleteDuplicates
+				// Cases[_?(Names[#]==={}&)]
+				// Map[<|"String" -> ToLowerCase[#], "Result" -> #|>&]
+				// Autocomplete
+			)]
+	}]&)]
 	// handleRequest[
 		"textDocument/publishDiagnostics",
 		constructRequest["textDocument/publishDiagnostics", uri],
@@ -2258,7 +2272,8 @@ closeTextDocument[didCloseParam:KeyValuePattern[{"uri" -> uri_DocumentUri}], sta
 		"textDocument/documentSymbol" -> KeyDrop[uri],
 		"textDocument/documentColor" -> KeyDrop[uri],
 		"textDocument/codeLens" -> KeyDrop[uri],
-		"textDocument/publishDiagnostics" -> KeyDrop[uri]
+		"textDocument/publishDiagnostics" -> KeyDrop[uri],
+		"textDocument/autocompletionFunction" -> KeyDrop[uri]
 	}]&)]
 	// handleRequest[
 		"textDocument/clearDiagnostics",
@@ -2332,18 +2347,32 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 		uri = msg["params"]["textDocument"]["uri"]
 	},
 
-	state
-	// If[doc["openedDocs"][uri] // MissingQ,
-		LogWarning[StringJoin[
-			"Cannot find document uri=\"", uri,
-			" while handling notification \"textDocument/didSave\""
-		]];
-		Identity,
-		handleRequest[
-			"textDocument/publishDiagnostics",
-			constructRequest["textDocument/publishDiagnostics", uri], #
-		]&
-	]
+	state["openedDocs"][uri]
+	// Replace[{
+	    _?MissingQ :> (
+			LogWarning[StringJoin[
+				"Cannot find document uri=\"", uri,
+				" while handling notification \"textDocument/didSave\""
+			]];
+			{"Continue", state}
+		),
+		doc_ :>(
+			state
+			// ReplaceKey[{"caches", "textDocument/autocompletionFunction", uri} -> (
+				doc["text"]
+				// StringCases[(LetterCharacter | "$" | "`") ~~ (WordCharacter | "$" | "`")...]
+				// Catenate
+				// DeleteDuplicates
+				// Cases[_?(Names[#]==={}&)]
+				// Map[<|"String" -> ToLowerCase[#], "Result" -> #|>&]
+				// Autocomplete
+			)]
+			// handleRequest[
+				"textDocument/publishDiagnostics",
+				constructRequest["textDocument/publishDiagnostics", uri], #
+			]&
+		)
+	}]
 ]
 
 
