@@ -473,8 +473,10 @@ TcpSocketHandler[state_WorkState] := With[
 		debugSession["server"] =!= Null &&
 		debugSession["client"] === Null &&
 		Length[debugSession["server"]["ConnectedClients"]] > 0,
+		LogInfo["New debugger client connected"];
 		{
 			"Continue",
+			LogInfo[debugSession["server"]["ConnectedClients"] // Map[SocketReadyQ]];
 			ReplaceKey[state, {"debugSession", "client"} -> First[debugSession["server"]["ConnectedClients"]]]
 		},
 		debugSession["client"] =!= Null && SocketReadyQ[debugSession["client"]],
@@ -809,7 +811,13 @@ handleMessage[msg_Association, state_WorkState] := With[
 		{"Continue", state},
 		(* notification*)
 		NotificationQ[msg],
-		handleNotification[method, msg, state],
+		handleNotification[method, msg, state]
+		// Function[{input}, Block[{res},
+			LogDebug["Start handling " <> method];
+			res = input;
+			LogDebug["Finish handling " <> method];
+			res
+		], {HoldFirst}],
 		(* response *)
 		ResponseQ[msg],
 		handleResponse[state["pendingServerRequests"][msg["id"]], msg, state],
@@ -824,6 +832,12 @@ handleMessage[msg_Association, state_WorkState] := With[
 			scheduleDelayedRequest[method, msg, state],
 			True,
 			handleRequest[method, msg, state]
+			// Function[{input}, Block[{res},
+				LogDebug["Start handling " <> method];
+				res = input;
+				LogDebug["Finish handling " <> method];
+				res
+			], {HoldFirst}]
 		]
 	]
 ]
@@ -1702,7 +1716,7 @@ handleRequest["textDocument/codeAction", msg_, state_] := With[
 
 
 (* ::Subsection:: *)
-(*textDocuent/codeLens*)
+(*textDocument/codeLens*)
 
 
 handleRequest["textDocument/codeLens", msg_, state_] := With[
@@ -2949,7 +2963,7 @@ doNextScheduledTask[state_WorkState] := (
 				newState = state // ReplaceKeyBy["scheduledTasks" -> Rest]
 			},
 
-			{task["type"], Chop[DateDifference[task["scheduledTime"], Now, "Second"], 10*^-6] // InputForm} // LogInfo;
+			(* {task["type"], Chop[DateDifference[task["scheduledTime"], Now, "Second"], 10*^-6] // InputForm} // LogInfo; *)
 			task["type"]
 			// Replace[{
 				(* method:"textDocument/publishDiagnostics" :> (
@@ -3001,8 +3015,12 @@ doNextScheduledTask[state_WorkState] := (
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
 							task["callback"][newState, task["params"]]
-							// AbsoluteTiming
-							// Apply[(LogInfo[{task["type"], #1}]; #2)&],
+							// Function[{input}, Block[{res},
+								LogDebug["Start handling " <> task["type"]];
+								res = input;
+								LogDebug["Finish handling " <> task["type"]];
+								res
+							], {HoldFirst}],
 							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[
