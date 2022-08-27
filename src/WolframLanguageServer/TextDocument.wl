@@ -16,6 +16,8 @@ CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentIte
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
 HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to generate a hover message."
 GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
+InlayHintInfo::usage = "InlayHintInfo[inlayHintKind, literal, range, data] Basic information to generate an inlay hint."
+GetInlayHintInfo::usage = "GetInlayHintInfo[doc_TextDocument, range_LspRange] returns a list of InlayHintInfos in the given range of the document."
 GetFunctionName::usage = "GetFunctionName[doc_TextDocument, pos_LspPosition] gives the function being called at the position."
 GetTokenPrefix::usage = "GetTokenPrefix[doc_TextDocument, pos_LspPosition] gives the prefix of the token before the position."
 GetCompletionPrefix::usage = "GetCompletionPrefix[doc_TextDocument, leader_String, pos_LspPosition] returns a string from the doc, starting with leader and ending at pos"
@@ -459,21 +461,32 @@ matchCodeRanges[textDiff_, oldCodeRanges_List, newCodeRanges_List] := (
 )
 
 
-rangeToAst[doc_TextDocument, All] := (
+getMinimalCodeRangesCoverRange[doc_TextDocument, range_LspRange] := With[
+    {
+        startLine = range["start"]["line"] + 1,
+        endLine = range["end"]["line"] + 1
+    },
+
+    getCodeRanges[doc]
+    // Keys
+    // Select[codeRange \[Function] (
+        codeRange
+        // Map[Between[{startLine, endLine}]]
+        // Apply[Or]
+    )]
+]
+
+
+rangeToSyntaxTree[doc_TextDocument, All] := (
     doc
-    // {
-        Identity,
-        getCodeRanges
-        /* Keys
-    }
-    // Through
-    // Apply[rangeToAst]
-    // Catenate
+    // getCodeRanges
+    // Keys
+    // rangeToSyntaxTree[doc, #]&
 )
 
 
-rangeToAst[doc_TextDocument, range:{_Integer, _Integer}] := rangeToAst[doc, {range}]
-rangeToAst[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
+rangeToSyntaxTree[doc_TextDocument, range:{_Integer, _Integer}] := rangeToSyntaxTree[doc, {range}]
+rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
     {
         uri = doc["uri"]
     },
@@ -489,14 +502,23 @@ rangeToAst[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
             // Position[#, _?MissingQ, {1}]&
         ]
     ]
-    // Map[range \[Function] (
-        range -> Part[
-            CodeParser`CodeParse[
+    // Map[range \[Function] With[
+        {
+            cst = CodeParser`CodeConcreteParse[
                 rangeToCode[doc, range],
                 "TabWidth" -> 1
-            ],
-        2]
-    )]
+            ]
+        },
+
+        range -> <|
+            "cst" -> Drop[Part[cst, 2], First[range] - 1],
+            "ast" -> Part[
+                cst
+                // CodeParser`Abstract`Aggregate
+                // CodeParser`Abstract`Abstract,
+            2]
+        |>
+    ]]
     // If[doc["uri"] // MissingQ,
         Values,
         Replace[{} -> <||>]
@@ -504,7 +526,11 @@ rangeToAst[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
         /* Lookup[uri]
         /* Lookup[ranges]
     ]
- ]
+]
+
+
+rangeToAst = rangeToSyntaxTree /* Map[Lookup["ast"]] /* Catenate
+rangeToCst = rangeToSyntaxTree /* Map[Lookup["cst"]] /* Catenate
 
 
 rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
@@ -536,6 +562,23 @@ moveSyntaxTree[syntaxTree_, oldRange:{oldStart_, oldEnd_} -> newRange:{newStart_
             AstLevelSpec["DataWithSource"]
         ]
     ]
+)
+
+
+rangeCoversQ[range1_LspRange, pos_LspPosition] := (
+    range1["start"]["line"] <= pos["line"] &&
+    range1["end"]["line"] >= pos["line"] && (
+    range1["start"]["line"] == pos["line"] \[Implies]
+    range1["start"]["character"] <= pos["character"] ) && (
+    range1["end"]["line"] == pos["line"] \[Implies]
+    range1["end"]["character"] >= pos["character"] )
+
+)
+
+
+rangeCoversQ[range1_LspRange, range2_LspRange] := (
+    rangeCoversQ[range1, range2["start"]] &&
+    rangeCoversQ[range1, range2["end"]]
 )
 
 
@@ -674,6 +717,12 @@ NodeDataContainsPosition[data_Association, pos:{_Integer, _Integer}] := (
 NodeContainsPosition[pos:{_Integer, _Integer}][node_] := NodeContainsPosition[node, pos]
 NodeContainsPosition[node_, pos:{_Integer, _Integer}] := (
     CompareNodePosition[node, pos] === 0
+)
+
+
+NodeWithinRangeQ[range_LspRange][node_] := NodeWithinRangeQ[node, range]
+NodeWithinRangeQ[node_, range_] := (
+    rangeCoversQ[range, node // Last // Key[CodeParser`Source] // SourceToRange]
 )
 
 
@@ -1064,6 +1113,70 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
         } // Through // Map[Sow];
         getHoverInfoImpl[node, {restIndices}]
     ))
+)
+
+
+(* ::Section:: *)
+(*InlayHint*)
+
+
+InlayHintRules[range_LspRange] := {
+    CstPattern["LongName"][function_, longNameString_, data_]?(NodeWithinRangeQ[range]) :> (
+        InlayHintInfo[
+            "LongName",
+            longNameString
+            // StringReplace["\\[" ~~ longName__ ~~ "]" :> longName],
+            data // Key[CodeParser`Source] // SourceToRange,
+            function
+        ]//LogDebug
+    ),
+    integer:AstPattern["Integer"][integerLiteral_, data_]?(NodeWithinRangeQ[range]) :> With[
+        {
+            numberValue = CodeParser`FromNode[integer]
+        },
+
+        InlayHintInfo[
+            "Number",
+            CodeParser`FromNode[integer],
+            data // Key[CodeParser`Source] // SourceToRange
+        ]
+        /; (
+            ToString[numberValue] =!= integerLiteral
+        )
+    ],
+    real:AstPattern["Real"][realLiteral_, data_]?(NodeWithinRangeQ[range]) :> With[
+        {
+            numberValue = CodeParser`FromNode[real]
+        },
+
+        InlayHintInfo[
+            "Number",
+            CodeParser`FromNode[real],
+            data // Key[CodeParser`Source] // SourceToRange
+        ]
+        /; (
+            ToString[numberValue] =!= realLiteral
+        )
+    ],
+    string:AstPattern["String"][stringLiteral:_?(StringContainsQ[{"\\:", "\\["}]), data_]?(NodeWithinRangeQ[range]) :> (
+        InlayHintInfo[
+            "String",
+            CodeParser`FromNode[string],
+            data // Key[CodeParser`Source] // SourceToRange
+        ]
+    )
+}
+
+
+GetInlayHintInfo[doc_TextDocument, range_LspRange] := (
+    InlayHintRules[range]
+    // Map[Cases[
+        getMinimalCodeRangesCoverRange[doc, range]
+        // rangeToCst[doc, #]&,
+        #,
+        Infinity
+    ]&]
+    // Catenate
 )
 
 

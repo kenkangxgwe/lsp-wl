@@ -142,6 +142,9 @@ ServerCapabilities = <|
 	"definitionProvider" -> True,
 	"referencesProvider" -> True,
 	"documentSymbolProvider" -> True,
+	"inlayHintProvider" -> <|
+		"resolveProvider" -> False
+	|>,
 	"codeActionProvider" -> True,
 	"documentHighlightProvider" -> True,
 	"codeLensProvider" -> <|
@@ -1652,6 +1655,38 @@ cacheAvailableQ[method:"textDocument/documentSymbol", msg_, state_WorkState] := 
 getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 	state["caches"][method][msg["params"]["textDocument"]["uri"]]
 )
+
+
+(* ::Subsection:: *)
+(*Inlay Hint*)
+
+
+handleRequest["textDocument/inlayHint", msg_, state_] := With[
+	{
+		id = msg["id"],
+		uri = msg["params"]["textDocument"]["uri"],
+		range = ConstructType[msg["params"]["range"], LspRange]
+	},
+
+	sendMessage[state["client"], ResponseMessage[<|
+		"id" -> id,
+		state["openedDocs"][uri]
+		// Replace[{
+			_?MissingQ :> (
+				"error" -> ServerError["InvalidParams",
+					msg
+					// ErrorMessageTemplates["UriNotFound"]
+					// LogError
+				]
+			),
+			doc_ :> (
+				"result" -> GetInlayHint[doc, range]
+			)
+		}]
+	|>]];
+
+	{"Continue", state}
+]
 
 
 (* ::Subsection:: *)

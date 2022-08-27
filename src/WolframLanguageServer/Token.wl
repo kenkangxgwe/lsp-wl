@@ -20,6 +20,8 @@ GetSignatureHelp::usage = "GetSignatureHelp[doc_TextDocument, pos_LspPosition] g
 $CompletionTriggerKey::usage = "$CompletionTriggerKey is a list of characters that should trigger completions."
 GetInvokedCompletionAtPosition::usage = "GetInvokedCompletionAtPosition[doc_TextDocument, pos_LspPosition, extraSource_AutocompletionFunction] gives a list of suggestions for completion."
 GetTriggerKeyCompletion::usage = "GetTriggerKeyCompletion[] returns a list of available leader keys."
+GetInlineValue::usage = "GetInlineValue[doc_TextDocument, range_LspRange] returns a list of InlineValue to shown in the range of the document."
+GetInlayHint::usage = "GetInlayHint[doc_TextDocument, range_LspRange] returns a list of InlayHint to shown in the range of the document."
 
 
 Begin["`Private`"]
@@ -1096,6 +1098,46 @@ GetCellStyleCompletion[prefix_String, pos_LspPostion] := (
             "insertTextFormat" -> InsertTextFormat["PlainText"]
         |>]
     )]
+)
+
+
+(* ::Section:: *)
+(*Inlay Hint*)
+
+
+GetInlayHint[doc_TextDocument, range_LspRange] := (
+    Replace[GetInlayHintInfo[doc, range], {
+        InlayHintInfo["LongName", longName_String, stringRange_LspRange, function_Symbol] :> InlayHint[<|
+            "position" -> stringRange["end"],
+            "label" -> (
+                longName
+                // WolframLanguageServer`UnicodeTable`LongNameToUnicode
+                // FromCharacterCode
+                // StringReplace[PUACharactersReplaceRule]
+            ),
+            "tooltip" -> (
+                MarkupContent[<|
+                    "kind" -> MarkupKind["Markdown"],
+                    "value" -> TokenDocumentation[SymbolName[function], "usage"]
+                |>]
+            ),
+            "paddingLeft" -> True,
+            "paddingRight" -> True
+        |>],
+        InlayHintInfo["Number", numberValue_?NumericQ, stringRange_LspRange] :> InlayHint[<|
+            "position" -> stringRange["end"],
+            "label" -> (numberValue // ToString),
+            "paddingLeft" -> True,
+            "paddingRight" -> True
+        |>],
+        InlayHintInfo["String", stringValue_String, stringRange_LspRange] :> InlayHint[<|
+            "position" -> stringRange["end"],
+            "label" -> StringJoin["\"", stringValue // StringReplace[PUACharactersReplaceRule], "\""],
+            "paddingLeft" -> True,
+            "paddingRight" -> True
+        |>],
+        _ -> Nothing
+    }, {1}]
 )
 
 

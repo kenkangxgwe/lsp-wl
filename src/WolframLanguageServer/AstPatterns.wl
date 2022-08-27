@@ -12,7 +12,8 @@ ClearAll[Evaluate[Context[] <> "*"]]
 
 
 FunctionPattern::usage = "A set of function head patterns."
-AstPattern::usage = "A set of pattern transformations that returns the desired pattern."
+AstPattern::usage = "A set of pattern that matches the abstract syntax tree."
+CstPattern::usage = "A set of pattern that matches the concrete syntax tree."
 AstLevelspec::usage = "A set of levelspec that is useful to specify when using Cases, Position, etc."
 
 
@@ -93,6 +94,11 @@ FunctionPattern = <|
         "With" | "Block" | "Module" | "DynamicModule"
     )
 |>
+
+
+CstPattern = <|
+    "LongName" -> CodeParser`BinaryNode[function_Symbol, {__, CodeParser`LeafNode[longNameKind_Symbol?(Context[#] === "Token`LongName`"&), longNameString_String, data_Association], __}, _]
+|> // Map[PatternTemplate]
 
 
 AstPattern = <|

@@ -37,6 +37,7 @@ SignatureHelp::usage = "is the type of SignatureHelp interface in LSP."
 SignatureInformation::usage = "is the type of SignatureInformation interface in LSP."
 ParameterInformation::usage = "is the type of ParameterInformation interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
+InlayHint::usage = "is the type of InlayHint interface in LSP."
 CompletionList::usage = "is the type of CompletionList interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
 InsertReplaceEdit::usage = "is the type of InsertReplaceEdit interface in LSP."
@@ -404,6 +405,14 @@ DeclareType[DocumentSymbol, <|
     "range" -> _LspRange,
     "selectionRange" -> _LspRange,
     "children" -> {___DocumentSymbol}
+|>]
+
+DeclareType[InlayHint, <|
+    "position" -> _LspPosition,
+    "label" -> _String,
+    "tooltip" -> _String | _MarkupContent,
+    "paddingLeft" -> _?BooleanQ,
+    "paddingRight" -> _?BooleanQ
 |>]
 
 DeclareType[DocumentHighlight, <|
