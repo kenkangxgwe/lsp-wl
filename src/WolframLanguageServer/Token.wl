@@ -497,25 +497,18 @@ printHoverTextImpl[hoverInfo_List] := (
             TokenDocumentation[symbolName, tag]
         ),
         HoverInfo["String", {stringLiteral_String, stringDisplay_String}] :> (
-            If[StringContainsQ[stringLiteral, {"\\:", "\\["}],
-                StringJoin[
-                    "```\n",
-                    stringDisplay // StringReplace[PUACharactersReplaceRule], "\n",
-                    "```\n"
-                ],
-                ""
+            StringJoin[
+                "```\n",
+                "\"", stringDisplay // StringReplace[PUACharactersReplaceRule], "\"\n",
+                "```\n"
             ]
         ),
         HoverInfo["Number", {numberString_String, numberValue_}] :> (
-            ToString[numberValue]
-            // Replace[{
-                numberString :> "",
-                numberValueString_ :> StringJoin[
-                    "```mathematica\n",
-                    numberValueString, "\n",
-                    "```\n"
-                ]
-            }]
+            StringJoin[
+                "```mathematica\n",
+                ToString[numberValue], "\n",
+                "```\n"
+            ]
         )
     }, {1}]
 )

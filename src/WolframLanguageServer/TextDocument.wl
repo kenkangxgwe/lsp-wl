@@ -1096,13 +1096,23 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
                 AstPattern["Symbol"][symbolName_] :> (
                     HoverInfo["Message", {symbolName, "usage"}]
                 ),
-                integer:AstPattern["Integer"][integerLiteral_] :> (
-                    HoverInfo["Number", {integerLiteral, CodeParser`FromNode[integer]}]
-                ),
-                real:AstPattern["Real"][realLiteral_] :> (
-                    HoverInfo["Number", {realLiteral, CodeParser`FromNode[real]}]
-                ),
-                string:AstPattern["String"][stringLiteral_] :> (
+                integer:AstPattern["Integer"][integerLiteral_] :> With[
+                    {
+                        numberValue = CodeParser`FromNode[integer]
+                    },
+
+                    HoverInfo["Number", {integerLiteral, numberValue}]
+                    /; ToString[numberValue] =!= integerLiteral
+                ],
+                real:AstPattern["Real"][realLiteral_] :> With[
+                    {
+                        numberValue = CodeParser`FromNode[real]
+                    },
+
+                    HoverInfo["Number", {realLiteral, numberValue}]
+                    /; ToString[numberValue] =!= realLiteral
+                ],
+                string:AstPattern["String"][stringLiteral:_?(StringContainsQ[{"\\:", "\\["}])] :> (
                     HoverInfo["String", {stringLiteral, CodeParser`FromNode[string]}]
                 ),
                 AstPattern["MessageName"][symbolName_, message_] :> (
