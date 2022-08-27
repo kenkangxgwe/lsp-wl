@@ -70,7 +70,6 @@ VerificationTest[
 					"character" -> 5
 				|>]
 			|>],
-			"rangeLength" -> 5,
 			"text" -> "newData"
 		|>]
 	]["text"],
@@ -97,7 +96,6 @@ VerificationTest[
 					"character" -> 6
 				|>]
 			|>],
-			"rangeLength" -> 0,
 			"text" -> "\n    "
 		|>]
 	]["text"],
