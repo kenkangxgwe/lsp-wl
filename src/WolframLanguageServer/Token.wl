@@ -450,7 +450,8 @@ PUACharactersReplaceRule = {
     "\[Function]" -> "|->",
     "\[DifferentialD]" -> "d",
     "\[EscapeKey]" -> "[ESC]",
-    "\[Application]" -> "\[CenterDot]"
+    "\[Application]" -> "\[CenterDot]",
+    "\[Implies]" -> "\[DoubleRightArrow]"
 }
 
 
