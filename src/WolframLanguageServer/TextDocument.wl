@@ -205,12 +205,14 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
             // Association,
             If[$CodeRange // KeyExistsQ[newDoc["uri"]],
                 matchCodeRanges[textDiff, $CodeRange[newDoc["uri"]] // Keys, codeRanges]
-                // Map[$CodeRange[newDoc["uri"]][#]&],
+                // Map[Apply[{oldRange, newRange} \[Function] (
+                    $CodeRange[newDoc["uri"]][oldRange]
+                    // Map[moveSyntaxTree[#, oldRange -> newRange]&]
+                )]],
                 <||>
             ]
         } // Merge[Last]
         // AssociateTo[$CodeRange, newDoc["uri"] -> #]&;
-        LogDebug[$CodeRange[newDoc["uri"]]];
         newDoc
     ])
 ]
@@ -448,11 +450,11 @@ matchCodeRanges[textDiff_, oldCodeRanges_List, newCodeRanges_List] := (
     // Last
     // Last[#, {}]&
     (* // Select[(#type == "common"&)] *)
-    // Map[Cases[newCodeRanges//LogDebug, codeRange_?(Interval /* IntervalMemberQ[#newRange // Interval]) :> (
+    // Map[Cases[newCodeRanges, codeRange_?(Interval /* IntervalMemberQ[#newRange // Interval]) :> (
         {codeRange, (codeRange - (#newRange // First) + (#oldRange // First))}
     )]&]
     // Catenate
-    // Cases[{newRange_, oldRange_?(MemberQ[oldCodeRanges, #]&)} :> (newRange -> oldRange)]
+    // Cases[{newRange_, oldRange_?(MemberQ[oldCodeRanges, #]&)} :> (oldRange -> newRange)]
     // Association
 )
 
@@ -520,6 +522,20 @@ rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
             {StringRepeat::intp (* before 12.0 *)}
         ] // Quiet,
     #]&
+)
+
+
+moveSyntaxTree[syntaxTree_, oldRange:{oldStart_, oldEnd_} -> newRange:{newStart_, newEnd_}] := (
+    If[(oldEnd - oldStart) === (newEnd - newStart),
+        LogError[StringTemplate["Cannot move syntax tree from `1` to `2`, since they are not of the same size"][oldRange, newRange]];
+        syntaxTree,
+        Replace[syntaxTree,
+            KeyValuePattern[CodeParser`Source -> {{oldLine1_, oldCharacter1_}, {oldLine2_, oldCharacter2_}}] :> (
+                CodeParser`Source -> {{oldLine1 - oldStart + newStart, oldCharacter1}, {oldLine2 - oldStart + newStart, oldCharacter2}}
+            ),
+            AstLevelSpec["DataWithSource"]
+        ]
+    ]
 )
 
 
