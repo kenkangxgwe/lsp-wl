@@ -37,6 +37,7 @@ SignatureHelp::usage = "is the type of SignatureHelp interface in LSP."
 SignatureInformation::usage = "is the type of SignatureInformation interface in LSP."
 ParameterInformation::usage = "is the type of ParameterInformation interface in LSP."
 DocumentSymbol::usage = "is the type of DocumentSymbol interface in LSP."
+InlayHintPart::usage = "is the type of InlayHintPart interface in LSP."
 InlayHint::usage = "is the type of InlayHint interface in LSP."
 CompletionList::usage = "is the type of CompletionList interface in LSP."
 CompletionItem::usage = "is the type of CompletionItem interface in LSP."
@@ -185,6 +186,11 @@ DocumentHighlightKind = <|
     "Text" -> 1,
     "Read" -> 2,
     "Write" -> 3
+|>
+
+InlayHintKind = <|
+    "Type" -> 1,
+    "Parameter" -> 2
 |>
 
 CodeActionKind = <|
@@ -407,9 +413,16 @@ DeclareType[DocumentSymbol, <|
     "children" -> {___DocumentSymbol}
 |>]
 
+DeclareType[InlayHintPart, <|
+    "value" -> _String,
+    "tooltip" -> _String | _MarkupContent,
+    "location" -> _Location
+|>]
+
 DeclareType[InlayHint, <|
     "position" -> _LspPosition,
-    "label" -> _String,
+    "label" -> _String | {__InlayHintPart},
+    "kind" -> _Integer,
     "tooltip" -> _String | _MarkupContent,
     "paddingLeft" -> _?BooleanQ,
     "paddingRight" -> _?BooleanQ

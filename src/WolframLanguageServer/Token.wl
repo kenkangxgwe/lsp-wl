@@ -1150,6 +1150,19 @@ GetInlayHint[doc_TextDocument, range_LspRange, o:OptionsPattern[]] := (
             |>],
             Nothing
         ],
+        InlayHintInfo["Param", tag_String, paramRange_LspRange, functionName_String, functionRange_LspRange] :> InlayHint[<|
+            "position" -> paramRange["start"],
+            "label" -> {InlayHintPart[<|
+                "value" -> tag <> ":",
+                "location" -> Location[<|
+                    "uri" -> doc["uri"],
+                    "range" -> functionRange
+                |>]
+            |>]},
+            "kind" -> InlayHintKind["Parameter"],
+            "paddingLeft" -> False,
+            "paddingRight" -> True
+        |>],
         _ -> Nothing
     }, {1}]
 )

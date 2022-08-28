@@ -1130,7 +1130,7 @@ getHoverInfoImpl[ast_, {index_Integer, restIndices___}] := (
 (*InlayHint*)
 
 
-InlayHintRules[range_LspRange] := {
+ConcreteInlayHintRules[range_LspRange] := {
     CstPattern["LongName"][function_, longNameString_, data_]?(NodeWithinRangeQ[range]) :> (
         InlayHintInfo[
             "LongName",
@@ -1182,16 +1182,82 @@ InlayHintRules[range_LspRange] := {
     )
 }
 
+AbstractInlayHintRules[range_LspRange] = {
+    AstPattern["Function"][functionName:"If", arguments_, data_]?(NodeWithinRangeQ[range][#] && Head[#] === CodeParser`CallNode&) :> (
+        Fold[tagAndTrim, arguments, {"condition", "t", "f", "u"}]
+        // Reap
+        // Last
+        // Last
+        // Map[Append[functionName]]
+        // Map[Append[data // Key[CodeParser`Source] // SourceToRange]]
+    ),
+    AstPattern["Function"][functionName:"Which", arguments_, data_]?(NodeWithinRangeQ[range][#] && Head[#] === CodeParser`CallNode&) :> (
+        Table[
+            i
+            // {StringTemplate["test_`1`"], StringTemplate["value_`1`"]}
+            // Through,
+            {i, Ceiling[Length[arguments] / 2]}
+        ]
+        // Catenate
+        // Fold[tagAndTrim, arguments, #]&
+        // Reap
+        // Last
+        // Last
+        // Map[Append[functionName]]
+        // Map[Append[data // Key[CodeParser`Source] // SourceToRange]]
+    ),
+    AstPattern["Function"][functionName:"Switch", arguments_, data_]?(NodeWithinRangeQ[range][#] && Head[#] === CodeParser`CallNode&) :> (
+        Table[
+            i
+            // {StringTemplate["form_`1`"], StringTemplate["value_`1`"]}
+            // Through
+            {i, Ceiling[(Length[arguments] - 1) / 2]}
+        ]
+        // Catenate
+        // Prepend["expr"]
+        // Fold[tagAndTrim, arguments, #]&
+        // Reap
+        // Last
+        // Last
+        // Map[Append[functionName]]
+        // Map[Append[data // Key[CodeParser`Source] // SourceToRange]]
+    ),
+    AstPattern["Scope"][op_, head_, body_, data_]?(NodeWithinRangeQ[range]) :> (
+        Fold[tagAndTrim, {head, body}, {"vars", "body"}]
+        // Reap
+        // Last
+        // Last
+        // Map[Append[op]]
+        // Map[Append[data // Key[CodeParser`Source] // SourceToRange]]
+    )
+}
 
-GetInlayHintInfo[doc_TextDocument, range_LspRange] := (
-    InlayHintRules[range]
-    // Map[Cases[
-        getMinimalCodeRangesCoverRange[doc, range]
-        // rangeToCst[doc, #]&,
-        #,
-        Infinity
-    ]&]
-    // Catenate
+
+GetInlayHintInfo[doc_TextDocument, range_LspRange] := With[
+    {
+        codeRanges = getMinimalCodeRangesCoverRange[doc, range]
+    },
+
+    {
+        ConcreteInlayHintRules[range]
+        // Map[Cases[rangeToCst[doc, codeRanges], #, Infinity]&],
+        AbstractInlayHintRules[range]
+        // Map[Cases[rangeToAst[doc, codeRanges], #, Infinity]&]
+    }
+    // Flatten
+ ]
+
+
+tagAndTrim[nodeList_List, tag_String] := (
+    If[nodeList === {},
+        {},
+        Sow[InlayHintInfo[
+            "Param",
+            tag,
+            nodeList // First // Last // Key[CodeParser`Source] // SourceToRange
+        ]];
+        nodeList // Rest
+    ]
 )
 
 
