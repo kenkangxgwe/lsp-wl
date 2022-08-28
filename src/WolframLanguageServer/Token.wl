@@ -11,6 +11,7 @@ BeginPackage["WolframLanguageServer`Token`"]
 ClearAll[Evaluate[Context[] <> "*"]]
 
 
+InitializeSystemResources::usage = "SystemResourceInitialization[o:OptionsPattern[]] initialized the system resources with given setttings."
 TokenDocumentation::usage = "TokenDocumentation[token_String, tag_String, o] returns the documentation for input token in specified format.
   The possible options are
   \"Format\" -> \"plaintext\" | \"markdown\"
@@ -39,27 +40,56 @@ Needs["WolframLanguageServer`TextDocument`"]
 (*Initialization*)
 
 
-(* Set $Language to FrontEnd's initial value, if the default provides empty Message Name. *)
-List::usage // Replace[_MessageName :> (
-    $Language = UsingFrontEnd[CurrentValue[$FrontEnd, Language]]
-)]
+Options[InitializeSystemResources] = {
+    "forceFrontEndLanguage" -> False
+}
+
+InitializeSystemResources[o:OptionsPattern[]] := (
+
+    (* Set $Language to FrontEnd's initial value, if the default provides empty Message Name. *)
+    If[Head[List::usage] === _MessageName || OptionValue["forceFrontEndLanguage"],
+        $Language = UsingFrontEnd[CurrentValue[$FrontEnd, Language]]
+    ];
+
+    $AutoCompltionDataMainDir = (
+        PacletFind["AutoCompletionData"]
+        // First
+        // #["Location"]&
+        // {#, "Main"}&
+        // FileNameJoin
+    );
+
+    $DocumentedContext = (
+        {$AutoCompltionDataMainDir, "documentedContexts.m"}
+        // FileNameJoin
+        // Replace[{
+            file_?FileExistsQ :> Get[file],
+            _ -> {}
+        }]
+    );
 
 
-$DocumentedContext = {
-    $InstallationDirectory, "SystemFiles", "Components", "AutoCompletionData", "Main", "documentedContexts.m"
-} // FileNameJoin // Get
+    $TokenTranslation = (
+        {$AutoCompltionDataMainDir, $Language <> ".m"}
+        // FileNameJoin
+        // Replace[{
+            file_?FileExistsQ :> Get[file],
+            _ -> {}
+        }] // Association
+    );
 
 
-(* Run Messages and Usages for completion. *)
-Quiet[
-    {
-        $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Messages.m"
-    } // FileNameJoin // Get;
-    {
-        $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Usage.m"
-    } // FileNameJoin // Get,
-    {Get::noopen}
-]
+    (* Run Messages and Usages for completion. *)
+    Quiet[
+        {
+            $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Messages.m"
+        } // FileNameJoin // Get;
+        {
+            $InstallationDirectory, "SystemFiles", "Kernel", "TextResources", $Language, "Usage.m"
+        } // FileNameJoin // Get,
+        {Get::noopen}
+    ]
+)
 
 
 systemIdentifierQ[token_String] := (

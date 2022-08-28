@@ -1007,6 +1007,12 @@ handleRequest["initialize", msg_, state_WorkState] := (
 		|>
 	|>]];
 
+	
+	msg
+	// NestedLookup[{"params", "initializationOptions", "forceFrontEndLanguage"}]
+	// Replace[_?MissingQ -> False]
+	// InitializeSystemResources["forceFrontEndLanguage" -> #]&;
+
 	(* TODO(kenkangxgwe): check client capabilities *)
 	{
 		"Continue",
