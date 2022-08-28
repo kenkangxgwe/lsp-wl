@@ -65,6 +65,7 @@ DeclareType[WorkState, <|
 	"clientCapabilities" -> _Association,
 	"workspaceFolders" -> _Association,
 	"diagnosticsOverrides" -> _DiagnosticsOverrides,
+	"showCodeCaptions" -> _?BooleanQ,
 	"debugSession" -> _DebugSession,
 	"scheduledTasks" -> {___ServerTask},
 	"caches" -> _Association,
@@ -110,6 +111,7 @@ InitialState = WorkState[<|
 		"mitigated" -> {},
 		"suppressed" -> {}
 	|>],
+	"showCodeCaptions" -> False,
 	"debugSession" -> DebugSession[<|
 		"initialized" -> False,
 		"server" -> Null,
@@ -975,17 +977,7 @@ sendMessage[client_, res:(_DapEvent|_DapResponse)] := (
 (*initialize*)
 
 
-handleRequest["initialize", msg_, state_WorkState] := With[
-    {
-		workspaceFolders = ConstructType[
-			msg // NestedLookup[{"params", "workspaceFolders"}],
-			{___WorkspaceFolder}
-		] // Replace[_?MissingQ -> {}],
-		clientPid = msg // NestedLookup[{"params", "processId"}],
-        debugPort = msg // NestedLookup[{"params", "initializationOptions", "debuggerPort"}],
-        diagnosticsOverrides = msg // NestedLookup[{"params", "initializationOptions", "diagnosticsOverrides"}]
-    },
-
+handleRequest["initialize", msg_, state_WorkState] := (
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> <|
@@ -1001,49 +993,62 @@ handleRequest["initialize", msg_, state_WorkState] := With[
 	{
 		"Continue",
 		Fold[ReplaceKey, state, {
-			"clientProcessId" -> clientPid,
+			"clientProcessId" -> msg["params"]["processId"],
 			"clientCapabilities" -> msg["params"]["capabilities"],
 			"workspaceFolders" -> (
-				workspaceFolders
+				msg
+				// NestedLookup[{"params", "workspaceFolders"}]
+				// Replace[_?MissingQ -> {}]
+				// ConstructType[#, {___WorkspaceFolder}]&
 				// Map[(#["uri"] -> #)&]
 				// Association
 			),
-			If[!MissingQ[diagnosticsOverrides],
-				"diagnosticsOverrides" -> ConstructType[
-					diagnosticsOverrides,
-					DiagnosticsOverrides
-				],
-				Nothing
-			],
-			If[!MissingQ[debugPort],
-				LogInfo["Debugger listening at port " <> ToString[debugPort]];
-				{"debugSession", "server"} -> SocketOpen[debugPort],
-				Nothing
-			]
+			msg
+			// NestedLookup[{"params", "initializationOptions", "diagnosticsOverrides"}]
+			// Replace[{
+				_?MissingQ -> Nothing,
+				diagnosticsOverrides_ :> (
+					"diagnosticsOverrides" -> ConstructType[
+						diagnosticsOverrides,
+						DiagnosticsOverrides
+					]
+				)
+			}],
+			"showCodeCaptions" -> (
+				msg
+				// NestedLookup[{"params", "initializationOptions", "showCodeCaptions"}]
+				// Replace[_?MissingQ -> False]
+			),
+			msg
+			// NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
+			// Replace[{
+				_?MissingQ -> Nothing,
+				debugPort_ :> (
+					LogInfo["Debugger listening at port " <> ToString[debugPort]];
+					{"debugSession", "server"} -> SocketOpen[debugPort]
+				)
+			}]
 		}]
 		// addScheduledTask[#, ServerTask[<|
 			"type" -> "ClientProcessCheck",
 			"scheduledTime" -> DatePlus[Now, {10, "Second"}]
 		|>]]&
 	}
-]
+)
 
 
 (* ::Subsection:: *)
 (*shutdown*)
 
 
-handleRequest["shutdown", msg_, state_] := Module[
-	{
-	},
-
+handleRequest["shutdown", msg_, state_] := (
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
 		"result" -> Null
 	|>]];
 
 	{"Continue", state}
-];
+)
 
 
 (* ::Subsection:: *)
@@ -1680,7 +1685,7 @@ handleRequest["textDocument/inlayHint", msg_, state_] := With[
 				]
 			),
 			doc_ :> (
-				"result" -> GetInlayHint[doc, range]
+				"result" -> GetInlayHint[doc, range, "ShowCodeCaptions" -> state["showCodeCaptions"]]
 			)
 		}]
 	|>]];

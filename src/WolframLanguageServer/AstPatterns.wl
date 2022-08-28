@@ -97,7 +97,15 @@ FunctionPattern = <|
 
 
 CstPattern = <|
-    "LongName" -> CodeParser`BinaryNode[function_Symbol, {__, CodeParser`LeafNode[longNameKind_Symbol?(Context[#] === "Token`LongName`"&), longNameString_String, data_Association], __}, _]
+    "LongName" -> CodeParser`BinaryNode[function_Symbol, {
+        __,
+        CodeParser`LeafNode[
+            longNameKind_Symbol?(Context[#] === "Token`LongName`"&),
+            longNameString_String,
+            data_Association
+        ],
+        __
+    }, _]
 |> // Map[PatternTemplate]
 
 
@@ -123,7 +131,7 @@ AstPattern = <|
     ),
 
     "Function" -> (
-        (CodeParser`CallNode|CodeParser`UnderterminedCallNode)[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
+        (CodeParser`CallNode|CodeParser`UnterminedCallNode)[CodeParser`LeafNode[Symbol, functionName_String, _], arguments_List, data_Association]
     ),
 
     "MessageName" -> (

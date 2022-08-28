@@ -1138,13 +1138,12 @@ InlayHintRules[range_LspRange] := {
             // StringReplace["\\[" ~~ longName__ ~~ "]" :> longName],
             data // Key[CodeParser`Source] // SourceToRange,
             function
-        ]//LogDebug
+        ]
     ),
     integer:AstPattern["Integer"][integerLiteral_, data_]?(NodeWithinRangeQ[range]) :> With[
         {
             numberValue = CodeParser`FromNode[integer]
         },
-
         InlayHintInfo[
             "Number",
             CodeParser`FromNode[integer],
@@ -1158,7 +1157,6 @@ InlayHintRules[range_LspRange] := {
         {
             numberValue = CodeParser`FromNode[real]
         },
-
         InlayHintInfo[
             "Number",
             CodeParser`FromNode[real],
@@ -1172,6 +1170,13 @@ InlayHintRules[range_LspRange] := {
         InlayHintInfo[
             "String",
             CodeParser`FromNode[string],
+            data // Key[CodeParser`Source] // SourceToRange
+        ]
+    ),
+    AstPattern["Symbol"][symbolName_, data_]?(NodeWithinRangeQ[range]) :> (
+        InlayHintInfo[
+            "Symbol",
+            symbolName,
             data // Key[CodeParser`Source] // SourceToRange
         ]
     )

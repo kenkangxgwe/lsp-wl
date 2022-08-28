@@ -1099,7 +1099,12 @@ GetCellStyleCompletion[prefix_String, pos_LspPostion] := (
 (*Inlay Hint*)
 
 
-GetInlayHint[doc_TextDocument, range_LspRange] := (
+Options[GetInlayHint] = {
+    "ShowCodeCaptions" -> False
+}
+
+
+GetInlayHint[doc_TextDocument, range_LspRange, o:OptionsPattern[]] := (
     Replace[GetInlayHintInfo[doc, range], {
         InlayHintInfo["LongName", longName_String, stringRange_LspRange, function_Symbol] :> InlayHint[<|
             "position" -> stringRange["end"],
@@ -1118,8 +1123,8 @@ GetInlayHint[doc_TextDocument, range_LspRange] := (
             "paddingLeft" -> True,
             "paddingRight" -> True
         |>],
-        InlayHintInfo["Number", numberValue_?NumericQ, stringRange_LspRange] :> InlayHint[<|
-            "position" -> stringRange["end"],
+        InlayHintInfo["Number", numberValue_?NumericQ, numberRange_LspRange] :> InlayHint[<|
+            "position" -> numberRange["end"],
             "label" -> (numberValue // ToString),
             "paddingLeft" -> True,
             "paddingRight" -> True
@@ -1130,6 +1135,21 @@ GetInlayHint[doc_TextDocument, range_LspRange] := (
             "paddingLeft" -> True,
             "paddingRight" -> True
         |>],
+        If[OptionValue["ShowCodeCaptions"],
+            InlayHintInfo["Symbol", symbolName_String?(KeyExistsQ[$TokenTranslation, #]&), symbolRange_LspRange] :> InlayHint[<|
+                "position" -> symbolRange["end"],
+                "label" -> "|" <> $TokenTranslation[symbolName],
+                "tooltip" -> (
+                    MarkupContent[<|
+                        "kind" -> MarkupKind["Markdown"],
+                        "value" -> TokenDocumentation[symbolName, "usage"]
+                    |>]
+                ),
+                "paddingLeft" -> True,
+                "paddingRight" -> False
+            |>],
+            Nothing
+        ],
         _ -> Nothing
     }, {1}]
 )
