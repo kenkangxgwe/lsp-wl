@@ -63,6 +63,7 @@ DeclareType[WorkState, <|
 	"client" -> (_SocketClient | _SocketObject | _NamedPipe | _StdioClient | "stdio" | Null),
 	"clientProcessId" -> (_Integer | Null),
 	"clientCapabilities" -> _Association,
+	"traceValue" -> _String,
 	"workspaceFolders" -> _Association,
 	"diagnosticsOverrides" -> _DiagnosticsOverrides,
 	"showCodeCaptions" -> _?BooleanQ,
@@ -107,6 +108,7 @@ InitialState = WorkState[<|
 	"initialized" -> False,
 	"openedDocs" -> <||>,
 	"client" -> Null,
+	"traceValue" -> TraceValue["Off"],
 	"diagnosticsOverrides" -> DiagnosticsOverrides[<|
 		"mitigated" -> {},
 		"suppressed" -> {}
@@ -816,13 +818,7 @@ handleMessage[msg_Association, state_WorkState] := With[
 		{"Continue", state},
 		(* notification*)
 		NotificationQ[msg],
-		handleNotification[method, msg, state]
-		// Function[{input}, Block[{res},
-			LogDebug["Start handling " <> method];
-			res = input;
-			LogDebug["Finish handling " <> method];
-			res
-		], {HoldFirst}],
+		handleNotification[method, msg, state] // traceHandler,
 		(* response *)
 		ResponseQ[msg],
 		handleResponse[state["pendingServerRequests"][msg["id"]], msg, state],
@@ -836,13 +832,7 @@ handleMessage[msg_Association, state_WorkState] := With[
 			KeyExistsQ[ServerConfig["requestDelays"], method],
 			scheduleDelayedRequest[method, msg, state],
 			True,
-			handleRequest[method, msg, state]
-			// Function[{input}, Block[{res},
-				LogDebug["Start handling " <> method];
-				res = input;
-				LogDebug["Finish handling " <> method];
-				res
-			], {HoldFirst}]
+			handleRequest[method, msg, state] // traceHandler
 		]
 	]
 ]
@@ -887,6 +877,34 @@ handleDapMessage[msg_Association, state_WorkState] := Module[
 	]
 ]
 
+
+Attributes[traceHandler] = {
+	HoldFirst
+}
+
+traceHandler[expr:(handler_[method_String, msg_, state_WorkState])] := Block[
+	{
+		res, startTime,
+		methodString = StringJoin[
+			method,
+			msg["id"]
+			// Replace[{
+				_?MissingQ -> "",
+				id_ :> StringJoin[" - (", ToString[id], ")"]
+			}]
+		]
+	},
+
+	LogDebug["Start handling " <> method];
+	startTime = Now;
+	sendNotification["$/logTrace", StringTemplate["Start handling '`1`'"][methodString], "", state];
+	res = expr;
+	sendNotification["$/logTrace", StringTemplate["Finish handling '`1`' in `2`ms"][
+		methodString,
+		QuantityMagnitude[(Now - startTime), "Milliseconds"] // Round
+	], "", state];
+	res
+]
 
 
 (* ::Section:: *)
@@ -947,7 +965,7 @@ scheduleDelayedRequest[method_String, msg_, state_WorkState, OptionsPattern[]] :
 			}],
 			"id" -> (msg["id"] // Replace[Except[_Integer] -> Missing["NoIdNeeded"]]),
 			"params" -> getScheduleTaskParameter[method, msg, state],
-			"callback" -> (handleRequest[method, msg, #1]&),
+			"callback" -> ((handleRequest[method, msg, #1] // traceHandler)&),
 			"duplicatedFallback" -> OptionValue["DuplicatedFallback"]
 		|>]]
 	}
@@ -995,6 +1013,11 @@ handleRequest["initialize", msg_, state_WorkState] := (
 		Fold[ReplaceKey, state, {
 			"clientProcessId" -> msg["params"]["processId"],
 			"clientCapabilities" -> msg["params"]["capabilities"],
+			"traceValue" -> (
+				msg
+				// NestedLookup[{"params", "trace"}]
+				// Replace[_?MissingQ|_?(!MemberQ[TraceValue, #]&) -> TraceValue["Off"]]
+			),
 			"workspaceFolders" -> (
 				msg
 				// NestedLookup[{"params", "workspaceFolders"}]
@@ -2186,6 +2209,41 @@ handleNotification["initialized", msg_, state_] := (
 
 
 (* ::Subsection:: *)
+(*Set Trace*)
+
+
+handleNotification["$/setTrace", msg_, state_] := (
+	{
+		"Continue",
+		state // ReplaceKey[
+			"traceValue" -> msg["value"]
+		]
+	}
+)
+
+
+(* ::Subsection:: *)
+(*Log Trace*)
+
+
+sendNotification[method:"$/logTrace", msg_, verbose_, state_WorkState] := (
+	If[state["traceValue"] =!= TraceValue["Off"],
+	sendMessage[state["client"], NotificationMessage[<|
+		"method" -> method,
+		"params" -> <|
+			"message" -> msg,
+			If[state["traceValue"] === TraceValue["Verbose"],
+				"verbose" -> verbose,
+				Nothing
+			]
+		|>
+	|>]]
+	];
+)
+
+
+
+(* ::Subsection:: *)
 (*exit*)
 
 
@@ -3054,13 +3112,7 @@ doNextScheduledTask[state_WorkState] := (
 						_?MissingQ :> If[!MissingQ[task["callback"]],
 							(* If the function is time constrained, than the there should not be a lot of lags. *)
 							(* TimeConstrained[task["callback"][newState, task["params"]], 0.1, sendMessage[state["client"], ResponseMessage[<|"id" -> task["params"]["id"], "result" -> <||>|>]]], *)
-							task["callback"][newState, task["params"]]
-							// Function[{input}, Block[{res},
-								LogDebug["Start handling " <> task["type"]];
-								res = input;
-								LogDebug["Finish handling " <> task["type"]];
-								res
-							], {HoldFirst}],
+							task["callback"][newState, task["params"]],
 							sendMessage[newState["client"], ResponseMessage[<|
 								"id" -> task["id"],
 								"error" -> ServerError[

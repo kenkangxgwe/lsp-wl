@@ -91,6 +91,12 @@ ErrorCodes = <|
     "ContentModified" -> -32801
 |>
 
+TraceValue = <|
+    "Off" -> "off",
+    "Messages" -> "messages",
+    "Verbose" -> "verbose"
+|>
+
 MarkupKind = <|
     "PlainText" -> "plaintext",
     "Markdown" -> "markdown"
