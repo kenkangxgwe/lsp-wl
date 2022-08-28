@@ -184,12 +184,12 @@ ServerConfig = <|
 	},
 	(* default delays (seconds) *)
 	"requestDelays" -> <|
-		(* "textDocument/publishDiagnostics" -> 2.5,
-		"textDocument/signatureHelp" -> 0.5,
-		"textDocument/documentSymbol" -> 4.0,
-		"textDocument/documentHighlight" -> 0.5,
-		"textDocument/documentLink" -> 4.0,
-		"textDocument/documentColor" -> 5.0 *)
+		(* "textDocument/signatureHelp" -> 0.5, *)
+		"textDocument/documentSymbol" -> 1.5,
+		"textDocument/documentHighlight" -> 1.5,
+		"textDocument/documentLink" -> 1.5,
+		"textDocument/publishDiagnostics" -> 2.5,
+		"textDocument/documentColor" -> 2.5
 	|>
 |>
 
@@ -2336,10 +2336,12 @@ openTextDocument[textDocument_TextDocumentItem, state_WorkState] := With[
 				// Autocomplete
 			)]
 	}]&)]
-	// handleRequest[
+	// scheduleDelayedRequest[
 		"textDocument/publishDiagnostics",
 		constructRequest["textDocument/publishDiagnostics", uri],
-	#]&
+		#,
+		"DuplicatedFallback" -> ({"Continue", #}&)
+	]&
 ]
 
 

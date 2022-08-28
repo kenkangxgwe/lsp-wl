@@ -261,7 +261,7 @@ divideCells[doc_TextDocument] := (
     // Fold[InsertCell]
     // TerminateCell
     // Reap
-    // MapAt[Replace[{codeRanges_List} :> codeRanges], 2]
+    // MapAt[First[#, {}]&, 2]
 )
 
 
@@ -1275,9 +1275,11 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All, o:OptionsPattern[]] := With[
         droppedPatterns = OptionValue["mitigated"] // Apply[Alternatives],
         hiddenPatterns = OptionValue["suppressed"] // Apply[Alternatives]
     },
-    GetDocumentText[doc, range]
-    // Replace[err:Except[_String] :> (LogError[doc]; "")]
-    // CodeInspector`CodeInspect[#, "TabWidth" -> 1]&
+
+    rangeToCst[doc, All]
+    // Flatten
+    // CodeParser`ContainerNode[String, #, <||>]&
+    // CodeInspector`CodeInspectCST
     // Replace[_?FailureQ -> {}]
     // Cases[CodeInspector`InspectionObject[tag:Except[hiddenPatterns, _String], description_, severity_, data_] :> Diagnostic[<|
         "range" -> (
