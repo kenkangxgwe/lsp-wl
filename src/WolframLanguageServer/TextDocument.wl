@@ -769,7 +769,7 @@ SourceToRange[{{startLine_, startCol_}, {endLine_, endCol_}}] := (
 
 GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
     {
-        line = pos["line"] + 1, character = pos["character"] + 1
+        line = pos["line"] + 1, character = pos["character"]
     },
 
     GetAstAtPosition[doc, pos]

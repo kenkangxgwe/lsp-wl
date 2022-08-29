@@ -365,6 +365,281 @@ VerificationTest[
 ],
 
 VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 0
+		|>]
+	],
+	Missing["NotFound"],
+	TestID -> "GetFunctionName.BeforeHead"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 3
+		|>]
+	],
+	"func",
+	TestID -> "GetFunctionName.AmongHead"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 7
+		|>]
+	],
+	"func",
+	TestID -> "GetFunctionName.AmongParams"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 10
+		|>]
+	],
+	"b",
+	TestID -> "GetFunctionName.Nested"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 12
+		|>]
+	],
+	"b",
+	TestID -> "GetFunctionName.AfterNested"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func[a, b[1], c]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 8
+		|>]
+	],
+	"func",
+	TestID -> "GetFunctionName.NestedBeforeHead"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"func@a"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	"func",
+	TestID -> "GetFunctionName.Prefix"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"a//func"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	"func",
+	TestID -> "GetFunctionName.Postfix"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				"123"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 2
+		|>]
+	],
+	Missing["NotFound"],
+	TestID -> "GetFunctionName.NoFunction"
+],
+
+VerificationTest[
+	GetFunctionName[
+		TextDocument[<|
+			"text" -> {
+				""
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 0
+		|>]
+	],
+	Missing["NotFound"],
+	TestID -> "GetFunctionName.EmptyLine"
+],
+
+VerificationTest[
+	GetTokenPrefix[
+		TextDocument[<|
+			"text" -> {
+				"Context`Function[LongNameParameter]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 17
+		|>]
+	],
+	"[",
+	TestID -> "GetTokenPrefix.BeforeHead"
+],
+
+VerificationTest[
+	GetTokenPrefix[
+		TextDocument[<|
+			"text" -> {
+				"Context`Function[LongNameParameter]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 4
+		|>]
+	],
+	"Cont",
+	TestID -> "GetTokenPrefix.Context"
+],
+
+VerificationTest[
+	GetTokenPrefix[
+		TextDocument[<|
+			"text" -> {
+				"Context`Function[LongNameParameter]"
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 12
+		|>]
+	],
+	"Context`Func",
+	TestID -> "GetTokenPrefix.SymbolWithContext"
+],
+
+VerificationTest[
+	GetTokenPrefix[
+		TextDocument[<|
+			"text" -> {
+				""
+			}
+		|>],
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 0
+		|>]
+	],
+	"",
+	TestID -> "GetTokenPrefix.EmptyLine"
+],
+
+VerificationTest[
+	GetCompletionPrefix[
+		TextDocument[<|
+			"text" -> {
+				"(* " <> "::func[]"
+			}
+		|>],
+		"(* " ~~ "::",
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 7
+		|>]
+	],
+	{"(* " <> "::fu"},
+	TestID -> "GetCompletionPrefix.StyleComment"
+],
+
+VerificationTest[
+	GetCompletionPrefix[
+		TextDocument[<|
+			"text" -> {
+				"\\\\LongName"
+			}
+		|>],
+		"\\",
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 7
+		|>]
+	],
+	{"\\\\LongN", "\\LongN"},
+	TestID -> "GetCompletionPrefix.MultiSlashes"
+],
+
+VerificationTest[
+	GetCompletionPrefix[
+		TextDocument[<|
+			"text" -> {
+				""
+			}
+		|>],
+		".",
+		LspPosition[<|
+			"line" -> 0,
+			"character" -> 0
+		|>]
+	],
+	{},
+	TestID -> "GetCompletionPrefix.StyleComment"
+],
+
+VerificationTest[
 	FindAllCodeRanges[TextDocument[<|
 		"text" -> {
 			"(* " ~~ "::Package::" ~~ " *)",
