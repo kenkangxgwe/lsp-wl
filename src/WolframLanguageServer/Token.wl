@@ -1155,13 +1155,13 @@ GetInlayHint[doc_TextDocument, range_LspRange, o:OptionsPattern[]] := (
         |>],
         InlayHintInfo["Number", numberValue_?NumericQ, numberRange_LspRange] :> InlayHint[<|
             "position" -> numberRange["end"],
-            "label" -> (numberValue // ToString),
+            "label" -> (numberValue // StringTemplate["=`1`"]),
             "paddingLeft" -> True,
             "paddingRight" -> True
         |>],
         InlayHintInfo["String", stringValue_String, stringRange_LspRange] :> InlayHint[<|
             "position" -> stringRange["end"],
-            "label" -> StringJoin["\"", stringValue // StringReplace[PUACharactersReplaceRule], "\""],
+            "label" -> (stringValue // StringReplace[PUACharactersReplaceRule] // StringTemplate["=\"`1`\""]),
             "paddingLeft" -> True,
             "paddingRight" -> True
         |>],

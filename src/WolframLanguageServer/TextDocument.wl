@@ -823,6 +823,7 @@ GetFunctionName[doc_TextDocument, pos_LspPosition] := With[
     ))
 ]
 
+
 getFunctionNameImpl[ast_, indices_] := (
     Extract[ast, indices // Replace[{} -> {All}]]
     // Replace[{
@@ -1174,14 +1175,18 @@ ConcreteInlayHintRules[range_LspRange] := {
             data // Key[CodeParser`Source] // SourceToRange,
             function
         ]
-    ),
+    )
+}
+
+
+AbstractInlayHintRules[range_LspRange] = {
     integer:AstPattern["Integer"][integerLiteral_, data_]?(NodeWithinRangeQ[range]) :> With[
         {
             numberValue = CodeParser`FromNode[integer]
         },
         InlayHintInfo[
             "Number",
-            CodeParser`FromNode[integer],
+            numberValue,
             data // Key[CodeParser`Source] // SourceToRange
         ]
         /; (
@@ -1194,7 +1199,7 @@ ConcreteInlayHintRules[range_LspRange] := {
         },
         InlayHintInfo[
             "Number",
-            CodeParser`FromNode[real],
+            numberValue,
             data // Key[CodeParser`Source] // SourceToRange
         ]
         /; (
@@ -1214,10 +1219,7 @@ ConcreteInlayHintRules[range_LspRange] := {
             symbolName,
             data // Key[CodeParser`Source] // SourceToRange
         ]
-    )
-}
-
-AbstractInlayHintRules[range_LspRange] = {
+    ),
     AstPattern["Function"][functionName:"If", arguments_, data_]?(NodeWithinRangeQ[range][#] && Head[#] === CodeParser`CallNode&) :> (
         Fold[tagAndTrim, arguments, {"condition", "t", "f", "u"}]
         // Reap
@@ -1280,6 +1282,7 @@ GetInlayHintInfo[doc_TextDocument, range_LspRange] := With[
         // Map[Cases[rangeToAst[doc, codeRanges], #, Infinity]&]
     }
     // Flatten
+    // DeleteDuplicates
  ]
 
 
