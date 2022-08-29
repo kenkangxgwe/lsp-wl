@@ -23,6 +23,9 @@ Needs["WolframLanguageServer`Specification`"]
 Needs["WolframLanguageServer`TextDocument`"]
 
 
+InitializeSystemResources[]
+
+
 If[List::usage // MatchQ["" | _MessageName] // Not,
 {
 

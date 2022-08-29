@@ -61,14 +61,19 @@ ShowTestReport[report_TestReportObject, context_String] := {
 				} // Map[ToString] // StringJoin
 			},
 			{"Time Elapsed: ", report["TimeElapsed"]}
-		}],
+		}, Alignment -> {{Right, Left}, Automatic}],
 		Column[ShowTestResult /@ Cases[report["TestsFailed"], _TestResultObject, Infinity]]
 	}]
 }
 
 
 ShowTestResult[result_TestResultObject] := (
-	Grid[KeyValueMap[List, result[result["Properties"]]], Dividers->{Center, {1 -> True, -1 -> True}}, Alignment -> Left]
+	Grid[KeyValueMap[List, result[{
+		"TestID", "TestKey", "Created", "Outcome", "Input", "ExpectedOutput",
+		"ExpectedMessages", "ActualOutput", "ActualMessages", "SameTest",
+		"TimeConstraint", "AbsoluteTimeUsed", "CPUTimeUsed", "MemoryConstraint",
+		"MemoryUsed"
+	}]], Dividers->{Center, {1 -> True, -1 -> True}}, Alignment -> Left]
 )
 
 
