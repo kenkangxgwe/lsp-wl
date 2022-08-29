@@ -472,9 +472,7 @@ getMinimalCodeRangesCoverRange[doc_TextDocument, range_LspRange] := With[
     getCodeRanges[doc]
     // Keys
     // Select[codeRange \[Function] (
-        codeRange
-        // Map[Between[{startLine, endLine}]]
-        // Apply[Or]
+        !(First[codeRange] > endLine || Last[codeRange] < startLine)
     )]
 ]
 
@@ -585,6 +583,13 @@ rangeCoversQ[range1_LspRange, pos_LspPosition] := (
 rangeCoversQ[range1_LspRange, range2_LspRange] := (
     rangeCoversQ[range1, range2["start"]] &&
     rangeCoversQ[range1, range2["end"]]
+)
+
+
+rangeOverlapsQ[range1_LspRange, range2_LspRange] := (
+    rangeCoversQ[range1, range2["start"]] ||
+    rangeCoversQ[range1, range2["end"]] ||
+    rangeCoversQ[range2, range1["end"]]
 )
 
 
@@ -728,7 +733,31 @@ NodeContainsPosition[node_, pos:{_Integer, _Integer}] := (
 
 NodeWithinRangeQ[range_LspRange][node_] := NodeWithinRangeQ[node, range]
 NodeWithinRangeQ[node_, range_] := (
-    rangeCoversQ[range, node // Last // Key[CodeParser`Source] // SourceToRange]
+    node
+    // Last
+    // Key[CodeParser`Source]
+    // Replace[{
+        _?MissingQ -> False,
+        source_ :> (
+            source // SourceToRange
+            // rangeCoversQ[range, #]&
+        )
+    }]
+)
+
+
+NodeOverlapsRangeQ[range_LspRange][node_] := NodeOverlapsRangeQ[node, range]
+NodeOverlapsRangeQ[node_, range_] := (
+    node
+    // Last
+    // Key[CodeParser`Source]
+    // Replace[{
+        _?MissingQ -> False,
+        source_ :> (
+            source // SourceToRange
+            // rangeOverlapsQ[range, #]&
+        )
+    }]
 )
 
 
@@ -1774,7 +1803,7 @@ hasReferencePage[symbol_String] := (
     If[$referencePageCache // KeyMemberQ[symbol],
         $referencePageCache[symbol],
         $referencePageCache[symbol] =
-            FindFile[FileNameJoin[{"ReferencePages", "Symbols", symbol <> ".nb"}]]
+            FindFile[FileNameJoin[{PacletManager`$SystemDocumentationDirectory, $Language, "ReferencePages", "Symbols", symbol <> ".nb"}]]
             // If[!FailureQ[#] &&
                 (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
                 (!$OperatingSystem == "Windows" || AbsoluteFileName[#] == #),
@@ -1784,37 +1813,28 @@ hasReferencePage[symbol_String] := (
     ]
 )
 
-GetCodeActionsInRange[doc_TextDocument, range_LspRange] := With[
-    {
-        startPos = {range["start"]["line"] + 1, range["start"]["character"] + 1},
-        endPos = {range["end"]["line"] + 1, range["end"]["character"]}
-    },
-    {FirstCase[
-        GetAstAtPosition[doc, range["start"]],
-        AstPattern["Token"][tokenString_]?((
-            (* The token node overlaps the range *)
-            CompareNodePosition[#, startPos, -1] >= 0 &&
-            CompareNodePosition[#, endPos, 1] <= 0
-        )&) :> (
-            hasReferencePage[tokenString]
-            // Replace[referencePath_?(MissingQ /* Not) :> (
-                LspCodeAction[<|
-                    "title" -> "Documentation: " <> tokenString,
-                    "kind" -> CodeActionKind["Empty"],
-                    "command" -> <|
-                        "title" -> "Documentation: " <> tokenString,
-                        "command" -> "openRef",
-                        "arguments" -> {referencePath}
-                    |>
-                |>]
-            )]
+GetCodeActionsInRange[doc_TextDocument, range_LspRange] := (
+    getMinimalCodeRangesCoverRange[doc, range]
+    // rangeToAst[doc, #]&
+    // Cases[#,
+        AstPattern["Symbol"][symbolName_]?(NodeOverlapsRangeQ[range]) :> (
+            symbolName
         ),
-        Missing["NotFound"],
-        AstLevelspec["DataWithSource"],
-        Heads -> False
-    ]}
-    // DeleteMissing
-]
+        AstLevelspec["LeafNode"]
+    ]&
+    // DeleteDuplicates
+    // Map[symbolName \[Function]
+        LspCodeAction[<|
+            "title" -> "Lookup: " <> symbolName,
+            "kind" -> CodeActionKind["Empty"],
+            "command" -> <|
+                "title" -> "Lookup: " <> symbolName,
+                "command" -> "lookup",
+                "arguments" -> {symbolName}
+            |>
+        |>]
+    ]
+)
 
 
 (* ::Section:: *)

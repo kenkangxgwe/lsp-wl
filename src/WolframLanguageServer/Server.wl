@@ -165,7 +165,7 @@ ServerCapabilities = <|
 	"selectionRangeProvider" -> True,
 	"executeCommandProvider" -> <|
 		"commands" -> {
-			"openRef",
+			"lookup",
 			"dap-wl.evaluate-file",
 			"dap-wl.evaluate-range"
 		}
@@ -1096,14 +1096,19 @@ handleRequest["workspace/executeCommand", msg_, state_] := With[
 
 
 (* ::Subsubsection:: *)
-(*openRef*)
+(*lookup*)
 
 
-executeCommand["openRef", msg_, state_WorkState] := (
-  msg["params"]["arguments"]
-  // First
-  // SystemOpen
-  // UsingFrontEnd;
+executeCommand["lookup", msg_, state_WorkState] := (
+	msg["params"]["arguments"]
+	// First
+	// Documentation`HelpLookup
+	// {
+		NotebookFileName
+		/* SystemOpen,
+		NotebookClose
+	} // Through
+	// UsingFrontEnd;
 
 	sendMessage[state["client"], ResponseMessage[<|
 		"id" -> msg["id"],
