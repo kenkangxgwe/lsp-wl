@@ -702,8 +702,7 @@ VerificationTest[
 	],
 	{
 		{
-			HoverInfo["Message", {"General", "obspkg"}],
-			HoverInfo["String", {"\"obspkg\"", "obspkg"}]
+			HoverInfo["Message", {"General", "obspkg"}]
 		},
 		LspRange[<|
 			"start" -> LspPosition[<|
