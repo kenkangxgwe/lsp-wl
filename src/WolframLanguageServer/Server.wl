@@ -1338,7 +1338,7 @@ getCache[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := (
 
 
 getScheduleTaskParameter[method:"textDocument/publishDiagnostics", msg_, state_WorkState] := (
-	uri
+	msg["params"]["textDocument"]["uri"]
 )
 
 
@@ -1696,6 +1696,11 @@ getCache[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
 )
 
 
+getScheduleTaskParameter[method:"textDocument/documentSymbol", msg_, state_WorkState] := (
+	msg["params"]["textDocument"]["uri"]
+)
+
+
 (* ::Subsection:: *)
 (*Inlay Hint*)
 
@@ -1941,7 +1946,7 @@ getCache[method:"textDocument/documentLink", msg_, state_WorkState] := (
 
 
 getScheduleTaskParameter[method:"textDocument/documentLink", msg_, state_WorkState] := (
-	msg
+	msg["params"]["textDocument"]["uri"]
 )
 
 
