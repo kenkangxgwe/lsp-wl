@@ -207,10 +207,12 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
             // Association,
             If[$CodeRange // KeyExistsQ[newDoc["uri"]],
                 matchCodeRanges[textDiff, $CodeRange[newDoc["uri"]] // Keys, codeRanges]
-                // Map[Apply[{oldRange, newRange} \[Function] (
-                    $CodeRange[newDoc["uri"]][oldRange]
-                    // Map[moveSyntaxTree[#, oldRange -> newRange]&]
-                )]],
+                // KeyValueMap[{oldRange, newRange} \[Function] (
+                    newRange -> (
+                        $CodeRange[newDoc["uri"]][oldRange]
+                        // Map[moveSyntaxTree[#, oldRange -> newRange]&]
+                    )
+                )],
                 <||>
             ]
         } // Merge[Last]
@@ -552,14 +554,18 @@ rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
 
 
 moveSyntaxTree[syntaxTree_, oldRange:{oldStart_, oldEnd_} -> newRange:{newStart_, newEnd_}] := (
-    If[(oldEnd - oldStart) === (newEnd - newStart),
+    If[(oldEnd - oldStart) =!= (newEnd - newStart),
         LogError[StringTemplate["Cannot move syntax tree from `1` to `2`, since they are not of the same size"][oldRange, newRange]];
         syntaxTree,
         Replace[syntaxTree,
-            KeyValuePattern[CodeParser`Source -> {{oldLine1_, oldCharacter1_}, {oldLine2_, oldCharacter2_}}] :> (
-                CodeParser`Source -> {{oldLine1 - oldStart + newStart, oldCharacter1}, {oldLine2 - oldStart + newStart, oldCharacter2}}
+            data:KeyValuePattern[CodeParser`Source -> {{oldLine1_, oldCharacter1_}, {oldLine2_, oldCharacter2_}}] :> (
+                data
+                // ReplacePart[Key[CodeParser`Source] -> {
+                    {oldLine1 - oldStart + newStart, oldCharacter1},
+                    {oldLine2 - oldStart + newStart, oldCharacter2}
+                }]
             ),
-            AstLevelSpec["DataWithSource"]
+            AstLevelspec["DataWithSource"]
         ]
     ]
 )
