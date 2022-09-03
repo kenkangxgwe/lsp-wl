@@ -1810,22 +1810,6 @@ FindTopLevelSymbols[node_, name_String] := (
 (*CodeAction*)
 
 
-$referencePageCache = <||>
-
-hasReferencePage[symbol_String] := (
-    If[$referencePageCache // KeyMemberQ[symbol],
-        $referencePageCache[symbol],
-        $referencePageCache[symbol] =
-            FindFile[FileNameJoin[{PacletManager`$SystemDocumentationDirectory, $Language, "ReferencePages", "Symbols", symbol <> ".nb"}]]
-            // If[!FailureQ[#] &&
-                (* FindFile is case-insensitive on Windows. Needs AbsoluteFileName to confirm. *)
-                (!$OperatingSystem == "Windows" || AbsoluteFileName[#] == #),
-                #,
-                Missing["NotFound"]
-            ]&
-    ]
-)
-
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := (
     getMinimalCodeRangesCoverRange[doc, range]
     // rangeToAst[doc, #]&
