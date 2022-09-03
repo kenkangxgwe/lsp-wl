@@ -525,6 +525,7 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
         /* (AssociateTo[$CodeRange[uri], #]&)
         /* Lookup[uri]
         /* Lookup[ranges]
+        /* Map[ReleaseHold]
     ]
 ]
 
@@ -548,6 +549,15 @@ rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
             {StringRepeat::intp (* before 12.0 *)}
         ] // Quiet,
     #]&
+)
+
+
+Attributes[moveSyntaxTree] = {HoldFirst}
+
+
+(* Lazy Evaluation *)
+moveSyntaxTree[Hold[moveSyntaxTree[syntaxTree_, oldRange_-> transientRange_]], transientRange_ -> newRange_] := (
+    moveSyntaxTree[syntaxTree, oldRange -> newRange] // Hold
 )
 
 
