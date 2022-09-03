@@ -346,7 +346,7 @@ DeclareType[Diagnostic, <|
     "code" -> _Integer|_String,
     "source" -> _String,
     "message" -> _String,
-    "tags" -> {_?(MemberQ[DiagnosticTag, #]&)},
+    "tags" -> {___?(MemberQ[DiagnosticTag, #]&)},
     "relatedInformation" -> {___DiagnosticRelatedInformation},
     "data" -> _
 |>]
