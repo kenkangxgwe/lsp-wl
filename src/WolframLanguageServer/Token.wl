@@ -100,8 +100,7 @@ systemIdentifierQ[token_String] := (
             "System`" ~~ token
         )
     }]
-    // Names
-    // (# =!= {})&
+    // NameQ
 )
 
 

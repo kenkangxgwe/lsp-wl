@@ -2341,7 +2341,7 @@ openTextDocument[textDocument_TextDocumentItem, state_WorkState] := With[
 				// StringCases[(LetterCharacter | "$" | "`") ~~ (WordCharacter | "$" | "`")...]
 				// Catenate
 				// DeleteDuplicates
-				// Cases[_?(Names[#]==={}&)]
+				// Cases[_?(NameQ/*Not)]
 				// Map[<|"String" -> ToLowerCase[#], "Result" -> #|>&]
 				// Autocomplete
 			)]
@@ -2493,7 +2493,7 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 				// StringCases[(LetterCharacter | "$" | "`") ~~ (WordCharacter | "$" | "`")...]
 				// Catenate
 				// DeleteDuplicates
-				// Cases[_?(Names[#]==={}&)]
+				// Cases[_?(NameQ /* Not)]
 				// Map[<|"String" -> ToLowerCase[#], "Result" -> #|>&]
 				// Autocomplete
 			)]
