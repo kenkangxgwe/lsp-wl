@@ -1037,13 +1037,19 @@ handleRequest["initialize", msg_, state_WorkState] := (
 			// Replace[{
 				_?MissingQ -> Nothing,
 				diagnosticsOverrides_ :> (
-					"diagnosticsOverrides" -> ConstructType[
-						diagnosticsOverrides,
-						DiagnosticsOverrides
-					]
-				)
-			}],
-			"showCodeCaptions" -> (
+                    "diagnosticsOverrides" -> DiagnosticsOverrides[<|
+                        "mitigated" -> (
+                            diagnosticsOverrides["mitigated"]
+                            // Replace[Null -> {}]
+                        ),
+                        "suppressed" -> (
+                            diagnosticsOverrides["suppressed"]
+                            // Replace[Null -> {}]
+                        )
+                    |>]
+                )
+            }],
+            "showCodeCaptions" -> (
 				msg
 				// NestedLookup[{"params", "initializationOptions", "showCodeCaptions"}]
 				// Replace[_?MissingQ -> False]
