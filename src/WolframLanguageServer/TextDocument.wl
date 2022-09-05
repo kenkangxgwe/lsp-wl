@@ -208,10 +208,17 @@ ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEven
             If[$CodeRange // KeyExistsQ[newDoc["uri"]],
                 matchCodeRanges[textDiff, $CodeRange[newDoc["uri"]] // Keys, codeRanges]
                 // KeyValueMap[{oldRange, newRange} \[Function] (
-                    newRange -> (
+                    newRange -> With[
+                        {
+                            offset = First[newRange] - First[oldRange]
+                        },
+
                         $CodeRange[newDoc["uri"]][oldRange]
-                        // Map[moveSyntaxTree[#, oldRange -> newRange]&]
-                    )
+                        // If[offset == 0,
+                            Identity,
+                            Map[Hold[moveSyntaxTree[#, offset]]&]
+                        ]
+                    ]
                 )],
                 <||>
             ]
@@ -491,41 +498,47 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
         uri = doc["uri"]
     },
 
-    ranges
-    // If[doc["uri"] // MissingQ,
-        Identity,
-        (* If cached, get missing ranges only *)
-        Extract[
-            doc
-            // getCodeRanges
-            // Lookup[ranges]
-            // Position[#, _?MissingQ, {1}]&
-        ]
+    If[uri // MissingQ,
+        ranges
+        // Map[# -> Missing["NotParsed"]&]
+        // Association,
+        doc
+        // getCodeRanges
+        // KeyTake[ranges]
     ]
-    // Map[range \[Function] With[
-        {
-            cst = CodeParser`CodeConcreteParse[
-                rangeToCode[doc, range],
-                "TabWidth" -> 1
-            ]
-        },
+    // KeyValueMap[{range, syntaxTrees} \[Function] (
+        (*LogDebug[{range, syntaxTrees//Map[Head]}];*)
+        syntaxTrees
+        // Replace[{
+            _?MissingQ :> With[
+                {
+                    cst = CodeParser`CodeConcreteParse[
+                        rangeToCode[doc, range],
+                        "TabWidth" -> 1
+                    ]
+                },
 
-        range -> <|
-            "cst" -> Drop[Part[cst, 2], First[range] - 1],
-            "ast" -> Part[
-                cst
-                // CodeParser`Abstract`Aggregate
-                // CodeParser`Abstract`Abstract,
-            2]
-        |>
-    ]]
-    // If[doc["uri"] // MissingQ,
+                range -> <|
+                    "cst" -> Drop[Part[cst, 2], First[range] - 1],
+                    "ast" -> Part[
+                        cst
+                        // CodeParser`Abstract`Aggregate
+                        // CodeParser`Abstract`Abstract,
+                    2]
+                |>
+            ],
+            KeyValuePattern[{"cst" -> _Hold, "ast" -> _Hold}] :> (
+                range -> (syntaxTrees // Map[ReleaseHold /* Replace[err:Except[_List]:> LogError[err]]])
+            ),
+            _ :> Nothing
+        }]
+    )]
+    // If[uri // MissingQ,
         Values,
-        Replace[{} -> <||>]
+        Replace[{} -> <||>] (* Due to a bug that AssociateTo[assoc[key], {}] will return assoc[key] *)
         /* (AssociateTo[$CodeRange[uri], #]&)
         /* Lookup[uri]
         /* Lookup[ranges]
-        /* Map[ReleaseHold]
     ]
 ]
 
@@ -552,25 +565,21 @@ rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
 )
 
 
-Attributes[moveSyntaxTree] = {HoldFirst}
-
-
 (* Lazy Evaluation *)
-moveSyntaxTree[Hold[moveSyntaxTree[syntaxTree_, oldRange_-> transientRange_]], transientRange_ -> newRange_] := (
-    moveSyntaxTree[syntaxTree, oldRange -> newRange] // Hold
+moveSyntaxTree[Hold[moveSyntaxTree[syntaxTree_, oldOffset_Integer]], newOffset_Integer] := (
+    moveSyntaxTree[syntaxTree, oldOffset + newOffset]
 )
 
 
-moveSyntaxTree[syntaxTree_, oldRange:{oldStart_, oldEnd_} -> newRange:{newStart_, newEnd_}] := (
-    If[(oldEnd - oldStart) =!= (newEnd - newStart),
-        LogError[StringTemplate["Cannot move syntax tree from `1` to `2`, since they are not of the same size"][oldRange, newRange]];
+moveSyntaxTree[syntaxTree_, offset_Integer] := (
+    If[offset == 0,
         syntaxTree,
         Replace[syntaxTree,
             data:KeyValuePattern[CodeParser`Source -> {{oldLine1_, oldCharacter1_}, {oldLine2_, oldCharacter2_}}] :> (
                 data
                 // ReplacePart[Key[CodeParser`Source] -> {
-                    {oldLine1 - oldStart + newStart, oldCharacter1},
-                    {oldLine2 - oldStart + newStart, oldCharacter2}
+                    {oldLine1 + offset, oldCharacter1},
+                    {oldLine2 + offset, oldCharacter2}
                 }]
             ),
             AstLevelspec["DataWithSource"]
