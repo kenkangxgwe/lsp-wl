@@ -14,6 +14,7 @@ ClearAll[Evaluate[Context[] <> "*"]]
 TextDocument::usage = "is the type of the text document."
 CreateTextDocument::usage = "CreateTextDocument[textDocumentItem_TextDocumentItem] returns a TextDocument object"
 ChangeTextDocument::usage = "ChangeTextDocument[doc_TextDocument, change_TextDocumentContentChangeEvent] returns the changed doc from the input."
+CloseTextDocument::usage = "CloseTextDocument[uri_DocumentUri] clears up the cached data for doc with specified uri."
 HoverInfo::usage = "HoverInfo[hoverKind, {literal, docTag}] Basic information to generate a hover message."
 GetHoverInfo::usage = "GetHoverInfo[doc_TextDocument, pos_LspPosition] gives the HoverInfo and range at the given position."
 InlayHintInfo::usage = "InlayHintInfo[inlayHintKind, literal, range, data] Basic information to generate an inlay hint."
@@ -70,6 +71,9 @@ $Cell = <||>
 
 (* $CodeRange stores the key-value pairs of codeRange and its AST for each uri *)
 $CodeRange = <||>
+
+(* $CodeCells stores partial top level ranges in each cell. *)
+$CodeCells = <||>
 
 
 (* ::Section:: *)
@@ -128,10 +132,16 @@ CreateTextDocument[textDocumentItem_TextDocumentItem] := With[
     },
     doc
     // divideCells
-    // Apply[{cell, codeRanges} \[Function] (
+    // Apply[{cell, codeCellRanges} \[Function] (
         AssociateTo[$Cell, doc["uri"] -> cell];
+        AssociateTo[$CodeCells, doc["uri"] -> (
+            codeCellRanges
+            // Map[Interval]
+            // Map[# -> {#}&]
+            // Association
+        )];
         AssociateTo[$CodeRange, doc["uri"] -> (
-            codeRanges
+            codeCellRanges
             // Map[# -> Missing["NotParsed"]&]
             // Association
         )];
@@ -145,88 +155,102 @@ CreateTextDocument[textDocumentItem_TextDocumentItem] := With[
 
 
 (* There are three cases, delete, replace and add. *)
-ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := With[
+ChangeTextDocument[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := (
+    doc
+    // ReplaceKey["text" -> (changeDocText[doc, contextChange])]
+    // ReplaceKey["lastUpdate" -> Now]
+    // moveCells[doc, #]&
+)
+
+
+changeDocText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] := With[
     {
-        oldtext = doc["text"],
-        newtext = StringSplit[contextChange["text"], EOL, All]
+        oldText = doc["text"],
+        newText = StringSplit[contextChange["text"], EOL, All],
+        range = contextChange["range"]
     },
 
-    
-    KeyDropFrom[$Cell, doc["uri"]];
-    ReplaceKey[doc, "text" -> (
-        contextChange["range"]
-        // Replace[{
-            _?MissingQ :> newtext,
-            range_LspRange :> (
-                Join[
-                    Take[oldtext, range["start"]["line"]],
-                    newtext
-                    // MapAt[With[
-                        {
-                            firstLine = Part[oldtext, range["start"]["line"] + 1]
-                        },
+	If[range // MissingQ,
+        newText,
+        Join[
+            Take[oldText, range["start"]["line"]],
+            newText
+            // MapAt[With[
+                {
+                    firstLine = Part[oldText, range["start"]["line"] + 1]
+                },
 
-                        If[range["start"]["character"] > StringLength[firstLine],
-                            LogError[StringTemplate["The line `` is shorter than ``"][firstLine, range["start"]["character"]]]
-                        ];
+                If[range["start"]["character"] > StringLength[firstLine],
+                    LogError[StringTemplate["The line `` is shorter than ``"][firstLine, range["start"]["character"]]]
+                ];
+                StringJoin[StringTake[firstLine, UpTo[range["start"]["character"]]], #]&
+            ], 1]
+            // MapAt[With[
+                {
+                    lastLine = Part[oldText, range["end"]["line"] + 1]
+                },
 
-                        StringJoin[StringTake[firstLine, UpTo[range["start"]["character"]]], #]&
+                If[range["end"]["character"] > StringLength[lastLine],
+                    LogError[StringTemplate["The line `` is shorter than ``"][lastLine, range["end"]["character"]]]
+                ];
+                StringJoin[#, StringDrop[lastLine, UpTo[range["end"]["character"]]]]&
+            ], -1],
+            Drop[oldText, range["end"]["line"] + 1]
+        ]
+    ]
+]
 
-                    ], 1]
-                    // MapAt[With[
-                        {
-                            lastLine = Part[oldtext, range["end"]["line"] + 1]
-                        },
 
-                        If[range["end"]["character"] > StringLength[lastLine],
-                            LogError[StringTemplate["The line `` is shorter than ``"][lastLine, range["end"]["character"]]]
-                        ];
+moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
+    {
+        matchedCodeRanges = If[$CodeCells // KeyExistsQ[newDoc["uri"]],
+            SequenceAlignment[oldDoc["text"], newDoc["text"]]
+            // matchCodeRanges[#, $CodeCells[newDoc["uri"]]]&,
+            <||>
+        ],
+        cells, codeCellRanges
+    },
 
-                        StringJoin[#, StringDrop[lastLine, UpTo[range["end"]["character"]]]]&
-
-                    ], -1],
-                    Drop[oldtext, range["end"]["line"] + 1]
+    {cells, codeCellRanges} = newDoc // divideCells;
+    AssociateTo[$Cell, newDoc["uri"] -> cells];
+    {
+        codeCellRanges
+        // Map[Interval]
+        // Map[# -> {#}&],
+        matchedCodeRanges
+        // KeyValueMap[{oldRange, offset} \[Function] (
+            (oldRange + offset) -> (
+                $CodeCells[newDoc["uri"]][oldRange] + offset
+            )
+        )]
+    } // Merge[Last]
+    // AssociateTo[$CodeCells, newDoc["uri"] -> #]&;
+    {
+        codeCellRanges
+        // Map[# -> Missing["NotParsed"]&],
+        matchedCodeRanges
+        // KeyValueMap[{oldRange, offset} \[Function] (
+            First[oldRange + offset] -> (
+                $CodeRange[newDoc["uri"]][oldRange // First]
+                // If[offset == 0,
+                    Identity,
+                    Map[Hold[moveSyntaxTree[#, offset]]&]
                 ]
             )
-        }]
-    )]
-    // ReplaceKey["lastUpdate" -> (
-        Now
-    )]
-    // (newDoc \[Function] Block[
-        {
-            textDiff = SequenceAlignment[oldtext, newtext],
-            cells, codeRanges
-        },
-
-        {cells, codeRanges} = newDoc // divideCells;
-        AssociateTo[$Cell, newDoc["uri"] -> cells];
-        {
-            codeRanges
-            // Map[# -> Missing["NotParsed"]&]
-            // Association,
-            If[$CodeRange // KeyExistsQ[newDoc["uri"]],
-                matchCodeRanges[textDiff, $CodeRange[newDoc["uri"]] // Keys, codeRanges]
-                // KeyValueMap[{oldRange, newRange} \[Function] (
-                    newRange -> With[
-                        {
-                            offset = First[newRange] - First[oldRange]
-                        },
-
-                        $CodeRange[newDoc["uri"]][oldRange]
-                        // If[offset == 0,
-                            Identity,
-                            Map[Hold[moveSyntaxTree[#, offset]]&]
-                        ]
-                    ]
-                )],
-                <||>
-            ]
-        } // Merge[Last]
-        // AssociateTo[$CodeRange, newDoc["uri"] -> #]&;
-        newDoc
-    ])
+        )]
+    } // Merge[Last]
+    // AssociateTo[$CodeRange, newDoc["uri"] -> #]&;
+    newDoc
 ]
+
+
+(* ::Section:: *)
+(*Close Text Document*)
+
+
+CloseTextDocument[uri_DocumentUri] := (
+    {$Cell, $CodeCells, $CodeRange} // KeyDropFrom[uri]
+)
 
 
 (* ::Section:: *)
@@ -433,41 +457,40 @@ getCodeRanges[doc_TextDocument] := (
 )
 
 
-matchCodeRanges[textDiff_, oldCodeRanges_List, newCodeRanges_List] := (
+matchCodeRanges[textDiff_, codeCells_Association] := Block[
+    {
+        commonRanges = {}
+    },
     textDiff
     // Prepend[{1, 1}]
     // Fold[{startLines, diff} \[Function] (
         diff
         // Replace[{
             commonLines:{__String} :> (
-                <|
+                AppendTo[commonRanges, <|
                     "type" -> "common",
-                    "oldRange" -> ({0, (commonLines // Length) - 1} + (startLines // First)),
-                    "newRange" -> ({0, (commonLines // Length) - 1} + (startLines // Last))
-                |> // Sow;
+                    "oldRange" -> Interval[{0, (commonLines // Length) - 1} + (startLines // First)],
+                    "newRange" -> Interval[{0, (commonLines // Length) - 1} + (startLines // Last)]
+                |>];
                 startLines + (commonLines // Length)
             ),
             {oldDiff:{___String}, newDiff:{___String}} :> (
                 (* <|
                     "type" -> "diff",
-                    "oldBegin" -> ({0, (oldDiff // Length) - 1} + (startLines // First)),
-                    "newBegin" -> ({0, (newDiff // Length) - 1} + (startLines // Last))
-                |> // Sow; *)
+                    "oldRange" -> ({0, (oldDiff // Length) - 1} + (startLines // First)),
+                    "newRange" -> ({0, (newDiff // Length) - 1} + (startLines // Last))
+                |>;  *)
                 startLines + ({oldDiff, newDiff} // Map[Length])
             )
         }]
-    )]
-    // Reap 
-    // Last
-    // Last[#, {}]&
-    (* // Select[(#type == "common"&)] *)
-    // Map[Cases[newCodeRanges, codeRange_?(Interval /* IntervalMemberQ[#newRange // Interval]) :> (
-        {codeRange, (codeRange - (#newRange // First) + (#oldRange // First))}
+    )];
+    commonRanges
+    // Map[Cases[codeCells // Keys, codeRange_?(IntervalMemberQ[#oldRange]) :> (
+        codeRange -> (Min[#newRange] - Min[#oldRange])
     )]&]
     // Catenate
-    // Cases[{newRange_, oldRange_?(MemberQ[oldCodeRanges, #]&)} :> (oldRange -> newRange)]
     // Association
-)
+]
 
 
 getMinimalCodeRangesCoverRange[doc_TextDocument, range_LspRange] := With[

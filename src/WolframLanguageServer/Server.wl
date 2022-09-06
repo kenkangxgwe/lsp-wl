@@ -2401,7 +2401,7 @@ changeTextDocument[didChangeParam:KeyValuePattern[{
 
 closeTextDocument[didCloseParam:KeyValuePattern[{"uri" -> uri_DocumentUri}], state_WorkState] := (
 	LogInfo["Closing textDocument " <> uri];
-
+	CloseTextDocument[uri];
 	state
 	// ReplaceKeyBy[{"openedDocs"} -> KeyDrop[uri]]
 	// ReplaceKeyBy["caches" -> (Fold[ReplaceKeyBy, #, {
