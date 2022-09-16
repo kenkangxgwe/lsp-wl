@@ -121,7 +121,7 @@ TextDocument /: Format[textDocument_TextDocument] := ToString[textDocument]
 (*CreateTextDocument*)
 
 
-CreateTextDocument[textDocumentItem_TextDocumentItem] := With[ 
+CreateTextDocument[textDocumentItem_TextDocumentItem] := With[
     {
         doc = TextDocument[<|
             "uri" -> textDocumentItem["uri"],
@@ -137,13 +137,11 @@ CreateTextDocument[textDocumentItem_TextDocumentItem] := With[
         AssociateTo[$CodeCells, doc["uri"] -> (
             codeCellRanges
             // Map[Interval]
-            // Map[# -> {#}&]
-            // Association
+            // AssociationMap[List]
         )];
         AssociateTo[$CodeRange, doc["uri"] -> (
             codeCellRanges
-            // Map[# -> Missing["NotParsed"]&]
-            // Association
+            // AssociationMap[Missing["NotParsed"]&]
         )];
         doc
     )]
@@ -205,39 +203,46 @@ moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
     {
         matchedCodeRanges = If[$CodeCells // KeyExistsQ[newDoc["uri"]],
             SequenceAlignment[oldDoc["text"], newDoc["text"]]
-            // matchCodeRanges[#, $CodeCells[newDoc["uri"]]]&,
-            <||>
+            // matchCodeRanges[#, $CodeCells[newDoc["uri"]]]& ,
+            {}
         ],
         cells, codeCellRanges
     },
 
     {cells, codeCellRanges} = newDoc // divideCells;
     AssociateTo[$Cell, newDoc["uri"] -> cells];
-    {
-        codeCellRanges
-        // Map[Interval]
-        // Map[# -> {#}&],
-        matchedCodeRanges
-        // KeyValueMap[{oldRange, offset} \[Function] (
-            (oldRange + offset) -> (
-                $CodeCells[newDoc["uri"]][oldRange] + offset
-            )
-        )]
-    } // Merge[Last]
+    codeCellRanges
+    // Map[Interval]
+    // AssociationMap[List]
+    // Map[Apply[codeCell \[Function] (
+        Cases[matchedCodeRanges, {newRange_?(IntervalMemberQ[codeCell]), offset_} :> newRange]
+        // Replace[{} -> {codeCell}]
+        // Append[#,
+            {(Last[#] // Max) + 1, codeCell // Max}
+            // If[Apply[Greater],
+                Nothing,
+                Interval
+            ] // Through
+        ]&
+    )]]
     // AssociateTo[$CodeCells, newDoc["uri"] -> #]&;
     {
-        codeCellRanges
+        $CodeCells[newDoc["uri"]]
+        // Values
+        // Catenate
+        // Part[#, All, 1]&
         // Map[# -> Missing["NotParsed"]&],
         matchedCodeRanges
-        // KeyValueMap[{oldRange, offset} \[Function] (
-            First[oldRange + offset] -> (
-                $CodeRange[newDoc["uri"]][oldRange // First]
-                // If[offset == 0,
+        // Map[Apply[{newRange, offset} \[Function] (
+            $CodeRange[newDoc["uri"]][(newRange - offset) // First]
+            // If[MissingQ,
+                Nothing,
+                If[offset == 0,
                     Identity,
                     Map[Hold[moveSyntaxTree[#, offset]]&]
-                ]
-            )
-        )]
+                ] /* (First[newRange] -> #&)
+            ] // Through
+        )]]
     } // Merge[Last]
     // AssociateTo[$CodeRange, newDoc["uri"] -> #]&;
     newDoc
@@ -249,7 +254,9 @@ moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
 
 
 CloseTextDocument[uri_DocumentUri] := (
-    {$Cell, $CodeCells, $CodeRange} // KeyDropFrom[uri]
+    KeyDropFrom[$Cell, uri];
+    KeyDropFrom[$CodeCells, uri];
+    KeyDropFrom[$CodeRange, uri];
 )
 
 
@@ -445,15 +452,30 @@ ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // Equ
 (*Code Range*)
 
 
-getCodeRanges[doc_TextDocument] := (
+getCodeRanges[doc_TextDocument, _:All] := (
     If[(doc["uri"] // MissingQ) || ($CodeRange[doc["uri"]] // MissingQ),
         doc
         // divideCells
-        // Last
-        // Map[# -> Missing["NotParsed"]&]
-        // Association,
+        // Last,
         $CodeRange[doc["uri"]]
+        // Keys
     ]
+)
+
+
+getCodeRanges[doc_TextDocument, line_Integer] := (
+    getCodeRanges[doc, {line, line}]
+)
+
+
+getCodeRanges[doc_TextDocument, range:{_Integer, _Integer}] := (
+    getCodeRanges[doc, {range}]
+)
+
+
+getCodeRanges[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := (
+    getCodeRanges[doc]
+    // Select[(IntervalIntersection[#, ranges // Apply[Interval]] =!= Interval[])&]
 )
 
 
@@ -485,32 +507,37 @@ matchCodeRanges[textDiff_, codeCells_Association] := Block[
         }]
     )];
     commonRanges
-    // Map[Cases[codeCells // Keys, codeRange_?(IntervalMemberQ[#oldRange]) :> (
-        codeRange -> (Min[#newRange] - Min[#oldRange])
-    )]&]
+    // Map[(
+        {
+            codeCells
+            // KeySelect[(IntervalMemberQ[#oldRange])]
+            // KeyValueMap[{codeCell, topLevels} \[Function] (
+                topLevels
+                // Append[
+                    {(topLevels // Last // Max) + 1, codeCell // Max}
+                    // If[Apply[Greater],
+                        Nothing,
+                        Interval
+                    ] // Through
+                ]
+            )]
+            // Catenate,
+            Min[#newRange] - Min[#oldRange]
+        }
+        // {
+            Apply[Plus],
+            Last
+        } // Through
+        // Thread
+    )&]
     // Catenate
-    // Association
+    // Replace[err:Except[{{_Interval, _Integer}...}] :> (LogError[{"matchCodeRanges: ", err}]; {})]
 ]
 
 
-getMinimalCodeRangesCoverRange[doc_TextDocument, range_LspRange] := With[
-    {
-        startLine = range["start"]["line"] + 1,
-        endLine = range["end"]["line"] + 1
-    },
-
-    getCodeRanges[doc]
-    // Keys
-    // Select[codeRange \[Function] (
-        !(First[codeRange] > endLine || Last[codeRange] < startLine)
-    )]
-]
-
-
-rangeToSyntaxTree[doc_TextDocument, All] := (
+rangeToSyntaxTree[doc_TextDocument, _:All] := (
     doc
     // getCodeRanges
-    // Keys
     // rangeToSyntaxTree[doc, #]&
 )
 
@@ -518,19 +545,16 @@ rangeToSyntaxTree[doc_TextDocument, All] := (
 rangeToSyntaxTree[doc_TextDocument, range:{_Integer, _Integer}] := rangeToSyntaxTree[doc, {range}]
 rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
     {
-        uri = doc["uri"]
+        uri = doc["uri"],
+        oldRanges = getCodeRanges[doc, ranges]
     },
 
-    If[uri // MissingQ,
-        ranges
-        // Map[# -> Missing["NotParsed"]&]
-        // Association,
-        doc
-        // getCodeRanges
-        // KeyTake[ranges]
+    oldRanges
+    // If[uri // MissingQ,
+        AssociationMap[Missing["NotParsed"]&],
+        KeyTake[$CodeRange[uri], #]&
     ]
     // KeyValueMap[{range, syntaxTrees} \[Function] (
-        (*LogDebug[{range, syntaxTrees//Map[Head]}];*)
         syntaxTrees
         // Replace[{
             _?MissingQ :> With[
@@ -538,31 +562,52 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
                     cst = CodeParser`CodeConcreteParse[
                         rangeToCode[doc, range],
                         "TabWidth" -> 1
-                    ]
+                    ] // Part[#, 2]&
+                    // Drop[#, First[range] - 1]& (* Drop extra Newlines *)
                 },
-
-                range -> <|
-                    "cst" -> Drop[Part[cst, 2], First[range] - 1],
-                    "ast" -> Part[
-                        cst
-                        // CodeParser`Abstract`Aggregate
-                        // CodeParser`Abstract`Abstract,
-                    2]
-                |>
+                splitSyntaxTree[cst]
             ],
             KeyValuePattern[{"cst" -> _Hold, "ast" -> _Hold}] :> (
                 range -> (syntaxTrees // Map[ReleaseHold /* Replace[err:Except[_List]:> LogError[err]]])
             ),
-            _ :> Nothing
+            _ :> (range -> Missing["Omitted"] (* Value should not be used *))
         }]
     )]
+    // Flatten
     // If[uri // MissingQ,
         Values,
-        Replace[{} -> <||>] (* Due to a bug that AssociateTo[assoc[key], {}] will return assoc[key] *)
-        /* (AssociateTo[$CodeRange[uri], #]&)
-        /* Lookup[uri]
-        /* Lookup[ranges]
+        newRules \[Function] With[
+            {
+                dropRanges = Complement[oldRanges, newRules // Keys],
+                addRanges = newRules // DeleteMissing // Keys
+            },
+
+			(* {"oldRanges:", oldRanges} // LogDebug; *)
+			(* {"newRanges:", newRules // Keys} // LogDebug; *)
+            dropRanges
+            // Map[range \[Function] (
+                $CodeCells[uri]
+                // KeySelect[IntervalMemberQ[#, range // Interval]&]
+                // Map[DeleteCases[range // Interval]]
+                // AssociateTo[$CodeCells[uri], #]&
+            )];
+            addRanges
+            // Map[range \[Function] (
+                $CodeCells[uri]
+                // KeySelect[IntervalMemberQ[#, range // Interval]&]
+                // Map[Append[range // Interval]]
+                // AssociateTo[$CodeCells[uri], #]&
+            )];
+            KeyDropFrom[$CodeRange[uri], dropRanges];
+            AssociateTo[$CodeRange[uri], newRules // KeyTake[addRanges]];
+            $CodeRange
+            // Lookup[uri]
+            // Lookup[newRules // Keys]
+        ]
     ]
+    // Replace[err:Except[{KeyValuePattern[{"cst" -> _List, "ast" -> _List}]...}] :> (
+        LogError[{"rangeToSyntaxTree: ", err}]; {}
+    )]
 ]
 
 
@@ -611,6 +656,27 @@ moveSyntaxTree[syntaxTree_, offset_Integer] := (
 )
 
 
+splitSyntaxTree[subTrees_List] := (
+    SequenceSplit[subTrees, {CstPattern["NewLine"][]}]
+    // Replace[{{}} -> {}]
+    // Map[topLevelNode \[Function] (
+        {
+            topLevelNode // First // Last // Key[CodeParser`Source] // First // First,
+            topLevelNode // Last // Last // Key[CodeParser`Source] // Last // First
+        } -> <|
+            "cst" -> topLevelNode,
+            "ast" -> (
+                topLevelNode
+                // CodeParser`Abstract`Aggregate
+                // Map[CodeParser`Abstract`Abstract]
+            )
+        |>
+    )]
+    // Reap
+    // Flatten
+)
+
+
 rangeCoversQ[range1_LspRange, pos_LspPosition] := (
     range1["start"]["line"] <= pos["line"] &&
     range1["end"]["line"] >= pos["line"] && (
@@ -645,20 +711,9 @@ PositionValidQ[doc_TextDocument, pos_LspPosition] := (
 )
 
 
-GetCodeRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
-    {
-        line = pos["line"] + 1
-    },
-
-    doc
-    // getCodeRanges
-    // Keys
-    // SelectFirst[Between[line, #]&]
-]
-
-
 GetTokenAtPosition[doc_TextDocument, pos_LspPosition] := (
-    GetCodeRangeAtPosition[doc, pos]
+    getCodeRanges[doc, pos["line"] + 1]
+    // First[#, Missing["NotFound"]]&
     // Replace[{
         codeRange: {startLine_Integer, _Integer} :> (
             Take[doc["text"], codeRange]
@@ -674,8 +729,7 @@ GetTokenAtPosition[doc_TextDocument, pos_LspPosition] := (
 
 
 GetAstAtPosition[doc_TextDocument, pos_LspPosition] := (
-    GetCodeRangeAtPosition[doc, pos]
-    // Replace[_?MissingQ -> {}]
+    getCodeRanges[doc, pos["line"] + 1]
     // rangeToAst[doc, #]&
 )
 
@@ -721,7 +775,6 @@ GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
 FindAllCodeRanges[doc_TextDocument] := (
     doc
     // getCodeRanges
-    // Keys
     // Map[ToLspRange[doc, #]&]
 )
 
@@ -931,6 +984,7 @@ ToDocumentSymbolImpl[doc_TextDocument, node_CellNode] := (
     Join[
         node["codeRange"]
         // Replace[_?MissingQ -> {}]
+        // getCodeRanges[doc, #]&
         // rangeToAst[doc, #]&
         // Flatten
         // Map[ToDocumentSymbolImpl[doc, #]&],
@@ -1314,18 +1368,24 @@ AbstractInlayHintRules[range_LspRange] = {
 
 GetInlayHintInfo[doc_TextDocument, range_LspRange] := With[
     {
-        codeRanges = getMinimalCodeRangesCoverRange[doc, range]
+        codeRanges = getCodeRanges[doc, {range["start"]["line"] + 1, range["end"]["line"] + 1}]
     },
 
     {
-        ConcreteInlayHintRules[range]
-        // Map[Cases[rangeToCst[doc, codeRanges], #, Infinity]&],
-        AbstractInlayHintRules[range]
-        // Map[Cases[rangeToAst[doc, codeRanges], #, Infinity]&]
+        rangeToCst[doc, codeRanges]
+        // (
+            ConcreteInlayHintRules[range]
+            // Map[rule \[Function] (Cases[#1, rule, Infinity]&)]
+        ) // Through,
+        rangeToAst[doc, codeRanges]
+        // (
+            AbstractInlayHintRules[range]
+            // Map[rule \[Function] (Cases[#1, rule, Infinity]&)]
+        ) // Through
     }
     // Flatten
     // DeleteDuplicates
- ]
+]
 
 
 tagAndTrim[nodeList_List, tag_String] := (
@@ -1604,7 +1664,7 @@ FindScopeOccurence[doc_TextDocument, pos_LspPosition, o:OptionsPattern[]] := Wit
                     /; (headSource // MatchQ[Except[{}, _List]])
                 ],
                 (* search it the whole doc as a dynamic local *)
-                ast = rangeToAst[doc, All];
+                ast = rangeToAst[doc];
                 OptionValue["GlobalSearch"]
                 // Replace[{
                     True :> (
@@ -1843,7 +1903,7 @@ FindTopLevelSymbols[node_, name_String] := (
 
 
 GetCodeActionsInRange[doc_TextDocument, range_LspRange] := (
-    getMinimalCodeRangesCoverRange[doc, range]
+    getCodeRanges[doc, {range["start"]["line"] + 1, range["end"]["line"] + 1}]
     // rangeToAst[doc, #]&
     // Cases[#,
         AstPattern["Symbol"][symbolName_]?(NodeOverlapsRangeQ[range]) :> (
@@ -1871,7 +1931,7 @@ GetCodeActionsInRange[doc_TextDocument, range_LspRange] := (
 
 
 GetDocumentLink[doc_TextDocument] := (
-    rangeToAst[doc, All]
+    rangeToAst[doc]
     // (ast \[Function] (
         Cases[ast, AstPattern["Function"][functionName:"Needs"|"Get", arguments:{stringNode:AstPattern["String"][data_]}] :> (
             {stringNode // CodeParser`FromNode, data // Key[CodeParser`Source] // SourceToRange}
@@ -1885,7 +1945,7 @@ GetDocumentLink[doc_TextDocument] := (
 
 
 FindDocumentColor[doc_TextDocument] := (
-    rangeToAst[doc, All]
+    rangeToAst[doc]
     // (ast \[Function] (
         Join[
             Cases[

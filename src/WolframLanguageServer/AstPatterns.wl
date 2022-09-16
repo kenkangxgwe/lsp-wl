@@ -97,6 +97,7 @@ FunctionPattern = <|
 
 
 CstPattern = <|
+    "NewLine" -> CodeParser`LeafNode[Token`Newline, __],
     "LongName" -> CodeParser`BinaryNode[function_Symbol, {
         __,
         CodeParser`LeafNode[
