@@ -2018,8 +2018,8 @@ GetColorPresentation[doc_TextDocument, color_LspColor, range_LspRange] := With[
                 "label" -> (
                     rgbColor
                     // ColorConvert[#, colorSpace]&
-                    // InputForm
-                    // ToString
+                    // Map[Round[#, 0.001]&]
+                    // TextString
                 )
             |>],
             {colorSpace, WolframLanguageServer`ColorTable`Colorspace}
