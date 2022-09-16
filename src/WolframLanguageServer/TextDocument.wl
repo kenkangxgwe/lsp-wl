@@ -1286,7 +1286,7 @@ AbstractInlayHintRules[range_LspRange] = {
             data // Key[CodeParser`Source] // SourceToRange
         ]
         /; (
-            ToString[numberValue] =!= integerLiteral
+            TextString[numberValue] =!= integerLiteral
         )
     ],
     real:AstPattern["Real"][realLiteral_, data_]?(NodeWithinRangeQ[range]) :> With[
@@ -1299,7 +1299,7 @@ AbstractInlayHintRules[range_LspRange] = {
             data // Key[CodeParser`Source] // SourceToRange
         ]
         /; (
-            ToString[numberValue] =!= realLiteral
+            TextString[numberValue] =!= realLiteral
         )
     ],
     string:AstPattern["String"][stringLiteral:_?(StringContainsQ[{"\\:", "\\["}]), data_]?(NodeWithinRangeQ[range]) :> (
@@ -1343,7 +1343,7 @@ AbstractInlayHintRules[range_LspRange] = {
         Table[
             i
             // {StringTemplate["form_`1`"], StringTemplate["value_`1`"]}
-            // Through
+            // Through,
             {i, Ceiling[(Length[arguments] - 1) / 2]}
         ]
         // Catenate
