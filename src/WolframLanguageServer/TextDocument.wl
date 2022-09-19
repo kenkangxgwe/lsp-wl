@@ -32,7 +32,9 @@ FindDocumentHighlight::usage = "FindDocumentHighlight[doc_TextDocument, pos_LspP
 PositionValidQ::usage = "PositionValidQ[doc_TextDocument, pos_LspPosition] returns true if the pos is valid in the doc."
 GetSymbolAtPosition::usage = "GetSymbolAtPosition[doc_TextDocument, pos_LspPosition] returns the symbol at the given location, otherwise Missing[\"NotFound\"]."
 GetSymbolRangeAtPosition::usage = "GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] returns the range of the symbol at the given location, otherwise Missing[\"NotFound\"]."
+FindTopLevelRanges::usage = "FindTopLevelRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
 FindAllCodeRanges::usage = "FindAllCodeRanges[doc_TextDocument] returns a list of LspRange which locate all the code ranges (cells) in the given doc."
+FindHeadings::usage = "FindHeadings[doc_TextDocument] returns a list of Associations that includes range and style of all heading cells in the given doc."
 GetCodeActionsInRange::usage = "GetCodeActionsInRange[doc_TextDocument, range_LspRange] returns a list of CodeAction related to specified range."
 GetDocumentText::usage = "GetDocumentText[doc_TextDocument] returns the text of the whole doc except for the shebang line (if exists).\n\
 GetDocumentText[doc_TextDocument, range_LspRange] returns the text of the doc at given range."
@@ -452,6 +454,17 @@ ScriptFileQ[uri_String] := URLParse[uri, "Path"] // Last // FileExtension // Equ
 (*Code Range*)
 
 
+getCodeCells[doc_TextDocument] := (
+    If[(doc["uri"] // MissingQ) || ($CodeCells[doc["uri"]] // MissingQ),
+        doc
+        // divideCells
+        // Last,
+        $CodeCells[doc["uri"]]
+        // Keys
+        // Part[#, All, 1]&
+    ]
+)
+
 getCodeRanges[doc_TextDocument, _:All] := (
     If[(doc["uri"] // MissingQ) || ($CodeRange[doc["uri"]] // MissingQ),
         doc
@@ -602,17 +615,18 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
             AssociateTo[$CodeRange[uri], newRules // KeyTake[addRanges]];
             $CodeRange
             // Lookup[uri]
-            // Lookup[newRules // Keys]
+            // KeyTake[newRules // Keys]
         ]
     ]
-    // Replace[err:Except[{KeyValuePattern[{"cst" -> _List, "ast" -> _List}]...}] :> (
+    // Replace[err:Except[Association[({_Integer, _Integer} -> KeyValuePattern[{"cst" -> _List, "ast" -> _List}])...]] :> (
         LogError[{"rangeToSyntaxTree: ", err}]; {}
     )]
 ]
 
 
-rangeToAst = rangeToSyntaxTree /* Map[Lookup["ast"]] /* Catenate
-rangeToCst = rangeToSyntaxTree /* Map[Lookup["cst"]] /* Catenate
+rangeToAst = rangeToSyntaxTree /* Values /* Map[Lookup["ast"]] /* Catenate
+rangeToCst = rangeToSyntaxTree /* Values /* Map[Lookup["cst"]] /* Catenate
+rangeToTopLevelRanges = rangeToSyntaxTree /* Keys
 
 
 rangeToCode[doc_TextDocument, {startLine_Integer, endLine_Integer}] := (
@@ -770,6 +784,34 @@ GetSymbolRangeAtPosition[doc_TextDocument, pos_LspPosition] := With[
         AstLevelspec["LeafNodeWithSource"]
     ]&
 ]
+
+
+FindTopLevelRanges[doc_TextDocument] := (
+    doc
+    // getCodeCells
+    // Map[
+        rangeToTopLevelRanges[doc, #]&
+        /* (ranges \[Function] (
+            SequenceCases[ranges, {{_, prevEnd_}, {start_, _}} /; (prevEnd + 2 < start) :> start, Overlaps -> True]
+            // {# // Prepend[ranges // First // First], (# - 3) // Append[ranges // Last // Last]}&
+            // Transpose
+        ))
+    ]
+    // Catenate
+    // Map[ToLspRange[doc, #]&]
+)
+
+
+FindHeadings[doc_TextDocument] := (
+    doc
+    // getCell
+    // Cases[#, CellNode[KeyValuePattern[{"style" -> style_?HeadingQ, "range" -> range_}]] :> (
+        <|
+            "style" -> style,
+            "range" -> (ToLspRange[doc, range])
+        |>
+    ), {1, -3}]& // LogDebug
+)
 
 
 FindAllCodeRanges[doc_TextDocument] := (

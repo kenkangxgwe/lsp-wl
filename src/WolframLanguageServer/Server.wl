@@ -1947,13 +1947,13 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 										"character" -> 0
 									|>
 								|>,
-								"data" -> <|
+								"command" -> Command[<|
 									"title" -> "$(workflow) Evaluate File",
 									"command" -> "dap-wl.evaluate-file",
 									"arguments" -> {<|
 										"uri" -> uri
 									|>}
-								|>
+								|>]
 							|>],
 							Table[
 								CodeLens[<|
@@ -1964,16 +1964,40 @@ handleRequest["textDocument/codeLens", msg_, state_] := With[
 										(* // ReplaceKey[{"end", "line"} -> codeRange["start"]["line"]]
 										// ReplaceKey[{"end", "character"} -> 1] *)
 									),
-									"data" -> <|
-										"title" -> "$(play) Evaluate",
+									"command" -> Command[<|
+										"title" -> (
+											{codeRange["start"]["line"] + 1, codeRange["end"]["line"] + 1}
+											// Apply[If[Equal,
+												StringTemplate["$(play) Evaluate line `1`"],
+												StringTemplate["$(play) Evaluate line `1`~`2`"]
+											]] // Through
+										),
 										"command" -> "dap-wl.evaluate-range",
 										"arguments" -> {<|
 											"uri" -> uri,
 											"range" -> codeRange
 										|>}
-									|>
+									|>]
 								|>],
-								{codeRange, doc // FindAllCodeRanges}
+								{codeRange, doc // FindTopLevelRanges}
+							],
+							Table[
+								CodeLens[<|
+									(* range can only span one line *)
+									"range" -> (
+										heading["range"]
+										// ReplaceKey["end" -> heading["range"]["start"]]
+									),
+									"command" -> Command[<|
+										"title" -> (heading["style"] // StringTemplate["$(play) Evaluate `1`"]),
+										"command" -> "dap-wl.evaluate-range",
+										"arguments" -> {<|
+											"uri" -> uri,
+											"range" -> heading["range"]
+										|>}
+									|>]
+								|>],
+								{heading, doc // FindHeadings}
 							]
 						},
 						{}
