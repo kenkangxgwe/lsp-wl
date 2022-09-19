@@ -81,11 +81,16 @@ DeclareType[DiagnosticsOverrides, <|
 
 DeclareType[DebugSession, <|
 	"initialized" -> _?BooleanQ,
+	"listener" -> _SocketListener | Null,
 	"server" -> _SocketObject | Null,
 	"client" -> _SocketObject | Null,
 	"subKernel" -> _,
 	"context" -> _String,
-	"thread" -> _DapThread
+	"thread" -> _DapThread,
+	"message" -> KeyValuePattern[{
+		"remainingLength" -> _Integer,
+		"remainingData" -> (_ByteArray|{})
+	}]
 |>]
 
 DeclareType[RequestCache, <|
@@ -117,7 +122,11 @@ InitialState = WorkState[<|
 	"debugSession" -> DebugSession[<|
 		"initialized" -> False,
 		"server" -> Null,
-		"client" -> Null
+		"client" -> Null,
+		"message" -> <|
+			"remainingLength" -> 0,
+			"remainingData" -> {}
+		|>
 	|>],
 	"scheduledTasks" -> {},
 	"caches" -> initialCaches,
@@ -128,7 +137,7 @@ InitialState = WorkState[<|
 |>]
 
 ServerCapabilities = <|
-	"textDocumentSync" -> TextDocumentSyncKind["Full"],
+	"textDocumentSync" -> TextDocumentSyncKind["Incremental"],
 	"notebookDocumentSync" -> <|
 		"notebookSelector" -> {<|
 			"notebook" -> "wolfram-language-notebook",
@@ -316,7 +325,7 @@ WLServerStart[o:OptionsPattern[]] := Module[
             Block[{$IterationLimit = Infinity},
 				InitialState
 				// ReplaceKey["client" -> connection]
-				// TcpSocketHandler
+				// TcpSocketHandlerAsync
         	]
         ),
         _ :> (
@@ -502,6 +511,93 @@ TcpSocketHandler[state_WorkState] := With[
 ] // TcpSocketHandler (* Put the recursive call out of the module to turn on the tail-recursion optimization *)
 
 
+TcpSocketHandlerAsync[initState_WorkState] := (
+	$state = initState;
+	ScheduledTask[Block[
+		{
+			state = $state
+		},
+
+		If[state["client"] // SocketReadyQ,
+			state["client"]
+			// ReadMessages
+			// handleMessageList[#, state]&,
+			If[state // getNextTaskTime // (MissingQ || GreaterThan[Now]) // Through // Not,
+				doNextScheduledTask[state],
+				{"Continue", state}
+			]
+		]
+		// Replace[{
+			{"Continue", newstate_} :> newstate,
+			{stop_, newstate_} :> (
+				{stop, newstate}
+			),
+			{} :> state, (* No message *)
+			err_ :> {LogError[err], state}
+		}]
+	] // SetStateAsync,
+	Quantity[0.1, "Seconds"]] // SessionSubmit
+)
+
+
+DebuggerHandlerAsync[KeyValuePattern[{"DataByteArray" -> data_ByteArray, "SourceSocket" -> client_SocketObject}]] := Block[
+	{
+		state = $state
+	},
+
+	state
+	// Replace[state["debugSession"]["client"], {
+		Null :> (
+			LogInfo["New debugger client connected"];
+			ReplaceKey[{"debugSession", "client"} -> client]
+			/* ReplaceKeyBy[{"debugSession", "message", "remainingData"} -> (Join[#, data]& /* ByteArray)]
+		),
+		client :> (
+			ReplaceKeyBy[{"debugSession", "message", "remainingData"} -> (Join[#, data]& /* ByteArray)]
+		),
+		Except[client] :> (
+			LogWarning["More than one client connected to the debugger, only the first one will handled"];
+			Identity
+		)
+	}]
+	// ReplaceKeyBy[{"debugSession", "message"} -> (
+		ParseMessages[#remainingLength, #remainingData]&
+		/* ({"remainingLength", "remainingData"} -> #&)
+		/* Thread
+		/* Association
+	)]
+	// (#["debugSession"] // LogDebug;#)&
+	// (state = #)&
+	// Reap
+	// MapAt[Last[#, {}]&, -1]
+	// Reverse
+	// Apply[handleDapMessageList]
+	// Replace[{
+		{"Continue", newstate_} :> newstate,
+		{stop_, newstate_} :> (
+			{stop, newstate}
+		),
+		{} :> state, (* No message *)
+		err_ :> {LogError[err], state}
+	}]
+] // SetStateAsync
+
+
+SetStateAsync = Replace[{
+	newState_WorkState :> ($state = newState),
+	{reason:"Stop", newState_WorkState} :> (
+		LogInfo["Closing socket connection..."];
+		CloseClient[newState["client"]];
+		If[reason === "Stop",
+			LogInfo["Server stopped normally."];
+			Quit[0],
+			LogInfo["Server stopped abnormally."];
+			Quit[1]
+		]
+	)
+}]
+
+
 (* ::Subsubsection:: *)
 (*Stdio (not working)*)
 
@@ -561,27 +657,35 @@ SelectClient["stdio"] := "stdio";
 (*Socket*)
 
 
-ReadMessages[client_SocketObject] := ReadMessagesImpl[client, {{0, {}}, {}}]
-ReadMessagesImpl[client_SocketObject, {{0, {}}, msgs:{__Association}}] := msgs
-ReadMessagesImpl[client_SocketObject, {{remainingLength_Integer, remainingByte:(_ByteArray|{})}, {msgs___Association}}] := ReadMessagesImpl[client, (
+ReadMessages[client_SocketObject] := (
+	NestWhile[
+		Apply[ParseMessages]
+		/* Replace[Except[{0, {}}, {remainingLength_, remainingByte_}] :> (
+			{remainingLength, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}
+		)],
+		{0, SocketReadMessage[client]},
+		UnequalTo[{0, {}}]
+	] // Reap // Last // Last[#, {}]&
+)
+
+
+ParseMessages[remainingLength_Integer, remainingByte:(_ByteArray|{})] := (
     If[remainingLength > 0,
         (* Read Content *)
         If[Length[remainingByte] >= remainingLength,
-            {{0, Drop[remainingByte, remainingLength]}, {msgs, ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"]}},
-            (* Read more *)
-            {{remainingLength, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
+			ImportByteArray[Take[remainingByte, remainingLength], "RawJSON"] // Sow;
+            ParseMessages[0, Drop[remainingByte, remainingLength]],
+            (* No-op *)
+            {remainingLength, remainingByte}
         ],
         (* New header *)
         Replace[SequencePosition[Normal @ remainingByte, RPCPatterns["SequenceSplitPattern"], 1], {
-	        {{end1_, end2_}} :> (
-	            {{getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]}, {msgs}}
-	        ),
-	        {} :> ( (* Read more *)
-	            {{0, ByteArray[remainingByte ~Join~ SocketReadMessage[client]]}, {msgs}}
-		    )
+	        {{end1_, end2_}} :> ParseMessages[getContentLength[Take[remainingByte, end1 - 1]], Drop[remainingByte, end2]],
+			(* No-op *)
+	        {} -> {0, remainingByte}
 	    }]
 	]
-)]
+)
 
 
 (* ::Subsubsection:: *)
@@ -1058,10 +1162,17 @@ handleRequest["initialize", msg_, state_WorkState] := (
 			// NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
 			// Replace[{
 				_?MissingQ -> Nothing,
-				debugPort_ :> (
+				debugPort_ :> With[
+					{
+						server = SocketOpen[debugPort]
+					},
+
 					LogInfo["Debugger listening at port " <> ToString[debugPort]];
-					{"debugSession", "server"} -> SocketOpen[debugPort]
-				)
+					Sequence[
+						{"debugSession", "server"} -> server,
+						{"debugSession", "listener"} -> SocketListen[server, DebuggerHandlerAsync]
+					]
+				]
 			}]
 		}]
 		// addScheduledTask[#, ServerTask[<|

@@ -246,5 +246,6 @@ Module[
             "WorkingDir" -> WolframLanguageServer`RootDirectory
         ]
     ];
+    InputString[];
     Quit[0]
 ];
