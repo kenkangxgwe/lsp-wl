@@ -203,15 +203,15 @@ changeDocText[doc_TextDocument, contextChange_TextDocumentContentChangeEvent] :=
 
 moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
     {
-        matchedCodeRanges = If[$CodeCells // KeyExistsQ[newDoc["uri"]],
-            SequenceAlignment[oldDoc["text"], newDoc["text"]]
-            // matchCodeRanges[#, $CodeCells[newDoc["uri"]]]& ,
-            {}
-        ],
-        cells, codeCellRanges
+        cells, codeCellRanges, matchedCodeRanges
     },
 
     {cells, codeCellRanges} = newDoc // divideCells;
+    matchedCodeRanges = If[$CodeCells // KeyExistsQ[newDoc["uri"]],
+        SequenceAlignment[oldDoc["text"], newDoc["text"]]
+        // matchCodeRanges[#, $CodeCells[newDoc["uri"]], codeCellRanges]&,
+        {}
+    ];
     AssociateTo[$Cell, newDoc["uri"] -> cells];
     codeCellRanges
     // Map[Interval]
@@ -251,7 +251,7 @@ moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
 ]
 
 
-(* ::Section:: *)
+(* ::Subsection:: *)
 (*Close Text Document*)
 
 
@@ -492,9 +492,9 @@ getCodeRanges[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := (
 )
 
 
-matchCodeRanges[textDiff_, codeCells_Association] := Block[
+matchCodeRanges[textDiff_, codeCells_Association, newCodeRanges_List] := Block[
     {
-        commonRanges = {}
+        commonRanges = {}, newCodeStart = Part[newCodeRanges, All, 1]
     },
     textDiff
     // Prepend[{1, 1}]
@@ -505,7 +505,8 @@ matchCodeRanges[textDiff_, codeCells_Association] := Block[
                 AppendTo[commonRanges, <|
                     "type" -> "common",
                     "oldRange" -> Interval[{0, (commonLines // Length) - 1} + (startLines // First)],
-                    "newRange" -> Interval[{0, (commonLines // Length) - 1} + (startLines // Last)]
+                    "newRange" -> Interval[{0, (commonLines // Length) - 1} + (startLines // Last)],
+                    "offset" -> (Last[startLines] - First[startLines])
                 |>];
                 startLines + (commonLines // Length)
             ),
@@ -520,29 +521,22 @@ matchCodeRanges[textDiff_, codeCells_Association] := Block[
         }]
     )];
     commonRanges
-    // Map[(
+    // Map[commonRange \[Function] (
         {
             codeCells
-            // KeySelect[(IntervalMemberQ[#oldRange])]
-            // KeyValueMap[{codeCell, topLevels} \[Function] (
-                topLevels
-                // Append[
-                    {(topLevels // Last // Max) + 1, codeCell // Max}
-                    // If[Apply[Greater],
-                        Nothing,
-                        Interval
-                    ] // Through
-                ]
-            )]
+            // KeySelect[Min/*IntervalMemberQ[commonRange["oldRange"]]]
+            // KeySelect[Min/*(# + (commonRange["offset"])&)/*(MemberQ[newCodeStart, #]&)]
+            // Map[TakeWhile[#, IntervalMemberQ[commonRange["oldRange"]]]&]
+            // Values
             // Catenate,
-            Min[#newRange] - Min[#oldRange]
+            commonRange["offset"]
         }
         // {
             Apply[Plus],
             Last
         } // Through
         // Thread
-    )&]
+    )]
     // Catenate
     // Replace[err:Except[{{_Interval, _Integer}...}] :> (LogError[{"matchCodeRanges: ", err}]; {})]
 ]
