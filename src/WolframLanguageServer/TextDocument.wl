@@ -578,45 +578,51 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
                     ] // Part[#, 2]&
                     // Drop[#, First[range] - 1]& (* Drop extra Newlines *)
                 },
-                splitSyntaxTree[cst]
+                {range, splitSyntaxTree[cst]}
             ],
-            KeyValuePattern[{"cst" -> _Hold, "ast" -> _Hold}] :> (
-                range -> (syntaxTrees // Map[ReleaseHold /* Replace[err:Except[_List]:> LogError[err]]])
-            ),
-            _ :> (range -> Missing["Omitted"] (* Value should not be used *))
+            KeyValuePattern[{"cst" -> _Hold, "ast" -> _Hold}] :> {
+                range,
+                {
+                    range -> (
+                        syntaxTrees
+                        // Map[
+                            ReleaseHold
+                            /* Replace[err:Except[_List]:> LogError[err]]
+                        ]
+                    )
+                }
+            },
+            _ -> Nothing
         }]
     )]
-    // Flatten
     // If[uri // MissingQ,
-        Values,
-        newRules \[Function] With[
-            {
-                dropRanges = Complement[oldRanges, newRules // Keys],
-                addRanges = newRules // DeleteMissing // Keys
-            },
-
-			(* {"oldRanges:", oldRanges} // LogDebug; *)
-			(* {"newRanges:", newRules // Keys} // LogDebug; *)
-            dropRanges
-            // Map[range \[Function] (
+        Part[#, All, -1]&
+        /* Catenate
+        /* Values,
+        {
+            Part[#, All ,1]&
+            /* Map[range \[Function] (
                 $CodeCells[uri]
                 // KeySelect[IntervalMemberQ[#, range // Interval]&]
                 // Map[DeleteCases[range // Interval]]
-                // AssociateTo[$CodeCells[uri], #]&
-            )];
-            addRanges
-            // Map[range \[Function] (
+                // AssociateTo[$CodeCells[uri], #]&;
+                KeyDropFrom[$CodeRange[uri], Key[range]];
+            )],
+            Part[#, All, -1]&
+            /* Catenate
+            /* Map[Apply[{range, syntaxTree} \[Function] (
                 $CodeCells[uri]
                 // KeySelect[IntervalMemberQ[#, range // Interval]&]
                 // Map[Append[range // Interval]]
-                // AssociateTo[$CodeCells[uri], #]&
-            )];
-            KeyDropFrom[$CodeRange[uri], dropRanges];
-            AssociateTo[$CodeRange[uri], newRules // KeyTake[addRanges]];
+                // AssociateTo[$CodeCells[uri], #]&;
+                AssociateTo[$CodeRange[uri], range -> syntaxTree];
+            )]]
+        } /* Through
+        /* ((
             $CodeRange
             // Lookup[uri]
-            // KeyTake[newRules // Keys]
-        ]
+            // KeyTake[getCodeRanges[doc, ranges]]
+        )&)
     ]
     // Replace[err:Except[Association[({_Integer, _Integer} -> KeyValuePattern[{"cst" -> _List, "ast" -> _List}])...]] :> (
         LogError[{"rangeToSyntaxTree: ", err}]; {}
