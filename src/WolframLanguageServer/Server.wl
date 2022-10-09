@@ -536,7 +536,7 @@ TcpSocketHandlerAsync[initState_WorkState] := (
 			err_ :> {LogError[err], state}
 		}]
 	] // SetStateAsync,
-	Quantity[0.1, "Seconds"]] // SessionSubmit
+	Quantity[0.001, "Seconds"]] // SessionSubmit
 )
 
 
@@ -999,7 +999,6 @@ traceHandler[expr:(handler_[method_String, msg_, state_WorkState])] := Block[
 		]
 	},
 
-	LogDebug["Start handling " <> method];
 	startTime = Now;
 	sendNotification["$/logTrace", StringTemplate["Start handling '`1`'"][methodString], "", state];
 	res = expr;
@@ -2546,10 +2545,10 @@ closeTextDocument[didCloseParam:KeyValuePattern[{"uri" -> uri_DocumentUri}], sta
 		"textDocument/publishDiagnostics" -> KeyDrop[uri],
 		"textDocument/autocompletionFunction" -> KeyDrop[uri]
 	}]&)]
-	// handleRequest[
+	// (handleRequest[
 		"textDocument/clearDiagnostics",
 		constructRequest["textDocument/publishDiagnostics", uri],
-	#]&
+	#] // traceHandler)&
 )
 
 
@@ -2638,10 +2637,10 @@ handleNotification["textDocument/didSave", msg_, state_] := With[
 				// Map[<|"String" -> ToLowerCase[#], "Result" -> #|>&]
 				// Autocomplete
 			)]
-			// handleRequest[
+			// (handleRequest[
 				"textDocument/publishDiagnostics",
 				constructRequest["textDocument/publishDiagnostics", uri], #
-			]&
+			] // traceHandler)&
 		)
 	}]
 ]
