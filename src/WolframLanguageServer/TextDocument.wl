@@ -591,8 +591,7 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
     )]
     // If[uri // MissingQ,
         Part[#, All, -1]&
-        /* Catenate
-        /* Values,
+        /* Merge[Last],
         {
             Part[#, All ,1]&
             /* Map[range \[Function] (
