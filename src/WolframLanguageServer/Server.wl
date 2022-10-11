@@ -41,15 +41,16 @@ If[$VersionNumber < 12.2,
 ]
 
 
-NestedLookup::NotAssoc = "`1` is not an association and cannot lookup for key `2`."
-
-(* Returns Missing["KeyAbsent"] if the Association is not long enough. *)
+(* Returns Missing if the Association is not long enough. *)
 NestedLookup[keys_][assoc_] := NestedLookup[assoc, keys]
-NestedLookup[assoc_Association, keys_List | key_] := Fold[
-	Replace[#1, (_?(AssociationQ /* Not)) :> (
-		Message[NestedLookup::NotAssoc, #1, #2];
-		<||>
-	)][#2]&, assoc, Join[keys, {key}]
+NestedLookup[assoc_Association, keys_List | key_] := FoldWhile[
+	Replace[#1, {
+		_?MissingQ -> #1,
+		_?AssociationQ :> #1[#2],
+		_ :> (
+			Missing["NotAssoc", #1]
+		)
+	}]&, assoc, Join[keys, {key}], MissingQ /* Not
 ]
 
 
@@ -1113,7 +1114,7 @@ handleRequest["initialize", msg_, state_WorkState] := (
 	
 	msg
 	// NestedLookup[{"params", "initializationOptions", "forceFrontEndLanguage"}]
-	// Replace[_?MissingQ -> False]
+	// Replace[_?MissingQ|Null -> False]
 	// InitializeSystemResources["forceFrontEndLanguage" -> #]&;
 
 	(* TODO(kenkangxgwe): check client capabilities *)
@@ -1130,7 +1131,7 @@ handleRequest["initialize", msg_, state_WorkState] := (
 			"workspaceFolders" -> (
 				msg
 				// NestedLookup[{"params", "workspaceFolders"}]
-				// Replace[_?MissingQ -> {}]
+				// Replace[_?MissingQ|Null -> {}]
 				// ConstructType[#, {___WorkspaceFolder}]&
 				// Map[(#["uri"] -> #)&]
 				// Association
@@ -1155,12 +1156,12 @@ handleRequest["initialize", msg_, state_WorkState] := (
             "showCodeCaptions" -> (
 				msg
 				// NestedLookup[{"params", "initializationOptions", "showCodeCaptions"}]
-				// Replace[_?MissingQ -> False]
+				// Replace[_?MissingQ|Null -> False]
 			),
 			msg
 			// NestedLookup[{"params", "initializationOptions", "debuggerPort"}]
 			// Replace[{
-				_?MissingQ -> Nothing,
+				_?MissingQ|Null -> Nothing,
 				debugPort_ :> With[
 					{
 						server = SocketOpen[debugPort]
