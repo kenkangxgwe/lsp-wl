@@ -241,7 +241,7 @@ moveCells[oldDoc_TextDocument, newDoc_TextDocument] := Block[
                 Nothing,
                 If[offset == 0,
                     Identity,
-                    Map[Hold[moveSyntaxTree[#, offset]]&]
+                    Hold[moveSyntaxTree[#, offset]]&
                 ] /* (First[newRange] -> #&)
             ] // Through
         )]]
@@ -569,20 +569,19 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
                     cst = CodeParser`CodeConcreteParse[
                         rangeToCode[doc, range],
                         "TabWidth" -> 1
-                    ] // Part[#, 2]&
-                    // Drop[#, First[range] - 1]& (* Drop extra Newlines *)
+                    ]
+                    (* Drops leading Newlines in the 2nd Part*)
+                    // ReplacePart[#, Thread[{2, Range[First[range] - 1]}] -> Nothing]&
                 },
                 {range, splitSyntaxTree[cst]}
             ],
-            KeyValuePattern[{"cst" -> _Hold, "ast" -> _Hold}] :> {
+            _Hold :> {
                 range,
                 {
                     range -> (
                         syntaxTrees
-                        // Map[
-                            ReleaseHold
-                            /* Replace[err:Except[_List]:> LogError[err]]
-                        ]
+                        // ReleaseHold
+                        // Replace[err:Except[<|(_String -> _List)...|>]:> LogError[err]]
                     )
                 }
             },
@@ -617,14 +616,21 @@ rangeToSyntaxTree[doc_TextDocument, ranges:{{_Integer, _Integer}...}] := With[
             // KeyTake[getCodeRanges[doc, ranges]]
         )&)
     ]
-    // Replace[err:Except[Association[({_Integer, _Integer} -> KeyValuePattern[{"cst" -> _List, "ast" -> _List}])...]] :> (
+    // Replace[err:Except[Association[(
+            {_Integer, _Integer} -> KeyValuePattern[{
+                "cst" -> _List,
+                "ast" -> _List,
+                "syntaxIssues" -> _List
+            }])...]
+        ] :> (
         LogError[{"rangeToSyntaxTree: ", err}]; {}
     )]
 ]
 
 
-rangeToAst = rangeToSyntaxTree /* Values /* Map[Lookup["ast"]] /* Catenate
-rangeToCst = rangeToSyntaxTree /* Values /* Map[Lookup["cst"]] /* Catenate
+rangeToAst = rangeToSyntaxTree /* Values /* Lookup["ast"] /* Catenate
+rangeToCst = rangeToSyntaxTree /* Values /* Lookup["cst"] /* Catenate
+rangeToSyntaxIssues = rangeToSyntaxTree /* Values /* Lookup["syntaxIssues"] /* Catenate
 rangeToTopLevelRanges = rangeToSyntaxTree /* Keys
 
 
@@ -669,25 +675,40 @@ moveSyntaxTree[syntaxTree_, offset_Integer] := (
 )
 
 
-splitSyntaxTree[subTrees_List] := (
-    SequenceSplit[subTrees, {CstPattern["NewLine"][]}]
+splitSyntaxTree[syntaxTree_CodeParser`ContainerNode] := With[
+    {
+        syntaxIssues = syntaxTree
+            // Last
+            // Key[CodeParser`SyntaxIssues]
+            // Replace[_?MissingQ -> {}]
+    },
+    SequenceSplit[Part[syntaxTree, 2], {CstPattern["NewLine"][]}]
     // Replace[{{}} -> {}]
-    // Map[topLevelNode \[Function] (
+    // Map[topLevelNode \[Function] With[
         {
-            topLevelNode // First // Last // Key[CodeParser`Source] // First // First,
-            topLevelNode // Last // Last // Key[CodeParser`Source] // Last // First
-        } -> <|
+            startLine = topLevelNode // First // Last // Key[CodeParser`Source] // First // First,
+            endLine = topLevelNode // Last // Last // Key[CodeParser`Source] // Last // First
+        },
+        {startLine, endLine} -> <|
             "cst" -> topLevelNode,
             "ast" -> (
                 topLevelNode
                 // CodeParser`Abstract`Aggregate
                 // Map[CodeParser`Abstract`Abstract]
+            ),
+            "syntaxIssues" -> (
+                syntaxIssues
+                // Select[
+                    {{startLine, 1}, {endLine, Infinity}}
+                    // SourceToRange
+                    // NodeWithinRangeQ
+                ]
             )
         |>
-    )]
+    ]]
     // Reap
     // Flatten
-)
+]
 
 
 rangeCoversQ[range1_LspRange, pos_LspPosition] := (
@@ -1459,7 +1480,7 @@ DiagnoseDoc[doc_TextDocument, range_LspRange:All, o:OptionsPattern[]] := With[
 
     rangeToCst[doc, All]
     // Flatten
-    // CodeParser`ContainerNode[String, #, <||>]&
+    // CodeParser`ContainerNode[String, #, <|CodeParser`SyntaxIssues -> rangeToSyntaxIssues[doc, All]|>]&
     // CodeInspector`CodeInspectCST
     // Replace[_?FailureQ -> {}]
     // Cases[CodeInspector`InspectionObject[tag:Except[hiddenPatterns, _String], description_, severity_, data_] :> Diagnostic[<|
