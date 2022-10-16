@@ -137,27 +137,41 @@ structure of the file.
 
 ### Hover
 
-Provide documentations for functions and variables from the ``System` ``
-context, such as `String` and `$Path`, the `MessageName` and the special
-numerical literals with `^^` or `*^`.
+Provide documentations for functions, variables and operators from the ``System`
+`` context, such as `String`, `$Path` and `/@`.
 
-![hover](images/hover.png)
+![hoverSymbol](images/hoverSymbol.png)
+![hoverOperator](images/hoverOperator.png)
 
-### Completion
+Also provide for `MessageName` and the special numerical literals with `^^` or `*^`.
+
+![hoverMessage](images/hoverMessage.png)
+
+### Completion (Resolve)
 
 The completion is shown by the client automatically. Functions and system
 variables from the ``System` `` context that matches the input would be
-displayed. To enter an unicode character, you may use the leader key
-<kbd>\\</kbd> followed by the alias just like <kbd>esc</kbd> in Wolfram
-FrondEnd. E.g., `<esc>a` in the FrontEnd is input as `\a` in the editor and the
-server will show you the available completions.
-
-![completion-unicode](images/completion_alias.png)
-
-**Completion Resolve:** Further information (such as documentation) would be
+displayed. Further information (such as documentation) would be
 provided for the items in the list.
 
-![completion](images/completion.png)
+![completionSymbol](images/completionSymbol.png)
+
+ To enter an unicode character, you may use the leader key <kbd>\\</kbd>
+followed by the alias just like <kbd>esc</kbd> in Wolfram FrondEnd. E.g.,
+`<esc>a` in the FrontEnd is input as `\a` in the editor and the server will show
+you the available completions.
+
+![completionAlias](images/completionAlias.png)
+
+**Snippet:** You can trigger the snippet completion when you enter a
+<kbd>[</kbd> after an symbol. After commit the completion, you may use
+<kbd>Tab</kbd> to jump to the next placeholder.
+
+![completionSnippet](images/completionSnippet.png)
+
+You may also trigger completion in other scenarios:
+
+![completionCellStyle](images/completionCellStyle.png)
 
 ### Diagnostics
 
@@ -183,7 +197,6 @@ An example of configuration in JSON format is shown below:
 
 ``` json
 "initializationOptions": {
-    ...
     "diagnosticsOverrides": {
         "mitigated": [
             "ExperimentalSymbol",
@@ -195,14 +208,14 @@ An example of configuration in JSON format is shown below:
             "DifferentLine",
         ]
     }
-    ...
 }
 ```
 
 ### Definition / References / Document Highlight
 
 It is now able to look up the definition and references of a local variable in a
-scope such as `Module` or pattern rules.
+scope (`Function`, `Module`, etc) or pattern rules (`SetDelayed`,
+`RuleDelayed`).
 
 ![references](images/references.png)
 
@@ -210,11 +223,37 @@ scope such as `Module` or pattern rules.
 
 Code action is now able to,
 
-- Open the documentation of system symbols in Mathematica (Not available for
-  Wolfram Engine).  
-  ![documentation](images/codeActionSymbolDocumentation.png)
+- Look up the token in Mathematica Documentation Center (Not available for
+  Wolfram Engine).
+
+- Provide quick fix for some easy diagnostic items.
 
 - Evaluate the selected code if debugger is running. See [Evaluate](#evaluate).
+
+![codeAction](images/codeAction.png)
+
+### InlayHint
+
+Inlay hints are provided for:
+
+- Basic flow control functions and scopes to show their parameters.  
+  ![inlayHintParameters](images/inlayHintParameters.png)
+
+- Non-standard literal such as number, unicode strings and long names to show
+  its normal text form.  
+  ![inlayHintLiterals](images/inlayHintLiterals.png)
+
+- Every system functions, if `showCodeCaptions` is `True` and `$Language` is not
+  `"English"`, to show their translated names if possible.  
+  (_Experimental, may have performance issues._)  
+  ![inlayHintCodeCaptions](images/inlayHintCodeCaptions.png)
+
+### Rename
+
+Local variable names in the pattern rules (`SetDelayed`, `RuleDelayed`) and
+scopes (`Block`, `With`, etc) can be renamed.
+
+![rename](images/rename.png)
 
 ### Document Color / Color Presentation
 
@@ -238,15 +277,14 @@ features](https://microsoft.github.io/language-server-protocol/specification).
 
 ### Evaluate
 
-Code evaluation can be run from the code action of the selection or code lens
-below each section title. The results are usually shown in the debug console on
-the editor side.
+Code evaluation can be run from the code action of the selection or code lens.
+The results are usually shown in the debug console on the editor side.
 
-![evaluate-code-action](images/evaluate_code_action.png)
+![evaluateCode](images/evaluateCode.png)
 
 Expressions can also be directly input from the debug console.
 
-![evaluate-debug-console](images/evaluate_debug_console.png)
+![evaluateDebugConsole](images/evaluateDebugConsole.png)
 
 ### Variables
 
